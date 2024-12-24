@@ -34,17 +34,16 @@ def test_gaussian_likelihood_basic():
     pz = matrix @ z  # P @ z
 
     # Compute likelihood
-    ll, logdet = gaussian_likelihood(pz, P)
+    ll = gaussian_likelihood(pz, P)
 
     # Basic sanity checks
     assert np.isfinite(ll)
-    assert np.isfinite(logdet)
 
     # Test with subsetting
     which_indices = np.array([True, False])  # Only use the first element
     pz_sub = pz[which_indices]
     P_sub = P[which_indices]  # Subset the precision operator
-    ll_sub, _ = gaussian_likelihood(pz_sub, P_sub)
+    ll_sub = gaussian_likelihood(pz_sub, P_sub)
     assert np.isfinite(ll_sub)
 
 
@@ -94,7 +93,7 @@ def test_gaussian_likelihood_matches_scipy():
     pz = P @ z
 
     # Compute our likelihood
-    ll, _ = gaussian_likelihood(pz, P_op)
+    ll = gaussian_likelihood(pz, P_op)
 
     # Compute scipy likelihood
     scipy_ll = multivariate_normal.logpdf(pz, cov=P_op.matrix.toarray())
@@ -148,8 +147,8 @@ def test_gaussian_likelihood_gradient():
         M_plus.update_matrix(sigmasq_plus)  # M = nn*sigmasq + P
 
         # Compute likelihoods
-        ll_plus, _ = gaussian_likelihood(pz, M_plus)
-        ll, _ = gaussian_likelihood(pz, M)
+        ll_plus = gaussian_likelihood(pz, M_plus)
+        ll = gaussian_likelihood(pz, M)
 
         # Finite difference approximation
         grad_fd = (ll_plus - ll) / (eps)  # Scale eps by 1/nn

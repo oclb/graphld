@@ -2,15 +2,16 @@
 Input/output operations for LDGM data.
 """
 
-import os
 from pathlib import Path
-from typing import Optional, Tuple, List
+from typing import List, Optional, Tuple, Union
+
 import numpy as np
 import polars as pl
 from scipy.sparse import csr_matrix
+from .precision import PrecisionOperator
 
 def load_ldgm(filepath: str, snplist_path: Optional[str] = None, population: Optional[str] = None,
-              snps_only: bool = False) -> Tuple[csr_matrix, pl.DataFrame]:
+              snps_only: bool = False) -> Union[PrecisionOperator, List[PrecisionOperator]]:
     """
     Load an LDGM from a single LD block's edgelist and snplist files.
 
@@ -21,7 +22,10 @@ def load_ldgm(filepath: str, snplist_path: Optional[str] = None, population: Opt
         snps_only: Import snplist data for SNPs only (smaller memory usage)
 
     Returns:
-        Tuple of (sparse matrix, variant info DataFrame) for LDGM construction
+        If filepath is a directory:
+            List of PrecisionOperator instances, one for each edgelist file
+        If filepath is a file:
+            Single PrecisionOperator instance with loaded precision matrix and variant info
     """
     # Handle directory vs file input
     filepath = Path(filepath)
@@ -32,8 +36,14 @@ def load_ldgm(filepath: str, snplist_path: Optional[str] = None, population: Opt
         edgelist_files = list(filepath.glob(pattern))
         if not edgelist_files:
             raise FileNotFoundError(f"No edgelist files found in {filepath}")
-        filepath = edgelist_files[0]
-
+        
+        # Load each file and return a list of PrecisionOperators
+        operators = []
+        for edgelist_file in edgelist_files:
+            operator = load_ldgm(edgelist_file, snplist_path, population, snps_only)
+            operators.append(operator)
+        return operators
+    
     # Use provided snplist path or find corresponding snplist file
     if snplist_path is None:
         snplist_path = filepath.parent
@@ -49,45 +59,51 @@ def load_ldgm(filepath: str, snplist_path: Optional[str] = None, population: Opt
         if not snplist_file.exists():
             raise FileNotFoundError(f"Snplist file not found: {snplist_file}")
 
-    # Read snplist
-    variant_info = pl.read_csv(snplist_file, separator=',')
-    if snps_only:
-        # Filter for SNPs (single character alleles)
-        variant_info = variant_info.filter(
-            pl.col('anc_alleles').str.contains(r'^.$') &
-            pl.col('deriv_alleles').str.contains(r'^.$')
-        )
-
-    # Read edgelist and create sparse matrix
-    edges = pl.read_csv(filepath, separator=',', has_header=False)
-
-    # Get matrix dimensions
-    n = max(
-        variant_info.select(pl.col('index')).max().item(),
-        max(
-            edges.select(pl.col('column_1')).max().item(),
-            edges.select(pl.col('column_2')).max().item()
-        )
-    ) + 1
-
-    # Create symmetric sparse matrix
-    row_indices = edges['column_1'].to_numpy()
-    col_indices = edges['column_2'].to_numpy()
-    values = edges['column_3'].to_numpy()
-
-    # Add symmetric entries where needed
-    mask = row_indices != col_indices
-    mask_indices = np.where(mask)[0]
-
-    # Create symmetric entries
-    row_indices = np.concatenate([row_indices, col_indices[mask_indices]])
-    col_indices = np.concatenate([col_indices, row_indices[mask_indices]])
-    values = np.concatenate([values, values[mask_indices]])
-
+    # Load edgelist data
+    edgelist = pl.read_csv(filepath, separator=',', has_header=False,
+                          new_columns=['i', 'j', 'value'])
+    
     # Create sparse matrix
-    matrix = csr_matrix((values, (row_indices, col_indices)), shape=(n, n))
-
-    return matrix, variant_info
+    matrix = csr_matrix(
+        (edgelist['value'].to_numpy(),
+         (edgelist['i'].to_numpy(), edgelist['j'].to_numpy()))
+    )
+    
+    # Make matrix symmetric
+    matrix_t = matrix.T
+    diag_mask = matrix.diagonal() != 0
+    diag_vals = matrix.diagonal().copy()
+    matrix = matrix + matrix_t
+    matrix.setdiag(diag_vals / 2, k=0)
+    
+    # Verify diagonal values
+    assert np.allclose(matrix.diagonal(), diag_vals / 2), "Diagonal values not set correctly"
+    
+    # Create mask for rows/cols with nonzeros on diagonal
+    diag = matrix.diagonal()
+    nonzero_mask = diag != 0
+    n_nonzero = np.sum(nonzero_mask)
+    
+    # Create mapping from old indices to new indices
+    rows = np.full(len(diag), -1)
+    rows[nonzero_mask] = np.arange(n_nonzero)
+    
+    # Load and process variant info
+    variant_info = pl.read_csv(snplist_file, separator=',')
+    
+    # Store original indices and update with new mapping
+    variant_info = variant_info.with_columns([
+        pl.col('index').alias('original_index'),
+        pl.col('index').map_elements(lambda x: rows[x], return_dtype=pl.Int64).alias('index')
+    ])
+    
+    # Filter out variants with no corresponding matrix row
+    variant_info = variant_info.filter(pl.col('index') >= 0)
+    
+    # Subset matrix to rows/cols with nonzero diagonal
+    matrix = matrix[nonzero_mask][:, nonzero_mask]
+    
+    return PrecisionOperator(matrix, variant_info)
 
 def merge_alleles(anc_alleles: pl.Series, deriv_alleles: pl.Series,
                   ref_alleles: pl.Series, alt_alleles: pl.Series) -> pl.Series:

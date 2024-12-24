@@ -396,22 +396,3 @@ class PrecisionOperator(LinearOperator):
             
         else:  # xnys
             raise NotImplementedError("XNYSTrace method not yet implemented")
-
-    @staticmethod
-    def load(filepath: str, snplist_path: Optional[str] = None, population: Optional[str] = None, 
-             snps_only: bool = False) -> 'PrecisionOperator':
-        """
-        Load an LDGM from a single LD block's edgelist and snplist files.
-        
-        Args:
-            filepath: Path to the .edgelist file or directory containing it
-            snplist_path: Optional path to .snplist file or directory. If None, uses filepath
-            population: Optional population name to filter files
-            snps_only: Import snplist data for SNPs only (smaller memory usage)
-            
-        Returns:
-            PrecisionOperator instance with loaded precision matrix and variant info
-        """
-        from .io import load_ldgm
-        matrix, variant_info = load_ldgm(filepath, snplist_path, population, snps_only)
-        return PrecisionOperator(matrix, variant_info)

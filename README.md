@@ -47,17 +47,34 @@ Required system dependencies:
 ```python
 import sparseld as sld
 import numpy as np
+from sparseld import PrecisionOperator
 
-# Load LDGM data
-ldgm = sld.PrecisionOperator.load(
-    filepath="path/to/block.edgelist",
-    snplist_path="path/to/block.snplist"
+# Load LDGM data from a single file
+ldgm: PrecisionOperator = sld.load_ldgm(
+    filepath="data/test/1kg_chr1_16103_2888443.EAS.edgelist",
+    snplist_path="data/test/1kg_chr1_16103_2888443.snplist"
+)
+
+# Load multiple LDGMs from a directory
+ldgms: list[PrecisionOperator] = sld.load_ldgm(
+    filepath="data/test",
+    population="EUR"  # Try "EAS" or "EUR"
 )
 
 # Matrix-vector operations
 vector = np.random.randn(ldgm.shape[0])
 result = ldgm @ vector  # matrix-vector product
-solution = ldgm.solve(vector)  # solve linear system
+solution = ldgm.solve(result)  # solve linear system
+assert np.allclose(solution, vector)
+
+# Subset the rows/columns of the matrix so that it represents inv(correlation_matrix[indices, indices])
+indices = np.array([0, 2, 4])
+subsetted_ldgm = ldgm[indices]
+
+# Modify the diagonal elements of the subsetted matrix
+subsetted_ldgm.update_element(1, 1.23)  # add 1.23 to matrix[indices[1], indices[1]]
+subsetted_ldgm.update_matrix(np.array([1.1, 2.2, 3.3]))  # add [1.1, 2.2, 3.3] to diagonal of matrix[indices, indices]
+
 ```
 
 ### Likelihood Functions
@@ -72,44 +89,68 @@ pz = inv(R) * z  # precision-premultiplied effect sizes
 
 The main functions are:
 
-- `gaussian_likelihood(pz, precision_op)`: Computes the log-likelihood and log-determinant
-- `gaussian_likelihood_gradient(pz, precision_op, del_sigma_del_a=None)`: Computes the score (gradient) with respect to sigmasq or parameters a
+- `gaussian_likelihood(pz, precision_op)`: Computes the log-likelihood
+- `gaussian_likelihood_gradient(pz, precision_op, del_sigma_del_a=None)`: Computes the score (gradient) with respect to sigmasq or parameters `a`
 - `gaussian_likelihood_hessian(pz, precision_op, del_sigma_del_a)`: Computes the average information matrix
 
 The precision operator `precision_op` should contain the covariance matrix `M = sigmasq + P/n`, not just the precision matrix `P`.
 
+Example usage:
+
+```python
+import sparseld as sld
+import numpy as np
+from sparseld.likelihood import gaussian_likelihood, gaussian_likelihood_gradient
+
+# Load LDGM data
+ldgm = sld.load_ldgm(
+    filepath="data/test/1kg_chr1_16103_2888443.EAS.edgelist",
+    snplist_path="data/test/1kg_chr1_16103_2888443.snplist"
+)
+
+# Create some example GWAS data
+n_samples = 10_000
+n_variants = ldgm.shape[0]
+true_effects = np.random.normal(0, 0.1, size=n_variants)
+z_scores = ldgm @ true_effects + np.random.normal(0, 1/np.sqrt(n_samples), size=n_variants)
+pz = ldgm.solve(z_scores)  # precision-premultiplied z-scores
+
+# Compute log-likelihood
+ll = gaussian_likelihood(pz, ldgm)
+print(f"Log-likelihood: {ll:.2f}")
+
+# Compute gradient with respect to per-SNP variances
+del_sigma = np.eye(n_variants)  # derivative matrix for per-SNP variances
+gradient = gaussian_likelihood_gradient(pz, ldgm, del_sigma)
+print(f"Gradient shape: {gradient.shape}")  # One value per SNP
+```
+
 ### Simulation
 
-The package provides tools for simulating GWAS summary statistics under a mixture model with multiple components:
+The package provides tools for simulating GWAS summary statistics under a mixture model with multiple components. It supports the inclusion of arbitrary annotations, allele frequency-dependent architecture, and sparse architectures with effects drawn from a mixture of normal distributions:
 
 ```python
 import sparseld as sld
 
 # Load LDGM data
-ldgm = sld.PrecisionOperator.load(
-    filepath="path/to/block.edgelist",
-    snplist_path="path/to/block.snplist"
+ldgm = sld.load_ldgm(
+    filepath="data/test/1kg_chr1_16103_2888443.EAS.edgelist",
+    snplist_path="data/test/1kg_chr1_16103_2888443.snplist"
 )
 
 # Create simulator
 sim = sld.Simulate(
-    sample_size=10000,                  # GWAS sample size
-    heritability=0.3,                   # Total trait heritability
-    component_variance=[1.0, 0.1],      # Effect size variance for each component
-    component_weight=[0.01, 0.1],       # Mixture weights (must sum to ≤ 1)
-    alpha_param=-0.5,                   # Allele frequency dependence parameter
-    annotation_dependent_polygenicity=True  # Use annotations to modify causal proportions
+    sample_size=10_000,                  # GWAS sample size
+    heritability=0.1,                   # Total trait heritability
+    component_variance=[1.0, 0.1],      # Relative effect size variance for each component
+    component_weight=[0.001, 0.01],       # Mixture weights (must sum to ≤ 1)
+    alpha_param=-0.5                   # Allele frequency dependence parameter
 )
 
 # Simulate summary statistics for a list of LD blocks
 sumstats = sim.simulate([ldgm])  # Returns list of DataFrames with Z-scores
 ```
 
-The simulator supports:
-- Multiple mixture components with different effect size variances
-- Annotation-dependent architectures through a customizable link function
-- Allele frequency-dependent architectures via the alpha parameter
-- Option to model annotations as affecting either polygenicity or effect size magnitude
 
 ## File Formats
 
@@ -128,19 +169,3 @@ Tab-separated file with columns:
 3. Position
 4. Reference allele
 5. Alternative allele
-
-## Dependencies
-
-- Python 3.11
-- numpy >= 2.2.0
-- scipy >= 1.14.1
-- polars >= 1.17.1
-- scikit-sparse >= 0.4.12
-
-### Development Dependencies
-
-- pytest >= 7.4.0
-- pytest-cov >= 4.1.0
-- pytest-xdist >= 3.3.1
-- ruff >= 0.1.9
-- hypothesis >= 6.82.6

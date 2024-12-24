@@ -3,9 +3,10 @@
 import polars as pl
 import pytest
 from scipy.sparse import csr_matrix
+import time
 
 from sparseld import PrecisionOperator
-from sparseld.io import merge_snplists, merge_alleles
+from sparseld.io import merge_snplists, merge_alleles, load_ldgm
 
 
 def test_merge_alleles():
@@ -136,3 +137,46 @@ def test_merge_snplists_errors():
     sumstats = pl.DataFrame({'SNP': ['rs1']})
     with pytest.raises(ValueError, match=r'must contain CHR and POS columns.*Found columns: SNP'):
         merge_snplists([op1], sumstats, match_by_position=True)
+
+
+def test_load_ldgm():
+    """Test loading LDGM data from files and directories."""
+    import os
+    import numpy as np
+    from sparseld.io import load_ldgm
+    
+    # Test loading from single files
+    operator = load_ldgm(
+        filepath="data/test/1kg_chr1_16103_2888443.EAS.edgelist",
+        snplist_path="data/test/1kg_chr1_16103_2888443.snplist"
+    )
+    assert operator.shape[0] == operator.shape[1]  # Square matrix
+    assert np.all(operator.matrix.diagonal() != 0)  # No zeros on diagonal
+    
+    # Test loading from directory
+    operators = load_ldgm(
+        filepath="data/test",
+        population="EAS"
+    )
+    assert isinstance(operators, list)
+    assert len(operators) > 0
+    for op in operators:
+        assert op.shape[0] == op.shape[1]
+        assert np.all(op.matrix.diagonal() != 0)
+    
+    # Test loading from directory with different population
+    operators = load_ldgm(
+        filepath="data/test",
+        population="EUR"
+    )
+    assert isinstance(operators, list)
+    assert len(operators) > 0
+    for op in operators:
+        assert op.shape[0] == op.shape[1]
+        assert np.all(op.matrix.diagonal() != 0)
+    
+    # Test that population filter works
+    operators_eas = load_ldgm(filepath="data/test", population="EAS")
+    operators_eur = load_ldgm(filepath="data/test", population="EUR")
+    assert len(operators_eas) == len(operators_eur)  # Should have same number of files
+    assert operators_eas[0].shape != operators_eur[0].shape  # Different populations should have different data

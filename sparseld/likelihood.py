@@ -9,7 +9,7 @@ from .precision import PrecisionOperator
 def gaussian_likelihood(
     pz: np.ndarray,
     precision_op: PrecisionOperator,
-) -> Tuple[float, float]:
+) -> float:
     """Compute log-likelihood of GWAS summary statistics under a Gaussian model.
 
     The model is:
@@ -24,7 +24,7 @@ def gaussian_likelihood(
             M = sigmasq + P/n, not just P.
 
     Returns:
-        Tuple of (log-likelihood, log-determinant)
+        Log-likelihood value
 
     Raises:
         ValueError: If inputs are invalid or incompatible
@@ -42,7 +42,7 @@ def gaussian_likelihood(
     # Compute log likelihood
     ll = -0.5 * (n * np.log(2 * np.pi) + logdet + quad)
 
-    return ll, logdet
+    return ll
 
 
 def gaussian_likelihood_gradient(
