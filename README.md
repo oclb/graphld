@@ -1,6 +1,26 @@
 # SparseLD
 
-This module provides efficient sparse precision matrix operations for LDGM (Linkage Disequilibrium Graph Model) data using scipy's LinearOperator interface.
+This module provides efficient sparse precision matrix operations with linkage disequilibrium graphical models (LDGMs) and GWAS likelihood computations. This is a partial Python implementation of the MATLAB API from the [LDGM repository](https://github.com/awohns/ldgm). Some of the likelihood functions are based on MATLAB functions contained in the [graphREML repository](https://github.com/huilisabrina/graphREML). 
+
+For more information about LDGMs, see our [paper](https://pubmed.ncbi.nlm.nih.gov/37640881/):
+> Pouria Salehi Nowbandegani, Anthony Wilder Wohns, Jenna L. Ballard, Eric S. Lander, Alex Bloemendal, Benjamin M. Neale, and Luke J. O’Connor (2023) _Extremely sparse models of linkage disequilibrium in ancestrally diverse association studies_. Nat Genet. DOI: 10.1038/s41588-023-01487-8
+
+For documentation of the likelihood functions, see our [graphREML preprint](https://www.medrxiv.org/content/10.1101/2024.11.04.24316716v1):
+>Hui Li, Tushar Kamath, Rahul Mazumder, Xihong Lin, & Luke J. O'Connor (2024). _Improved heritability partitioning and enrichment analyses using summary statistics with graphREML_. medRxiv, 2024-11.
+
+
+Pre-computed LDGMs for the 1000 Genomes Project data are available at [Zenodo](https://zenodo.org/records/8157131). You can download them using the provided Makefile in the `data/` directory:
+
+```bash
+# Download LDGMs for all populations
+cd data && make download
+
+# Download only EUR population LDGMs
+cd data && make download_eur
+
+# Download all data including sample information and UK Biobank summary statistics
+cd data && make download_all
+```
 
 ## Table of Contents
 - [Overview](#overview)
