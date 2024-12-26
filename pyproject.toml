@@ -33,18 +33,18 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["sparseld"]
+packages = ["graphld"]
 
 [tool.pytest.ini_options]
 minversion = "7.4.0"
-addopts = "-ra -q --cov=sparseld --cov-report=term-missing"
+addopts = "-ra -q --cov=graphld --cov-report=term-missing"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 
 [tool.coverage.run]
-source = ["sparseld"]
+source = ["graphld"]
 omit = ["tests/*"]
 
 [tool.coverage.report]

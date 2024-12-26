@@ -4,7 +4,7 @@ import numpy as np
 import polars as pl
 from scipy.sparse import csr_matrix
 
-from sparseld import PrecisionOperator, Simulate
+from graphld import PrecisionOperator, Simulate
 
 
 def test_simulate_basic():

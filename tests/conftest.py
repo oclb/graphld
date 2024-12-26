@@ -1,11 +1,11 @@
-"""Shared test fixtures for sparseld."""
+"""Shared test fixtures for graphld."""
 
 import numpy as np
 import polars as pl
 import pytest
 from scipy.sparse import csr_matrix
 
-from sparseld import PrecisionOperator
+from graphld import PrecisionOperator
 
 @pytest.fixture
 def small_precision_matrix():

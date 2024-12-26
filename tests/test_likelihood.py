@@ -6,8 +6,8 @@ from scipy.sparse import csr_matrix
 from scipy.stats import multivariate_normal
 import pytest
 
-from sparseld.precision import PrecisionOperator, cholesky
-from sparseld.likelihood import gaussian_likelihood, gaussian_likelihood_gradient, gaussian_likelihood_hessian
+from graphld.precision import PrecisionOperator, cholesky
+from graphld.likelihood import gaussian_likelihood, gaussian_likelihood_gradient, gaussian_likelihood_hessian
 
 
 def test_gaussian_likelihood_basic():
@@ -132,7 +132,7 @@ def test_gaussian_likelihood_gradient():
     pz = matrix @ z / np.sqrt(nn)
 
     # Compute gradient
-    grad = gaussian_likelihood_gradient(pz, M)
+    grad = gaussian_likelihood_gradient(pz, M, n_samples=None)  # exact inversion
 
     # Verify gradient using finite differences
     eps = 1e-5

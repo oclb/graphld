@@ -6,9 +6,8 @@ from dataclasses import dataclass
 from typing import List, Optional, Callable, Union
 import numpy as np
 import polars as pl
-from scipy.stats import multivariate_normal
 
-from sparseld import PrecisionOperator
+from graphld import PrecisionOperator
 
 
 def default_link_fn(x: np.ndarray) -> np.ndarray:

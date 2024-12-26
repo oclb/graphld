@@ -69,3 +69,9 @@ MANIFEST
 # Luke's stuff
 MATLAB/*
 ai.txt
+
+# Large data files
+data/ldgms/
+data/ldgms/*
+data/sumstats/
+data/sumstats/*

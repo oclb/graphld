@@ -5,7 +5,7 @@ import polars as pl
 from scipy.sparse import csr_matrix
 import pytest
 
-from sparseld.precision import PrecisionOperator
+from graphld.precision import PrecisionOperator
 
 def test_precision_operator_basic():
     """Test basic functionality of PrecisionOperator."""
@@ -85,28 +85,9 @@ def test_precision_operator_solve():
     indptr = np.array([0, 2, 5, 7])
     matrix = csr_matrix((data, indices, indptr), shape=(3, 3))
     
-    # Verify matrix is correct
-    dense = matrix.todense()
-    expected = np.array([[2.0, -1.0, 0.0],
-                        [-1.0, 2.0, -1.0],
-                        [0.0, -1.0, 2.0]], dtype=np.float32)
-    np.testing.assert_array_almost_equal(dense, expected)
-    
-    # Verify that the matrix is symmetric and positive definite
-    np.testing.assert_array_almost_equal(dense, dense.T)
-    eigvals = np.linalg.eigvals(dense)
-    assert np.all(eigvals > 0)
-    
     # Verify solution with numpy for reference
+    dense = matrix.toarray()
     dense_solution = np.linalg.solve(dense, np.ones(3, dtype=np.float32))
-    np.testing.assert_array_almost_equal(dense_solution, np.array([1.5, 2.0, 1.5], dtype=np.float32))
-    
-    # Verify solution manually:
-    # [2 -1 0; -1 2 -1; 0 -1 2][x1; x2; x3] = [1; 1; 1]
-    # 2x1 - x2 = 1
-    # -x1 + 2x2 - x3 = 1
-    # -x2 + 2x3 = 1
-    # Solution: x1 = 1.5, x2 = 2.0, x3 = 1.5
     
     variant_info = pl.DataFrame({
         'variant_id': ['rs1', 'rs2', 'rs3'],
@@ -122,8 +103,7 @@ def test_precision_operator_solve():
     
     # The solution should satisfy Px = b
     # For this matrix, the exact solution is [1.5, 2.0, 1.5]
-    expected_solution = np.array([1.5, 2.0, 1.5], dtype=np.float32)
-    np.testing.assert_array_almost_equal(x_direct, expected_solution, decimal=5)
+    np.testing.assert_array_almost_equal(x_direct, dense_solution, decimal=5)
     
     # Test with subset
     P_sub = P[[0, 2]]
@@ -350,46 +330,64 @@ def test_precision_operator_errors():
     with pytest.raises(ValueError):
         P[0, 1]  # Only single-axis indexing is supported
 
-def test_precision_operator_load():
-    """Test loading LDGM from files."""
-    import os
-    from pathlib import Path
+def test_precision_operator_inverse_diagonal_methods():
+    """Test different methods for computing inverse diagonal elements."""
+    # Create a small test matrix to make exact computation feasible
+    n = 200
+    num_samples = 50
+    rng = np.random.RandomState(42)
     
-    # Get path to test data
-    data_dir = Path(__file__).parent.parent / 'data' / 'test'
+    # Create a random sparse positive definite matrix
+    A = rng.randn(n, n)
+    A = A @ A.T + np.arange(1,n+1) * np.eye(n)  # Make it positive definite
+    A = csr_matrix(A)
     
-    # Test loading EUR population data
-    eur_edgelist = str(data_dir / '1kg_chr1_2888443_4320284.EUR.edgelist')
-    eur_snplist = str(data_dir / '1kg_chr1_2888443_4320284.snplist')
+    # Create variant info DataFrame
+    variant_info = pl.DataFrame({
+        "chrom": ["1"] * n,
+        "pos": range(n),
+        "ref": ["A"] * n,
+        "alt": ["T"] * n,
+    })
     
-    eur_ldgm = PrecisionOperator.load(eur_edgelist, eur_snplist)
+    # Create PrecisionOperator
+    P = PrecisionOperator(A, variant_info)
     
-    # Basic checks for EUR data
-    assert isinstance(eur_ldgm, PrecisionOperator)
-    assert eur_ldgm.shape[0] == eur_ldgm.shape[1]  # Square matrix
-    assert eur_ldgm.variant_info.shape[0] > 0  # Has variant info
+    # Compute diagonal using all three methods
+    exact_diag = P.inverse_diagonal(method="exact")
+    hutch_diag = P.inverse_diagonal(method="hutchinson", n_samples=num_samples, seed=42)
+    # xnys_diag = P.inverse_diagonal(method="xnys", n_samples=num_samples, seed=42)
     
-    # Test loading EAS population data
-    eas_edgelist = str(data_dir / '1kg_chr1_2888443_4320284.EAS.edgelist')
-    eas_ldgm = PrecisionOperator.load(eas_edgelist, eur_snplist)  # Can reuse same snplist
+    # Compare trace estimates - they should be approximately equal
+    np.testing.assert_allclose(np.sum(hutch_diag), np.sum(exact_diag), rtol=0.01)
+    # np.testing.assert_allclose(xnys_diag, exact_diag, rtol=0.01)
     
-    # Basic checks for EAS data
-    assert isinstance(eas_ldgm, PrecisionOperator)
-    assert eas_ldgm.shape[0] == eas_ldgm.shape[1]
-    assert eas_ldgm.variant_info.shape[0] > 0
+    # Test with initialization
+    v = rng.choice([-1, 1], size=(n, num_samples))
+    pv = v.copy()
     
-    # Test loading with population filter
-    pop_ldgm = PrecisionOperator.load(data_dir, population='EUR')
-    assert isinstance(pop_ldgm, PrecisionOperator)
+    # Test hutchinson with initialization
+    hutch_diag_init, hutch_y = P.inverse_diagonal(
+        initialization=(v, pv),
+        method="hutchinson"
+    )
     
-    # Test SNPs only loading
-    snps_ldgm = PrecisionOperator.load(eur_edgelist, eur_snplist, snps_only=True)
-    assert isinstance(snps_ldgm, PrecisionOperator)
-    assert snps_ldgm.variant_info.shape[0] <= eur_ldgm.variant_info.shape[0]  # Should have fewer or equal variants
+    np.testing.assert_allclose(np.sum(hutch_diag_init), np.sum(exact_diag), rtol=0.01)
+
+    # # Test xnys with initialization
+    # xnys_diag_init, xnys_y = P.inverse_diagonal(
+    #     initialization=(v, pv),
+    #     method="xnys"
+    # )
+    
+    # Verify shapes of returned values
+    assert hutch_y.shape == v.shape
+    # assert xnys_y.shape == v.shape
+    
     
     # Test error cases
-    with pytest.raises(FileNotFoundError):
-        PrecisionOperator.load('nonexistent.edgelist')
-    
-    with pytest.raises(FileNotFoundError):
-        PrecisionOperator.load(eur_edgelist, 'nonexistent.snplist')
+    with pytest.raises(ValueError):
+        P.inverse_diagonal(method="invalid")
+        
+    with pytest.raises(ValueError):
+        P.inverse_diagonal(initialization=(v, pv), method="exact")

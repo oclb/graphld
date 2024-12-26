@@ -6,7 +6,9 @@ interface for efficient matrix-vector operations.
 """
 
 import numpy as np
+from numpy.random import f
 import polars as pl
+import scipy.linalg as sp
 from scipy.sparse import csr_matrix, spdiags, csc_matrix
 from scipy.sparse.linalg import LinearOperator, cg
 from typing import Optional, Union, Tuple, Any
@@ -270,7 +272,12 @@ class PrecisionOperator(LinearOperator):
         return PrecisionOperator(self._matrix, self.variant_info, indices, self._solver, 
                                self._cholesky_is_up_to_date)
     
-    def solve(self, b: np.ndarray, method: str = "direct", tol: float = 1e-5, callback=None) -> np.ndarray:
+    def solve(self, b: np.ndarray, 
+        method: str = "direct", 
+        tol: float = 1e-5, 
+        callback=None,
+        initialization: Optional[np.ndarray] = None
+        ) -> np.ndarray:
         """
         Solve linear system Px = b.
         
@@ -279,6 +286,7 @@ class PrecisionOperator(LinearOperator):
             method: Solution method ('direct' or 'pcg')
             tol: Tolerance for PCG solver
             callback: Optional callback for PCG solver
+            initialization: Optional initial guess for pcg
             
         Returns:
             Solution vector x
@@ -291,13 +299,12 @@ class PrecisionOperator(LinearOperator):
                 self.factor()
             solution = self._solver(y)
         elif method == "pcg":
-            solution = np.zeros_like(y)
-            for i in range(y.shape[1]):
-                # Use conjugate gradient for each right-hand side
-                x, info = cg(self, y[:, i], rtol=tol, callback=callback)  # Use self for matvec
-                if info != 0:
-                    raise RuntimeError(f"Conjugate gradient failed to converge for column {i}")
-                solution[:, i] = x
+            if self._solver is None:
+                self.factor()  # Some factorization is needed for use as a preconditioner
+            if self._cholesky_is_up_to_date:
+                solution = self._solver(y)
+            else:
+                solution = self._pcg(y, tol=tol, callback=callback, initialization=initialization)
         else:
             raise ValueError("Method must be either 'direct' or 'pcg'")
             
@@ -306,6 +313,25 @@ class PrecisionOperator(LinearOperator):
             
         return solution.reshape(b.shape)
     
+    def _pcg(self, b: np.ndarray, 
+            tol: float = 1e-5, 
+            callback=None, 
+            initialization: Optional[np.ndarray] = None
+            ) -> np.ndarray:
+
+        solution = np.zeros_like(y)
+        for i in range(y.shape[1]):
+            # Use conjugate gradient for each right-hand side
+            x0 = initialization[:,i] if initialization is not None else None
+            
+            preconditioner = LinearOperator((y.shape[0], y.shape[0]), matvec=self._solver)
+            x, info = cg(self, y[:, i], rtol=tol, callback=callback, x0=x0, M=preconditioner)
+            if info != 0:
+                raise RuntimeError(f"Conjugate gradient failed to converge for column {i}")
+            solution[:, i] = x
+
+        return solution
+
     def solve_L(self, b: np.ndarray) -> np.ndarray:
         """
         Solves Lx = b where L is the Cholesky factor of P = LL'.
@@ -329,8 +355,9 @@ class PrecisionOperator(LinearOperator):
     def inverse_diagonal(self, 
         initialization: Optional[Tuple[np.ndarray, np.ndarray]] = None,
         method: str = "hutchinson",
-        n_samples: int = 100,
-        seed: Optional[int] = None) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
+        n_samples: Optional[int] = None,
+        seed: Optional[int] = None
+        ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         """
         Compute the diagonal elements of the inverse of the precision matrix.
                 
@@ -355,44 +382,128 @@ class PrecisionOperator(LinearOperator):
         """
         if method not in ["exact", "hutchinson", "xnys"]:
             raise ValueError(f"Unknown method: {method}")
-            
+
         # Get the matrix size
         n = self._matrix.shape[0]
         
-        if method == "exact":
-            # Convert to dense matrix and invert
+        # Slow, exact inversion
+        if method.lower() == "exact":
+            if initialization is not None:
+                raise ValueError("Initialization not supported for exact method")
+
             dense_matrix = self._matrix.toarray()
             inv_matrix = np.linalg.inv(dense_matrix)
             diag = np.diag(inv_matrix)
             
             return diag if self._which_indices is None else diag[self._which_indices]
             
-        elif method == "hutchinson":
-            # Use provided probe vectors or generate new ones
-            if initialization is not None:
-                v, pv = initialization
-            else:
-                # Set random seed if provided
-                rng = np.random.RandomState(seed)
-                
-                # Generate Rademacher random vectors (+1/-1 with equal probability)
-                v = rng.choice([-1, 1], size=(n, n_samples))
-                
-                # Initialize P \ v as v
-                pv = v.copy()
-            
+        # Use a stochastic estimator
+        if initialization is not None:
+            v, pv = initialization
+        else:
+            rng = np.random.RandomState(seed)
+
+            # Rademacher random vectors
+            if n_samples is None:
+                n_samples = n // 2
+            v = rng.choice([-1.0, 1.0], size=(n, n_samples))
+            pv = v.copy()
+        
+        if method.lower() == "hutchinson":
             # Solve M * y = v for each probe vector
-            y = self.solve(pv)
+            y = self.solve(v, method="pcg", initialization=pv)
             
             # Estimate diagonal elements as average element-wise product of v_i * y_i
             diag_estimate = np.mean(v * y, axis=1)
+
+            print(f"Diagonal estimate: {diag_estimate}; Exact: {np.diag(np.linalg.inv(self._matrix.toarray()))}")
             
-            # If indices are specified, return only those elements
-            if self._which_indices is not None:
-                diag_estimate = diag_estimate[self._which_indices]
-            
-            # Return results based on whether initialization was provided
-            return (diag_estimate, y) if initialization is not None else diag_estimate
-            
-        else:  # xnys
-            raise NotImplementedError("XNYSTrace method not yet implemented")
+        elif method == "xnys":
+            raise NotImplementedError
+            # diag_estimate, y = self._xnystrace_estimator(v, initialization=pv)
+        else:
+            raise NotImplementedError
+
+        # If indices are specified, return only those elements
+        if self._which_indices is not None:
+            diag_estimate = diag_estimate[self._which_indices]
+        
+        # Return results based on whether initialization was provided
+        return (diag_estimate, y) if initialization is not None else diag_estimate
+        
+    def _xnystrace_estimator(self, 
+        samples: np.ndarray, 
+        initialization: np.ndarray, 
+        ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Compute the XNYSTrace estimator for the diagonal of the inverse of the precision matrix. 
+        This estimator improves on Hutchinson's method by correcting the implicit low-rank approximation
+        used in Hutchinson's method via orthogonalization of the number-of-samples by number-of-samples 
+        inner product matrix, as described in this paper:
+        https://arxiv.org/abs/2301.07825
+
+        Implementation by Nicholas Mancuso (https://github.com/quattro)
+        Args:
+            A: Linear operator representing the precision matrix
+            samples: array of probe vectors
+            initialization: array of initial values for self.solve(samples)
+        
+        Returns:
+            Tuple containing:
+            - Diagonal elements of the inverse of the precision matrix
+            - Solution to self.solve(samples), which can be used to initialize the next call
+        """
+        n, m = samples.shape
+        if m > n:
+            raise ValueError("Number of samples must not be greater than the size of the operator. ")
+
+        if self.shape[0] != n:
+            raise ValueError(f"Samples matrix has shape {samples.shape}, but operator has shape {self.shape}")
+        
+        Y = self.solve(samples, method="pcg", initialization=initialization)
+
+        # shift for numerical issues
+        nu = np.finfo(Y.dtype).eps * np.linalg.norm(Y, "fro") / np.sqrt(n)
+        Y = Y + samples * nu
+        Q, R = np.linalg.qr(Y)
+
+        # compute and symmetrize H, then take cholesky factor
+        H = samples.T @ Y
+        L = np.linalg.cholesky(0.5 * (H + H.T))
+    
+        # Nystrom approx is Q @ B @ B' Q'
+        B = sp.solve_triangular(L, R.T, lower=True)
+
+        W = Q.T @ samples
+
+        # invert L here, to simplify a few downstream calculations
+        invL = sp.solve_triangular(L, np.eye(m), lower=True)
+
+        # e_i ' inv(H) e_i
+        denom = np.sum(invL**2, axis=1)
+
+        # B' = R @ inv(L) => B' @ inv(L) = R @ inv(H)
+        RinvH = B.T @ invL
+
+        # X' @ Q @ R @ inv(H)
+        WtRinvH = W.T @ RinvH
+
+        # compute diagonal of leave-one-out low-rank nystrom approximation
+        low_rank_est = B**2 - RinvH**2 / denom
+
+        # compute hutchinson tr estimator on the residuals between A and leave-one-out nsytrom approx
+        # okay this took me a while to figure out, but in hindsight is ezpz. :D
+        # residuals = diag[X'(A - hat(A)_i)X] = diag[X'(A - hat(A) + rank_one_term)X]
+        #  = diag[X'(A - A X inv(H) X' A)X] + diag[X' rank_one_term X ]
+        # Notice that the first diag term cancels out due to,
+        #  = X' A X - X ' A X inv(H) X' A X = X' A X - X ' A X inv(X' A X) X' A X
+        #  = X' A X - X' A X = 0
+        # the remaining diag term can be computed as,
+        # WtRinvH**2 == [X' Q R inv(H) e_i e_i' inv(H) R' Q' X for e_i in I] and rescaled
+        resid_est = WtRinvH**2 / denom
+        
+        # combine low-rank nystrom trace estimate plus hutchinson on the nystrom residuals (and epsilon noise term)
+        estimates = low_rank_est + resid_est - nu * n
+        diag_est = np.mean(estimates, axis=1)
+
+        return diag_est, Y

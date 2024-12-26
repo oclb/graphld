@@ -5,8 +5,8 @@ import pytest
 from scipy.sparse import csr_matrix
 import time
 
-from sparseld import PrecisionOperator
-from sparseld.io import merge_snplists, merge_alleles, load_ldgm
+from graphld import PrecisionOperator
+from graphld.io import merge_snplists, merge_alleles, load_ldgm
 
 
 def test_merge_alleles():
@@ -143,9 +143,10 @@ def test_load_ldgm():
     """Test loading LDGM data from files and directories."""
     import os
     import numpy as np
-    from sparseld.io import load_ldgm
+    from graphld.io import load_ldgm
     
     # Test loading from single files
+
     operator = load_ldgm(
         filepath="data/test/1kg_chr1_16103_2888443.EAS.edgelist",
         snplist_path="data/test/1kg_chr1_16103_2888443.snplist"
