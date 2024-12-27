@@ -1,6 +1,7 @@
 """Functions for computing likelihoods in the LDGM model."""
 
-from typing import Optional, Tuple
+from typing import Optional
+
 import numpy as np
 
 from .precision import PrecisionOperator
@@ -14,7 +15,7 @@ def gaussian_likelihood(
 
     The model is:
         beta ~ MVN(0, D)
-        z|beta ~ MVN(sqrt(n)*R*beta, R) where R is the LD matrix, n is the sample size
+        z|beta ~ MVN(sqrt(n)*R*beta, R) where R is the LD matrix, n the sample size
         pz = inv(R) * z / sqrt(n)
         M = cov(pz) = D + inv(R)/n
 
@@ -54,33 +55,34 @@ def gaussian_likelihood_gradient(
 
         The model is:
         beta ~ MVN(0, D)
-        z|beta ~ MVN(sqrt(n)*R*beta, R) where R is the LD matrix, n is the sample size
+        z|beta ~ MVN(sqrt(n)*R*beta, R) where R is the LD matrix, n the sample size
         pz = inv(R) * z / sqrt(n)
         M = cov(pz) = D + inv(R)/n
 
     Args:
         pz: Array of precision-premultiplied GWAS effect size estimates
         M: PrecisionOperator. This should be the covariance of pz.
-        del_M_del_a (optional): Matrix of derivatives of the diagonal elements of M with respect to parameters a
-    
+        del_M_del_a: Matrix of derivatives of M's diagonal elements wrt parameters a
+        n_samples: Number of probe vectors for Hutchinson's method or xdiag
+        seed: Random seed for generating probe vectors
+        trace_estimator: Method for computing the trace estimator.
+            Options: "exact", "hutchinson", "xdiag"
+
     Returns:
-        Array of diagonal elements of the gradient with respect to the diagonal elements of M,
+        Array of diagonal elements of the gradient wrt M's diagonal elements,
         or with respect to parameters a if del_M_del_a is provided
-        
     """
     # Compute b = M^(-1) * pz
     b = M.solve(pz)
-    print(f"b = M\\(P@z) = {b}")
-    
+
     # Compute diagonal elements of M^(-1)
-    minv_diag = M.inverse_diagonal(method=trace_estimator, n_samples=n_samples, seed=seed)
-    print(f"MinvDiag = {minv_diag}")
-    
+    minv_diag = M.inverse_diagonal(method=trace_estimator,
+                                    n_samples=n_samples,
+                                    seed=seed)
+
     # Compute gradient diagonal elements
-    print(f"b^2 = {b**2}")
     node_grad = -0.5 * (minv_diag - b**2)
-    print(f"nodeGrad = 1/2 * (MinvDiag - b^2) = {node_grad}")
-    
+
     return node_grad if del_M_del_a is None else node_grad @ del_M_del_a
 
 
@@ -93,30 +95,29 @@ def gaussian_likelihood_hessian(
 
     The model is:
         beta ~ MVN(0, D)
-        z|beta ~ MVN(sqrt(n)*R*beta, R) where R is the LD matrix, n is the sample size
+        z|beta ~ MVN(sqrt(n)*R*beta, R) where R is the LD matrix, n the sample size
         pz = inv(R) * z / sqrt(n)
         M = cov(pz) = D + inv(R)/n
 
     Args:
         pz: Array of precision-premultiplied GWAS effect size estimates
         M: PrecisionOperator. This should be the covariance of pz.
-        del_M_del_a: Matrix of derivatives of the diagonal elements of M with respect to parameters a
+        del_M_del_a: Matrix of derivatives of M's diagonal elements wrt parameters a
 
     Returns:
-        Matrix of second derivatives with respect to parameters a
+        Matrix of second derivatives wrt parameters a
     """
-    
+
     # Compute b = M^(-1) * pz
     b = M.solve(pz)
-    
+
     # Compute b_scaled = b .* del_sigma_del_a
     b_scaled = b[:, np.newaxis] * del_M_del_a
-    
+
     # Compute M^(-1) * b_scaled
     minv_b_scaled = M.solve(b_scaled)
-    
+
     # Compute Hessian: -1/2 * b_scaled^T * M^(-1) * b_scaled
     hess = -0.5 * (b_scaled.T @ minv_b_scaled)
-    print(f"hess = {hess}")
-    
+
     return hess

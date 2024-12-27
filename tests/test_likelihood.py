@@ -2,12 +2,16 @@
 
 import numpy as np
 import polars as pl
-from scipy.sparse import csr_matrix
-from scipy.stats import multivariate_normal
 import pytest
+from scipy.sparse import csc_matrix
+from scipy.stats import multivariate_normal
 
-from graphld.precision import PrecisionOperator, cholesky
-from graphld.likelihood import gaussian_likelihood, gaussian_likelihood_gradient, gaussian_likelihood_hessian
+from graphld.likelihood import (
+    gaussian_likelihood,
+    gaussian_likelihood_gradient,
+    gaussian_likelihood_hessian,
+)
+from graphld.precision import PrecisionOperator
 
 
 def test_gaussian_likelihood_basic():
@@ -16,7 +20,7 @@ def test_gaussian_likelihood_basic():
     data = np.array([2.0, -1.0, -1.0, 2.0], dtype=np.float32)
     indices = np.array([0, 1, 0, 1])
     indptr = np.array([0, 2, 4])
-    matrix = csr_matrix((data, indices, indptr), shape=(2, 2))
+    matrix = csc_matrix((data, indices, indptr), shape=(2, 2))
 
     # Create variant info
     variant_info = pl.DataFrame({
@@ -50,7 +54,7 @@ def test_gaussian_likelihood_basic():
 def test_gaussian_likelihood_errors():
     """Test error handling in gaussian_likelihood."""
     # Create simple precision operator
-    matrix = csr_matrix(np.eye(2), dtype=np.float32)
+    matrix = csc_matrix(np.eye(2), dtype=np.float32)
     variant_info = pl.DataFrame({
         'variant_id': ['rs1', 'rs2'],
         'position': [1, 2],
@@ -73,7 +77,7 @@ def test_gaussian_likelihood_matches_scipy():
     data = np.array([2.0, -1.0, -1.0, 2.0], dtype=np.float64)
     indices = np.array([0, 1, 0, 1])
     indptr = np.array([0, 2, 4])
-    P = csr_matrix((data, indices, indptr), shape=(2, 2))
+    P = csc_matrix((data, indices, indptr), shape=(2, 2))
     sigmasq = np.array([0.1, 0.2], dtype=np.float64)
 
     # Create variant info
@@ -107,7 +111,7 @@ def test_gaussian_likelihood_gradient():
     data = np.array([2.0, -1.0, -1.0, 2.0], dtype=np.float32)
     indices = np.array([0, 1, 0, 1])
     indptr = np.array([0, 2, 4])
-    matrix = csr_matrix((data, indices, indptr), shape=(2, 2))
+    matrix = csc_matrix((data, indices, indptr), shape=(2, 2))
 
     # Create variant info
     variant_info = pl.DataFrame({
@@ -163,7 +167,7 @@ def test_gaussian_likelihood_hessian():
     data = np.array([2.0, -1.0, -1.0, 2.0], dtype=np.float32)
     indices = np.array([0, 1, 0, 1])
     indptr = np.array([0, 2, 4])
-    matrix = csr_matrix((data, indices, indptr), shape=(2, 2))
+    matrix = csc_matrix((data, indices, indptr), shape=(2, 2))
 
     # Create variant info
     variant_info = pl.DataFrame({
@@ -212,11 +216,11 @@ def test_gaussian_likelihood_gradient_methods():
     # Create a smaller test matrix for more reliable estimation
     n = 50  # Reduced from 100
     rng = np.random.RandomState(42)
-    
+
     # Create a random sparse positive definite matrix
     A = np.sqrt(2) * rng.randn(n, n)  # Match MATLAB's randn variance
     A = A @ A.T + np.diag(np.arange(1, n+1))  # Make it positive definite
-    matrix = csr_matrix(A)
+    matrix = csc_matrix(A)
 
     # Create variant info
     variant_info = pl.DataFrame({
@@ -228,7 +232,7 @@ def test_gaussian_likelihood_gradient_methods():
 
     # Create test data
     z = rng.randn(n)
-    
+
     # Create precision operator with some diagonal terms
     sigmasq = np.ones(n)  # Unit variances
     nn = 10.0
@@ -241,9 +245,14 @@ def test_gaussian_likelihood_gradient_methods():
     pz = matrix @ z / np.sqrt(nn)
 
     # Compute gradients using different methods
-    grad_exact = gaussian_likelihood_gradient(pz, M, trace_estimator="exact")
-    grad_hutch = gaussian_likelihood_gradient(pz, M, trace_estimator="hutchinson", n_samples=500, seed=42)
-    grad_xdiag = gaussian_likelihood_gradient(pz, M, trace_estimator="xdiag", n_samples=50, seed=42)  # Use fewer samples for xdiag
+    grad_exact = gaussian_likelihood_gradient(pz, M,
+                            trace_estimator="exact")
+    grad_hutch = gaussian_likelihood_gradient(pz, M,
+                            trace_estimator="hutchinson",
+                            n_samples=500, seed=42)
+    grad_xdiag = gaussian_likelihood_gradient(pz, M,
+                            trace_estimator="xdiag",
+                            n_samples=50, seed=42)
 
     # Compare gradients - they should be approximately equal
     # Use 15% relative tolerance since these are stochastic estimators

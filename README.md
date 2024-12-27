@@ -30,6 +30,7 @@ uv sync
 For development installation:
 ```bash
 uv sync --dev --extra dev
+uv run pytest # test suite
 ```
 
 ### Downloading LDGM precision matrices

@@ -7,6 +7,7 @@ from scipy.sparse import csr_matrix
 
 from graphld import PrecisionOperator
 
+
 @pytest.fixture
 def small_precision_matrix():
     """Create a small 3x3 precision matrix for testing."""
@@ -38,5 +39,5 @@ def random_precision_matrix():
     density = 0.1
     random_matrix = np.random.rand(n, n)
     random_matrix = (random_matrix + random_matrix.T) / 2  # Make symmetric
-    np.fill_diagonal(random_matrix, np.abs(random_matrix).sum(axis=0) + 1)  # Make diagonally dominant
+    np.fill_diagonal(random_matrix, np.abs(random_matrix).sum(axis=0) + 1)
     return csr_matrix(random_matrix * (np.random.rand(n, n) < density))
