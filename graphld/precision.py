@@ -47,8 +47,34 @@ class PrecisionOperator(LinearOperator):
         return self._matrix.shape
 
     @property
-    def dtype(self):
+    def dtype(self) -> np.dtype:
+        """Return the dtype of the precision matrix."""
         return self._matrix.dtype
+
+    @property
+    def nbytes(self) -> int:
+        """Return the total memory usage in bytes.
+        """
+        # Get size of the sparse matrix
+        matrix_size = (self._matrix.data.nbytes + 
+                      self._matrix.indices.nbytes + 
+                      self._matrix.indptr.nbytes)
+        
+        # Get size of the variant info DataFrame
+        variant_info_size = self.variant_info.estimated_size()
+        
+        # Get size of the Cholesky factor if it exists
+        factor_size = 0
+        if self._solver is not None:
+            L = self._solver.L()
+            factor_size = (L.data.nbytes + 
+                         L.indices.nbytes + 
+                         L.indptr.nbytes)
+        
+        # Get size of other attributes
+        other_size = 0 if self._which_indices is None else self._which_indices.nbytes
+        
+        return matrix_size + variant_info_size + factor_size + other_size
 
     @property
     def matrix(self):
@@ -135,6 +161,11 @@ class PrecisionOperator(LinearOperator):
         else:
             self._solver.cholesky_inplace(self._matrix)
         self._cholesky_is_up_to_date = True
+
+    def del_factor(self) -> None:
+        """Free the memory used by the Cholesky factorization."""
+        self._solver = None
+        self._cholesky_is_up_to_date = False
 
     def logdet(self) -> float:
         """Compute log determinant of the Schur complement.

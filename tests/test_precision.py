@@ -483,7 +483,7 @@ def test_precision_operator_scalar_multiplication():
     })
 
     # Create PrecisionOperator instance
-    P = PrecisionOperator(matrix.copy(), variant_info)
+    P = PrecisionOperator(matrix, variant_info)
 
     # Test vector for multiplication
     x = np.array([1.0, 2.0, 3.0])
@@ -544,3 +544,73 @@ def test_precision_operator_xdiag_small():
 
     # Verify that our final estimate matches MATLAB's
     np.testing.assert_allclose(xdiag_diag_est, matlab_diag, rtol=1e-4)
+
+def test_precision_operator_nbytes():
+    """Test memory usage calculation of PrecisionOperator."""
+    # Create a simple 3x3 precision matrix
+    data = np.array([2.0, -1.0, -1.0, 2.0, -1.0, 2.0])
+    indices = np.array([0, 1, 0, 1, 2, 2])
+    indptr = np.array([0, 2, 4, 6])
+    matrix = csc_matrix((data, indices, indptr), shape=(3, 3))
+
+    # Create variant info
+    variant_info = pl.DataFrame({
+        'variant_id': ['rs1', 'rs2', 'rs3'],
+        'position': [1, 2, 3],
+        'chromosome': ['1', '1', '1']
+    })
+
+    # Create PrecisionOperator instance
+    P = PrecisionOperator(matrix, variant_info)
+
+    # Get initial size
+    initial_size = P.nbytes
+
+    # Verify size includes matrix components
+    matrix_size = matrix.data.nbytes + matrix.indices.nbytes + matrix.indptr.nbytes
+    assert initial_size >= matrix_size
+
+    # Factor the matrix and check size increases
+    P.factor()
+    factored_size = P.nbytes
+    assert factored_size > initial_size
+
+    # Create a subset and verify size changes
+    P_sub = P[[0, 2]]
+    assert P_sub.nbytes != P.nbytes
+
+def test_precision_operator_delete_factor():
+    """Test deleting Cholesky factorization."""
+    # Create a simple 3x3 precision matrix
+    data = np.array([2.0, -1.0, -1.0, 2.0, -1.0, 2.0])
+    indices = np.array([0, 1, 0, 1, 2, 2])
+    indptr = np.array([0, 2, 4, 6])
+    matrix = csc_matrix((data, indices, indptr), shape=(3, 3))
+
+    # Create variant info
+    variant_info = pl.DataFrame({
+        'variant_id': ['rs1', 'rs2', 'rs3'],
+        'position': [1, 2, 3],
+        'chromosome': ['1', '1', '1']
+    })
+
+    # Create PrecisionOperator instance
+    P = PrecisionOperator(matrix, variant_info)
+
+    # Get initial size
+    initial_size = P.nbytes
+
+    # Factor the matrix and check size increases
+    P.factor()
+    factored_size = P.nbytes
+    assert factored_size > initial_size
+
+    # Delete the factor and verify size returns to initial
+    P.del_factor()
+    freed_size = P.nbytes
+    assert freed_size == initial_size
+
+    # Verify we can re-factor after deleting
+    P.factor()
+    refactored_size = P.nbytes
+    assert refactored_size == factored_size
