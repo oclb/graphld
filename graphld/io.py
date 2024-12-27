@@ -7,7 +7,7 @@ from typing import List, Optional, Union
 
 import numpy as np
 import polars as pl
-from scipy.sparse import csc_matrix
+from scipy.sparse import csr_matrix
 
 from .precision import PrecisionOperator
 
@@ -66,7 +66,7 @@ def load_ldgm(filepath: str, snplist_path: Optional[str] = None, population: Opt
                           new_columns=['i', 'j', 'value'])
 
     # Create sparse matrix
-    matrix = csc_matrix(
+    matrix = csr_matrix(
         (edgelist['value'].to_numpy(),
          (edgelist['i'].to_numpy(), edgelist['j'].to_numpy()))
     )
@@ -75,10 +75,10 @@ def load_ldgm(filepath: str, snplist_path: Optional[str] = None, population: Opt
     matrix_t = matrix.T
     diag_vals = matrix.diagonal().copy()
     matrix = matrix + matrix_t
-    matrix.setdiag(diag_vals / 2, k=0)
+    matrix.setdiag(diag_vals, k=0)
 
     # Verify diagonal values
-    assert np.allclose(matrix.diagonal(), diag_vals / 2), "Diagonal values not set correctly"
+    assert np.allclose(matrix.diagonal(), diag_vals), "Diagonal values not set correctly"
 
     # Create mask for rows/cols with nonzeros on diagonal
     diag = matrix.diagonal()
