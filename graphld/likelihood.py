@@ -48,6 +48,7 @@ def gaussian_likelihood_gradient(
     del_M_del_a: Optional[np.ndarray] = None,
     n_samples: Optional[int] = None,
     seed: Optional[int] = None,
+    trace_estimator: Optional[str] = "exact",
 ) -> np.ndarray:
     """Computes the score under a Gaussian model.
 
@@ -72,8 +73,7 @@ def gaussian_likelihood_gradient(
     print(f"b = M\\(P@z) = {b}")
     
     # Compute diagonal elements of M^(-1)
-    method = "exact" if n_samples is None else "hutchinson"
-    minv_diag = M.inverse_diagonal(method=method, n_samples=n_samples, seed=seed)
+    minv_diag = M.inverse_diagonal(method=trace_estimator, n_samples=n_samples, seed=seed)
     print(f"MinvDiag = {minv_diag}")
     
     # Compute gradient diagonal elements

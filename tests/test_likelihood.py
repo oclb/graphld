@@ -205,3 +205,47 @@ def test_gaussian_likelihood_hessian():
     matlab_hess = np.array([[-0.000347, -0.000029],
                             [-0.000029, -0.000347]])
     np.testing.assert_allclose(hess, matlab_hess, rtol=5e-3)
+
+
+def test_gaussian_likelihood_gradient_methods():
+    """Test that different diagonal estimation methods give similar gradients."""
+    # Create a smaller test matrix for more reliable estimation
+    n = 50  # Reduced from 100
+    rng = np.random.RandomState(42)
+    
+    # Create a random sparse positive definite matrix
+    A = np.sqrt(2) * rng.randn(n, n)  # Match MATLAB's randn variance
+    A = A @ A.T + np.diag(np.arange(1, n+1))  # Make it positive definite
+    matrix = csr_matrix(A)
+
+    # Create variant info
+    variant_info = pl.DataFrame({
+        'chrom': ['1'] * n,
+        'pos': range(n),
+        'ref': ['A'] * n,
+        'alt': ['T'] * n,
+    })
+
+    # Create test data
+    z = rng.randn(n)
+    
+    # Create precision operator with some diagonal terms
+    sigmasq = np.ones(n)  # Unit variances
+    nn = 10.0
+
+    # Create M = nn*sigmasq + P
+    M = PrecisionOperator(matrix.copy() / nn, variant_info)
+    M.update_matrix(sigmasq)
+
+    # Compute pz = P @ z
+    pz = matrix @ z / np.sqrt(nn)
+
+    # Compute gradients using different methods
+    grad_exact = gaussian_likelihood_gradient(pz, M, trace_estimator="exact")
+    grad_hutch = gaussian_likelihood_gradient(pz, M, trace_estimator="hutchinson", n_samples=500, seed=42)
+    grad_xdiag = gaussian_likelihood_gradient(pz, M, trace_estimator="xdiag", n_samples=50, seed=42)  # Use fewer samples for xdiag
+
+    # Compare gradients - they should be approximately equal
+    # Use 15% relative tolerance since these are stochastic estimators
+    np.testing.assert_allclose(grad_hutch, grad_exact, rtol=0.15)
+    np.testing.assert_allclose(grad_xdiag, grad_exact, rtol=0.15)
