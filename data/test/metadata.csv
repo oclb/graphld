@@ -1,0 +1,5 @@
+chrom,chromStart,chromEnd,name,snplistName,population,numVariants,numIndices,numEntries,info
+1,16103,2888443,1kg_chr1_16103_2888443.EAS.edgelist,1kg_chr1_16103_2888443.snplist,EAS,14357,5005,44290,""
+1,16103,2888443,1kg_chr1_16103_2888443.EUR.edgelist,1kg_chr1_16103_2888443.snplist,EUR,14357,5239,47268,""
+1,2888443,4320284,1kg_chr1_2888443_4320284.EUR.edgelist,1kg_chr1_2888443_4320284.snplist,EUR,13337,5354,49955,""
+1,2888443,4320284,1kg_chr1_2888443_4320284.EAS.edgelist,1kg_chr1_2888443_4320284.snplist,EAS,13337,4974,42330,""
