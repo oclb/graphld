@@ -1,6 +1,6 @@
 # GraphLD
 
-This package is a partial Python implementation of the MATLAB API from the [LDGM repository](https://github.com/awohns/ldgm). Some of the likelihood functions are based on MATLAB functions contained in the [graphREML repository](https://github.com/huilisabrina/graphREML).
+This repository provides Python functions for working with [LDGMs](https://github.com/awohns/ldgm). Some of the functions are translated from MATLAB functions contained in the [LDGM repository](https://github.com/awohns/ldgm/tree/main/MATLAB) and the [graphREML repository](https://github.com/huilisabrina/graphREML).
 
 For more information about LDGMs, see our [paper](https://pubmed.ncbi.nlm.nih.gov/37640881/):
 > Pouria Salehi Nowbandegani, Anthony Wilder Wohns, Jenna L. Ballard, Eric S. Lander, Alex Bloemendal, Benjamin M. Neale, and Luke J. O’Connor (2023) _Extremely sparse models of linkage disequilibrium in ancestrally diverse association studies_. Nat Genet. DOI: 10.1038/s41588-023-01487-8
@@ -11,6 +11,7 @@ For more information about LDGMs, see our [paper](https://pubmed.ncbi.nlm.nih.go
   - [Matrix Operations](#matrix-operations)
   - [Likelihood Functions](#likelihood-functions)
   - [Simulation](#simulation)
+- [Multiprocessing Framework](#multiprocessing-framework)
 - [File Formats](#file-formats)
 
 ## Installation
@@ -106,12 +107,13 @@ ldgm = gld.load_ldgm(
 # Create some example GWAS data
 n_samples = 10_000
 n_variants = ldgm.shape[0]
-true_effects = np.random.normal(0, 0.1, size=n_variants)
-z_scores = ldgm @ true_effects + np.random.normal(0, 1/np.sqrt(n_samples), size=n_variants)
+z_scores = np.random.normal(0, 1, size=n_variants)
 pz = ldgm.solve(z_scores)  # precision-premultiplied z-scores
 
 # Compute log-likelihood
-ll = gaussian_likelihood(pz, ldgm)
+M = ldgm / n_samples
+M.update_matrix(np.ones(n_variants)) # D = identity
+ll = gaussian_likelihood(pz, M)
 print(f"Log-likelihood: {ll:.2f}")
 
 # Compute gradient with respect to per-SNP variances
@@ -122,7 +124,7 @@ print(f"Gradient shape: {gradient.shape}")  # One value per SNP
 
 
 For background, see our [graphREML preprint](https://www.medrxiv.org/content/10.1101/2024.11.04.24316716v1):
->Hui Li, Tushar Kamath, Rahul Mazumder, Xihong Lin, & Luke J. O'Connor (2024). _Improved heritability partitioning and enrichment analyses using summary statistics with graphREML_. medRxiv, 2024-11.
+>Hui Li, Tushar Kamath, Rahul Mazumder, Xihong Lin, & Luke J. O’Connor (2024). _Improved heritability partitioning and enrichment analyses using summary statistics with graphREML_. medRxiv, 2024-11.
 
 
 ### Simulation
@@ -151,6 +153,118 @@ sim = gld.Simulate(
 sumstats = sim.simulate([ldgm])  # Returns list of DataFrames with Z-scores
 ```
 
+## Multiprocessing Framework
+
+We provide a base class, `ParallelProcessor`, which can be used to implement parallel algorithms with LDGMs. It splits work among processes, each of which loads a subset of LD blocks. It relies on Python's `multiprocessing` module. Three classes are provided:
+- `ParallelProcessor`: Base class for parallel processing
+- `WorkerManager`: Class for managing worker processes
+- `SharedData`: Class for storing shared memory arrays 
+
+### Usage
+
+Subclass `ParallelProcessor` and implement its three required methods:
+- `create_shared_memory`: Create `SharedMemory` objects that can be used to input data, output results, and communicate between processes
+- `process_block`: Do some computation for a single LD block, storing results in the `SharedMemory` object
+- `supervise`: Start workers and handle communication using the `WorkerManager`, return results by reading from the `SharedMemory` object
+Optionally also implement:
+- `prepare_block_data`: Prepare data specific to each block, to be passed to `process_block`
+
+Then call `ParallelProcessor.run` with the following arguments:
+- `ldgm_metadata_path`: Path to metadata file
+- `populations`: Populations to process; None -> all
+- `chromosomes`: Chromosomes to process; None -> all
+- `num_processes`: Number of processes to use
+- `**kwargs`: Additional arguments passed to `prepare_block_data`, `create_shared_memory`, and `supervise`
+
+For example:
+```python
+from graphld.multiprocessing import ParallelProcessor, SharedData
+import polars as pl
+
+class MyProcessor(ParallelProcessor):
+    @staticmethod
+    def create_shared_memory(metadat: pl.DataFrame, **kwargs) -> SharedData:
+        """Create shared memory arrays for input and output data.
+        
+        Args:
+            metadata: Polars DataFrame with LDGM metadata
+            **kwargs: Additional arguments passed from run()
+            
+        Returns:
+            SharedData object containing shared memory arrays
+        """
+        input_array_size = metadata['numIndices'].sum()
+        output_array_size = len(metadata)
+        return SharedData({
+            'input': input_array_size,
+            'output': output_array_size,
+            'some_shared_scalar': None
+        })
+
+    @staticmethod
+    def process_block(ldgm, flag, shared_data, block_offset, block_data):
+        """Process a single block of data.
+        
+        Args:
+            ldgm: LDGM object for this block
+            flag: Multiprocessing Value for worker control
+            shared_data: SharedData containing arrays
+            block_offset: Starting index for this block in shared arrays
+            block_data: Data specific to this block
+            
+        Returns:
+            Size of block processed
+        """
+        block_slice = slice(block_offset, block_offset + ldgm.shape[0])
+
+        # Note the slicing syntax
+        input_data = shared_data['input', block_slice]
+        
+        solution = ldgm.solve(input_data)
+        
+        shared_data['output', block_slice] = solution
+        
+    @staticmethod
+    def supervise(manager, shared_data, **kwargs):
+        """Supervise worker processes and handle results.
+        
+        Args:
+            manager: WorkerManager instance
+            shared_data: SharedData containing arrays
+            **kwargs: Additional arguments passed from run()
+
+        Returns:
+            Final results after all blocks processed
+        """
+        # Start workers and wait for completion
+        # If the workers need to communciate, you can call these functions in a loop
+        manager.start_workers()
+        manager.await_workers()
+        
+        # Return results array
+        return np.array(shared_data['output'])
+
+    @classmethod
+    def prepare_block_data(cls, metadata, **kwargs) -> list:
+        """Prepare data specific to each block.
+        
+        Args:
+            metadata: Polars DataFrame with LDGM metadata
+            **kwargs: Additional arguments passed from run()
+            
+        Returns:
+            List of data objects, one per block
+        """
+        block_data = []
+        for block in metadata.iter_rows(named=True):
+            # Create block-specific data (e.g., Polars DataFrame)
+            df = pl.DataFrame({
+                'position': range(block['numIndices']),
+                'metadata': ['block_info'] * block['numIndices']
+            })
+            block_data.append(df)
+        return block_data
+```
 
 ## File Formats
 
