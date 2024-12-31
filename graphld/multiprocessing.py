@@ -144,56 +144,75 @@ class ParallelProcessor(ABC):
     """
 
 
-    @staticmethod
+    @classmethod
     @abstractmethod
-    def create_shared_memory(metadata: pl.DataFrame, **kwargs) -> 'SharedData':
+    def create_shared_memory(cls, metadata: pl.DataFrame, **kwargs) -> 'SharedData':
         """Initialize shared memory and data structures.
 
         Args:
             metadata: polars dataframe continaing LDGM metadata for each LD block
-            **kwargs: Additional arguments
+            **kwargs: Additional arguments passed from run()
 
         Returns:
             SharedData object containing shared memory arrays
         """
         pass
 
-    @staticmethod
+    @classmethod
     @abstractmethod
-    def supervise(manager: WorkerManager, shared_data: SharedData) -> Any:
+    def supervise(cls, manager: WorkerManager, shared_data: SharedData, **kwargs) -> Any:
         """Monitor workers and process results.
 
         Args:
             manager: Worker manager for controlling processes
             shared_data: Shared memory data
+            **kwargs: Additional arguments passed from run()
 
         Returns:
             Results of the parallel computation
         """
         pass
 
-    @staticmethod
+    @classmethod
     @abstractmethod
-    def process_block(ldgm: PrecisionOperator,
+    def process_block(cls, ldgm: PrecisionOperator,
                     flag: Value,
                     shared_data: SharedData,
-                    block_offset: int) -> int:
+                    block_offset: int,
+                    block_data: Any = None):
         """Process single block.
 
         Args:
             ldgm: LDGM object
             flag: Worker flag
-            shared_data: Shared memory data
-            block_offset: Index that can be used to index into shared data
+            shared_data: Dictionary-like shared data object
+            block_offset: Offset for this block
+            block_data: Optional block-specific data from prepare_block_data
+
+        """
+        pass
+
+    @classmethod
+    def prepare_block_data(cls, metadata: pl.DataFrame, **kwargs) -> list:
+        """Prepare data specific to each block for processing.
+        
+        This method should return a list of length equal to the number of blocks,
+        where each element contains any block-specific data needed by process_block.
+        The base implementation returns None for each block.
+
+        Args:
+            metadata: Metadata DataFrame containing block information
+            **kwargs: Additional arguments passed from run()
 
         Returns:
-            Number of indices in the current block, which is used to update block_offset
+            List of block-specific data, length equal to number of blocks
         """
-        return ldgm.shape[0]
+        return [None] * len(metadata)
 
     @classmethod
     def worker(cls,
                files: list,
+               block_data: list,
                flag: Value,
                shared_data: SharedData,
                offset: int,
@@ -202,6 +221,7 @@ class ParallelProcessor(ABC):
 
         Args:
             files: List of LDGM files to process
+            block_data: List of block-specific data
             flag: Shared flag for worker control
             shared_data: Shared memory data
             offset: In shared data, where to start processing
@@ -224,8 +244,9 @@ class ParallelProcessor(ABC):
 
                 # Process all blocks and collect solutions
                 block_offset = offset
-                for ldgm in ldgms:
-                    block_offset += cls.process_block(ldgm, flag, shared_data, block_offset)
+                for ldgm, data in zip(ldgms, block_data):
+                    cls.process_block(ldgm, flag, shared_data, block_offset, data)
+                    block_offset += ldgm.shape[0]
 
                 # Signal completion
                 flag.value = 0
@@ -233,7 +254,6 @@ class ParallelProcessor(ABC):
         except Exception as e:
             print(f"Error in worker: {e}")
             flag.value = -1
-
 
     @classmethod
     def _split_blocks(cls,
@@ -286,7 +306,7 @@ class ParallelProcessor(ABC):
         """Run parallel computation.
 
         Args:
-            input_path: Path to metadata file
+            ldgm_metadata_path: Path to metadata file
             populations: Populations to process; None -> all
             chromosomes: Chromosomes to process; None -> all
             num_processes: Number of processes to use
@@ -322,21 +342,21 @@ class ParallelProcessor(ABC):
 
         # Split files according to block ranges
         process_files = [edgelist_files[start:end] for start, end in process_block_ranges]
+        block_data = cls.prepare_block_data(metadata, **kwargs)
+        process_block_data = [block_data[start:end] for start, end in process_block_ranges]
 
         # Create worker manager
         manager = WorkerManager(num_processes)
 
         # Start workers
-        metadata.get_column('numIndices').to_numpy()
         for i in range(num_processes):
             manager.add_process(
                 target=cls.worker,
-                args=(process_files[i], manager.flags[i], shared_data, process_offsets[i])
+                args=(process_files[i], process_block_data[i], manager.flags[i], shared_data, process_offsets[i])
             )
-            start, end = process_block_ranges[i]
 
         # Run supervisor process
-        results = cls.supervise(manager, shared_data)
+        results = cls.supervise(manager, shared_data, **kwargs)
 
         # Cleanup
         manager.shutdown()

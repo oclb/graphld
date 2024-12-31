@@ -2,6 +2,10 @@
 
 """Test multiprocessing framework."""
 
+NUM_SOLVES = 1
+NUM_FACTORS = 1
+NUM_PROCESSES = 2
+
 import time
 from multiprocessing import Array
 from pathlib import Path
@@ -34,25 +38,28 @@ class SolveProcessor(ParallelProcessor):
         return shared_data
 
     @staticmethod
-    def supervise(manager: WorkerManager, shared_data: SharedData):
+    def supervise(manager: WorkerManager, shared_data: SharedData, **kwargs):
         """Wait for all workers to finish and reshape results."""
         # Wait for workers to finish
-        t = time.time()
         manager.start_workers()
         manager.await_workers()
         return shared_data['solution']
 
     @staticmethod
-    def process_block(ldgm, flag, shared_data, block_offset):
+    def process_block(ldgm, flag, shared_data, block_offset, block_data):
         """Process single block by solving with random vectors."""
         # Get input vector slice for this block
         vector = shared_data[('input', slice(block_offset, block_offset + ldgm.shape[0]))]
 
-        # Solve and store solution
-        solution = ldgm.solve(vector)
+        for i in range(NUM_FACTORS):
+            ldgm.del_factor()
+            ldgm.factor()
+
+        for i in range(NUM_SOLVES):
+            solution = ldgm.solve(vector)
 
         # Store solution in shared memory
-        shared_data['solution', slice(block_offset, block_offset + solution.size)] = solution
+        shared_data[('solution', slice(block_offset, block_offset + solution.size))] = solution
 
         return solution.size
 
@@ -85,9 +92,14 @@ def solve_serial(metadata_file, population=None, chromosomes=None, seed=None):
         # Load and factor LDGM
         ldgm = load_ldgm(str(ldgm_path / block['name']))
 
+        for i in range(NUM_FACTORS):
+            ldgm.del_factor()
+            ldgm.factor()
+
         # Get input slice and solve - match parallel version exactly
         vector = input_array[block_offset:block_offset + ldgm.shape[0]]
-        solution = ldgm.solve(vector)
+        for i in range(NUM_SOLVES):
+            solution = ldgm.solve(vector)
 
         # Store solution
         solution_array[block_offset:block_offset + solution.size] = solution
@@ -110,7 +122,7 @@ def test_multiprocessing():
     # Run parallel version with same input array
     parallel_results = SolveProcessor.run(
         ldgm_metadata_path=metadata_file,
-        num_processes=2,
+        num_processes=NUM_PROCESSES,
         seed=seed  # Pass pre-created shared data
     )
 

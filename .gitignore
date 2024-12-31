@@ -75,3 +75,6 @@ data/ldgms/
 data/ldgms/*
 data/sumstats/
 data/sumstats/*
+
+# Notebooks
+notebooks/*.ipynb
