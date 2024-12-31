@@ -154,6 +154,41 @@ sumstats = sim.simulate([ldgm])  # Returns list of DataFrames with Z-scores
 
 ## File Formats
 
+### LDGM Metadata File (.csv)
+
+CSV file containing information about LDGM blocks with columns:
+1. `chrom`: Chromosome number
+2. `chromStart`: Start position of the block
+3. `chromEnd`: End position of the block
+4. `name`: LDGM filename
+5. `snplistName`: Name of the corresponding snplist file
+6. `population`: Population identifier (e.g., EUR, EAS)
+7. `numVariants`: Number of variants in the block
+8. `numIndices`: Number of non-zero indices in the precision matrix
+9. `numEntries`: Number of non-zero entries in the precision matrix
+10. `info`: Additional information (optional)
+
+Example usage:
+```python
+import graphld as gld
+
+# Read metadata with optional filtering
+metadata = gld.read_ldgm_metadata(
+    metadata_file="data/metadata.csv",
+    populations=["EUR", "EAS"],       # Filter by populations
+    chromosomes=[1, 2],               # Filter by chromosomes
+    max_blocks=100                    # Limit number of blocks
+)
+
+# Partition variant data into LDGM blocks
+blocks = gld.partition_variants(
+    ldgm_metadata=metadata,           # LDGM block metadata
+    variant_data=variants,            # Polars DataFrame with variant data
+    chrom_col="chromosome",           # Optional column name for chromosome
+    pos_col="position"                # Optional column name for position
+)
+```
+
 ### Edgelist File (.edgelist)
 
 Tab-separated file containing one edge per line with columns:
