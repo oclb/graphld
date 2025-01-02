@@ -91,7 +91,7 @@ def test_merge_snplists():
 
     # Test matching by position
     merged_op = merge_snplists(op1, sumstats, match_by_position=True,
-                             chr_col='CHR', pos_col='POS')
+                              pos_col='POS')
     assert merged_op.shape[0] == 3  # positions 100, 200, 300
     assert len(merged_op.variant_info) == 3
     assert list(merged_op.variant_info['position']) == [100, 200, 300]
@@ -141,9 +141,11 @@ def test_merge_snplists():
     
     merged_op = merge_snplists(op2, sumstats2)
     assert 'is_representative' in merged_op.variant_info.columns
-    assert len(merged_op.variant_info) == 3  # Should only keep first occurrence of each index
-    assert list(merged_op.variant_info['is_representative']) == [1, 1, 1]
-    assert list(merged_op.variant_info['site_ids']) == ['rs1', 'rs2', 'rs3']  # Should keep first occurrence
+    assert len(merged_op.variant_info) == 5  # Should keep all variants
+    # First occurrence of each index should be marked as representative
+    assert list(merged_op.variant_info['is_representative']) == [1, 0, 1, 0, 1]
+    # All variants should be retained in order
+    assert list(merged_op.variant_info['site_ids']) == ['rs1', 'rs1_dup', 'rs2', 'rs2_dup', 'rs3']
 
     # Test allelic columns
     merged_op = merge_snplists(op1, sumstats,
@@ -177,10 +179,10 @@ def test_merge_snplists_errors():
     with pytest.raises(ValueError, match=r'must contain SNP column.*Found columns: CHR, POS'):
         merge_snplists([op1], sumstats)
 
-    # Test missing position columns
+    # Test position matching without required columns
     sumstats = pl.DataFrame({'SNP': ['rs1']})
-    with pytest.raises(ValueError, match=r'must contain CHR and POS columns.*Found columns: SNP'):
-        merge_snplists([op1], sumstats, match_by_position=True)
+    with pytest.raises(ValueError, match=r'must contain POS column.*Found columns: SNP'):
+        merge_snplists(op1, sumstats, match_by_position=True)
 
     # Test error on missing append columns
     with pytest.raises(ValueError, match="Requested columns not found in sumstats"):

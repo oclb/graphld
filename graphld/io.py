@@ -163,7 +163,6 @@ def merge_snplists(precision_op: PrecisionOperator,
                    ref_allele_col: str = 'A1',
                    alt_allele_col: str = 'A2',
                    match_by_position: bool = False,
-                   chr_col: str = 'CHR',
                    pos_col: str = 'POS',
                    table_format: str = '',
                    add_cols: list[str] = None,
@@ -177,7 +176,6 @@ def merge_snplists(precision_op: PrecisionOperator,
         ref_allele_col: Column name containing reference allele
         alt_allele_col: Column name containing alternative allele
         match_by_position: Whether to match SNPs by position instead of ID
-        chr_col: Column name containing chromosome
         pos_col: Column name containing position
         table_format: Optional file format specification (e.g., 'vcf')
         add_cols: Optional list of column names from sumstats to append to variant_info
@@ -189,15 +187,15 @@ def merge_snplists(precision_op: PrecisionOperator,
     """
     # Handle VCF format
     if table_format.lower() == 'vcf':
-        variant_id_col = 'ID'
-        ref_allele_col = 'A1'
-        alt_allele_col = 'A2'
+        match_by_position = True
+        pos_col = 'POS'
+        ref_allele_col = 'REF'
+        alt_allele_col = 'ALT'
 
     # Validate inputs
     if match_by_position:
-        cols = [chr_col, pos_col]
-        if not all(col in sumstats.columns for col in cols):
-            msg = (f"Summary statistics must contain {chr_col} and {pos_col} columns "
+        if pos_col not in sumstats.columns:
+            msg = (f"Summary statistics must contain {pos_col} column "
                   f"for position matching. Found columns: {', '.join(sumstats.columns)}")
             raise ValueError(msg)
     else:
@@ -268,17 +266,22 @@ def merge_snplists(precision_op: PrecisionOperator,
         merged
         .sort('index')
         .with_columns(
-            pl.lit(1).cast(pl.Int8).alias('is_representative')
+            pl.col('index').is_first_distinct().cast(pl.Int8).alias('is_representative')
         )
-        .group_by('index')
-        .agg(
-            pl.all().first()
-        )
-        .sort('index')
     )
-        
+    
     # Create new PrecisionOperator with merged variant info
-    result = precision_op[np.unique(merged['index'].to_numpy())]
+    unique_indices = np.unique(merged['index'].to_numpy())
+    result = precision_op[unique_indices]
+    
+    # Create mapping from old indices to new contiguous ones
+    index_map = {old_idx: new_idx for new_idx, old_idx in enumerate(unique_indices)}
+    
+    # Update indices in merged data to be contiguous using efficient replace_strict
+    merged = merged.with_columns(
+        pl.col('index').replace_strict(index_map).alias('index')
+    )
+    
     result.variant_info = merged
     return result
 
