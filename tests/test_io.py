@@ -70,58 +70,92 @@ def test_merge_snplists():
         'deriv_alleles': ['T', 'G', 'G']
     })
     m1 = csr_matrix((3, 3))
-
-    # Block 2: 2 variants
-    v2 = pl.DataFrame({
-        'index': [0, 1],
-        'site_ids': ['rs4', 'rs5'],
-        'position': [400, 500],
-        'chr': [1, 1],
-        'anc_alleles': ['A', 'T'],
-        'deriv_alleles': ['G', 'C']
-    })
-    m2 = csr_matrix((2, 2))
-
-    # Create PrecisionOperators
     op1 = PrecisionOperator(m1, v1)
-    op2 = PrecisionOperator(m2, v2)
 
     # Create test summary statistics
     sumstats = pl.DataFrame({
-        'SNP': ['rs1', 'rs2', 'rs3', 'rs4', 'rs6'],  # rs6 doesn't exist in blocks
+        'SNP': ['rs1', 'rs2', 'rs3', 'rs4', 'rs6'],  # rs4, rs6 don't exist in block
         'A1': ['A', 'C', 'GTC', 'A', 'A'],
         'A2': ['T', 'G', 'G', 'G', 'C'],
         'CHR': [1, 1, 1, 1, 1],
-        'POS': [100, 200, 300, 400, 600]
+        'POS': [100, 200, 300, 400, 600],
+        'BETA': [0.1, 0.2, 0.3, 0.4, 0.5],
+        'SE': [0.01, 0.02, 0.03, 0.04, 0.05]
     })
 
     # Test matching by variant ID
-    merged = merge_snplists([op1, op2], sumstats)
-    assert len(merged) == 2
-    assert len(merged[0]) == 3  # rs1, rs2, rs3
-    assert len(merged[1]) == 1  # rs4
-    assert op1._which_indices.tolist() == [0, 1, 2]
-    assert op2._which_indices.tolist() == [0]
+    merged_op = merge_snplists(op1, sumstats)
+    assert merged_op.shape[0] == 3  # rs1, rs2, rs3
+    assert len(merged_op.variant_info) == 3
+    assert list(merged_op.variant_info['site_ids']) == ['rs1', 'rs2', 'rs3']
 
     # Test matching by position
-    merged = merge_snplists([op1, op2], sumstats, match_by_position=True,
-                           chr_col='CHR', pos_col='POS')
-    assert len(merged) == 2
-    assert len(merged[0]) == 3  # positions 100, 200, 300
-    assert len(merged[1]) == 1  # position 400
+    merged_op = merge_snplists(op1, sumstats, match_by_position=True,
+                             chr_col='CHR', pos_col='POS')
+    assert merged_op.shape[0] == 3  # positions 100, 200, 300
+    assert len(merged_op.variant_info) == 3
+    assert list(merged_op.variant_info['position']) == [100, 200, 300]
 
     # Test allele matching
-    merged = merge_snplists([op1, op2], sumstats, ref_allele_col='A1', alt_allele_col='A2')
-    assert len(merged) == 2
-    assert len(merged[0]) == 3  # All variants match alleles
-    assert len(merged[1]) == 1  # rs4 matches alleles
+    merged_op = merge_snplists(op1, sumstats, ref_allele_col='A1', alt_allele_col='A2')
+    assert merged_op.shape[0] == 3  # All variants match alleles
+    assert len(merged_op.variant_info) == 3
 
     # Test VCF format
     sumstats_vcf = sumstats.rename({'SNP': 'ID'})
-    merged = merge_snplists([op1, op2], sumstats_vcf, table_format='vcf')
-    assert len(merged) == 2
-    assert len(merged[0]) == 3
-    assert len(merged[1]) == 1
+    merged_op = merge_snplists(op1, sumstats_vcf, table_format='vcf')
+    assert merged_op.shape[0] == 3
+    assert len(merged_op.variant_info) == 3
+
+    # Test appending columns
+    merged_op = merge_snplists(op1, sumstats, add_cols=['BETA', 'SE'])
+    assert merged_op.shape[0] == 3
+    assert len(merged_op.variant_info) == 3
+    assert 'BETA' in merged_op.variant_info.columns
+    assert 'SE' in merged_op.variant_info.columns
+    assert list(merged_op.variant_info['BETA']) == [0.1, 0.2, 0.3]
+    assert list(merged_op.variant_info['SE']) == [0.01, 0.02, 0.03]
+
+    # Test is_representative column with duplicate indices
+    v2 = pl.DataFrame({
+        'index': [0, 0, 1, 1, 2],  # Duplicated indices
+        'site_ids': ['rs1', 'rs1_dup', 'rs2', 'rs2_dup', 'rs3'],
+        'position': [100, 100, 200, 200, 300],
+        'chr': [1, 1, 1, 1, 1],
+        'anc_alleles': ['A', 'A', 'C', 'C', 'GTC'],
+        'deriv_alleles': ['T', 'T', 'G', 'G', 'G']
+    })
+    m2 = csr_matrix((5, 5))
+    op2 = PrecisionOperator(m2, v2)
+    
+    # Create matching sumstats
+    sumstats2 = pl.DataFrame({
+        'SNP': ['rs1', 'rs1_dup', 'rs2', 'rs2_dup', 'rs3'],
+        'A1': ['A', 'A', 'C', 'C', 'GTC'],
+        'A2': ['T', 'T', 'G', 'G', 'G'],
+        'CHR': [1, 1, 1, 1, 1],
+        'POS': [100, 100, 200, 200, 300],
+        'BETA': [0.1, 0.15, 0.2, 0.25, 0.3],
+        'SE': [0.01, 0.015, 0.02, 0.025, 0.03]
+    })
+    
+    merged_op = merge_snplists(op2, sumstats2)
+    assert 'is_representative' in merged_op.variant_info.columns
+    assert len(merged_op.variant_info) == 3  # Should only keep first occurrence of each index
+    assert list(merged_op.variant_info['is_representative']) == [1, 1, 1]
+    assert list(merged_op.variant_info['site_ids']) == ['rs1', 'rs2', 'rs3']  # Should keep first occurrence
+
+    # Test allelic columns
+    merged_op = merge_snplists(op1, sumstats,
+                              ref_allele_col='A1',
+                              alt_allele_col='A2',
+                              add_allelic_cols=['BETA'])
+    assert 'phase' in merged_op.variant_info.columns
+    assert 'BETA' in merged_op.variant_info.columns
+    # Check that BETA has been phased correctly
+    expected_beta = [0.1, 0.2, 0.3]  # Original values
+    actual_beta = list(merged_op.variant_info['BETA'])
+    assert all(abs(a - e) < 1e-10 for a, e in zip(actual_beta, expected_beta))
 
 
 def test_merge_snplists_errors():
@@ -147,6 +181,10 @@ def test_merge_snplists_errors():
     sumstats = pl.DataFrame({'SNP': ['rs1']})
     with pytest.raises(ValueError, match=r'must contain CHR and POS columns.*Found columns: SNP'):
         merge_snplists([op1], sumstats, match_by_position=True)
+
+    # Test error on missing append columns
+    with pytest.raises(ValueError, match="Requested columns not found in sumstats"):
+        merge_snplists(op1, sumstats, add_cols=['NONEXISTENT'])
 
 
 def test_load_ldgm():

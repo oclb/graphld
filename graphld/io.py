@@ -157,18 +157,21 @@ def merge_alleles(anc_alleles: pl.Series, deriv_alleles: pl.Series,
     return pl.Series(phase)
 
 
-def merge_snplists(precision_ops: list, sumstats: pl.DataFrame, *,
+def merge_snplists(precision_op: PrecisionOperator,
+                   sumstats: pl.DataFrame, *,
                    variant_id_col: str = 'SNP',
                    ref_allele_col: str = 'A1',
                    alt_allele_col: str = 'A2',
                    match_by_position: bool = False,
                    chr_col: str = 'CHR',
                    pos_col: str = 'POS',
-                   table_format: str = '') -> list[pl.DataFrame]:
-    """Merge PrecisionOperator instances with summary statistics DataFrame.
+                   table_format: str = '',
+                   add_cols: list[str] = None,
+                   add_allelic_cols: list[str] = None) -> PrecisionOperator:
+    """Merge a PrecisionOperator instance with summary statistics DataFrame.
 
     Args:
-        precision_ops: List of PrecisionOperator instances
+        precision_op: PrecisionOperator instance
         sumstats: Summary statistics DataFrame
         variant_id_col: Column name containing variant IDs
         ref_allele_col: Column name containing reference allele
@@ -177,9 +180,12 @@ def merge_snplists(precision_ops: list, sumstats: pl.DataFrame, *,
         chr_col: Column name containing chromosome
         pos_col: Column name containing position
         table_format: Optional file format specification (e.g., 'vcf')
+        add_cols: Optional list of column names from sumstats to append to variant_info
+        add_allelic_cols: Optional list of column names from sumstats to append to variant_info,
+            multiplied by the phase (-1 or 1) to align with ancestral/derived alleles
 
     Returns:
-        List of merged summary statistics DataFrames, one per precision operator
+        Modified PrecisionOperator with merged variant info and appended columns
     """
     # Handle VCF format
     if table_format.lower() == 'vcf':
@@ -200,26 +206,16 @@ def merge_snplists(precision_ops: list, sumstats: pl.DataFrame, *,
                   f"Found columns: {', '.join(sumstats.columns)}")
             raise ValueError(msg)
 
-    # Concatenate all variant info
-    variant_infos = [op.variant_info for op in precision_ops]
-
-    # Add block index to each variant info
-    for i, vi in enumerate(variant_infos):
-        vi = vi.with_columns(pl.lit(i).alias('block_index'))
-        variant_infos[i] = vi
-
-    all_variants = pl.concat(variant_infos)
-
     # Match variants
     if match_by_position:
-        merged = all_variants.join(
+        merged = precision_op.variant_info.join(
             sumstats,
-            left_on=['chr', 'position'],
-            right_on=[chr_col, pos_col],
+            left_on=['position'],
+            right_on=[pos_col],
             how='inner'
         )
     else:
-        merged = all_variants.join(
+        merged = precision_op.variant_info.join(
             sumstats,
             left_on='site_ids',
             right_on=variant_id_col,
@@ -227,23 +223,63 @@ def merge_snplists(precision_ops: list, sumstats: pl.DataFrame, *,
         )
 
     # Check alleles if provided
+    phase = None
     if all(col in sumstats.columns for col in [ref_allele_col, alt_allele_col]):
         phase = merge_alleles(
             merged['anc_alleles'],
             merged['deriv_alleles'],
             merged[ref_allele_col],
             merged[alt_allele_col]
-        )
+        ).alias('phase')
         merged = merged.with_columns(phase)
-        merged = merged.filter(phase != 0)
+        merged = merged.filter(pl.col('phase') != 0)
 
-    # Split back into blocks and update which_indices
-    result = []
-    for i, op in enumerate(precision_ops):
-        block_variants = merged.filter(pl.col('block_index') == i)
-        op._which_indices = block_variants['index'].to_numpy()
-        result.append(block_variants)
+    # Validate and add requested columns
+        # Check allelic columns requirements
+    if add_allelic_cols and phase is None:
+        msg = ("Cannot add allelic columns without allele information. "
+              "Please provide ref_allele_col and alt_allele_col.")
+        raise ValueError(msg)
+        
+    add_cols = add_cols or []
+    add_allelic_cols = add_allelic_cols or []
+    new_cols = {}
+    
+    # Check all columns exist
+    missing_cols = [col for col in add_cols + add_allelic_cols if col not in sumstats.columns]
+    if missing_cols:
+        msg = (f"Requested columns not found in sumstats: {', '.join(missing_cols)}. "
+              f"Available columns: {', '.join(sumstats.columns)}")
+        raise ValueError(msg)
+    
+    # Add columns with appropriate transformations
+    for col in add_cols:
+        new_cols[col] = pl.col(col)
+    
+    for col in add_allelic_cols:
+        new_cols[col] = pl.col(col) * pl.col('phase')
 
+    # Add all new columns at once if any
+    if new_cols:
+        merged = merged.with_columns(**new_cols)
+        
+    # Sort by index and add is_representative column
+    merged = (
+        merged
+        .sort('index')
+        .with_columns(
+            pl.lit(1).cast(pl.Int8).alias('is_representative')
+        )
+        .group_by('index')
+        .agg(
+            pl.all().first()
+        )
+        .sort('index')
+    )
+        
+    # Create new PrecisionOperator with merged variant info
+    result = precision_op[np.unique(merged['index'].to_numpy())]
+    result.variant_info = merged
     return result
 
 
@@ -453,7 +489,7 @@ def read_ldgm_metadata(
                 populations = [populations]
             df = df.filter(pl.col('population').is_in(populations))
             if len(df) == 0:
-                raise FileNotFoundError(f"No LDGM files found in metadata for populations: {populations}")
+                raise ValueError(f"No blocks found for populations: {populations}")
                 
         # Filter by chromosome if specified
         if chromosomes is not None:
