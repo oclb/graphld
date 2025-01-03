@@ -47,9 +47,9 @@ def gaussian_likelihood_gradient(
     pz: np.ndarray,
     M: PrecisionOperator,
     del_M_del_a: Optional[np.ndarray] = None,
-    n_samples: Optional[int] = None,
+    n_samples: int = 10,
     seed: Optional[int] = None,
-    trace_estimator: Optional[str] = "exact",
+    trace_estimator: Optional[str] = "xdiag",
 ) -> np.ndarray:
     """Computes the score under a Gaussian model.
 
