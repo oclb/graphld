@@ -56,24 +56,24 @@ class PrecisionOperator(LinearOperator):
         """Return the total memory usage in bytes.
         """
         # Get size of the sparse matrix
-        matrix_size = (self._matrix.data.nbytes + 
-                      self._matrix.indices.nbytes + 
+        matrix_size = (self._matrix.data.nbytes +
+                      self._matrix.indices.nbytes +
                       self._matrix.indptr.nbytes)
-        
+
         # Get size of the variant info DataFrame
         variant_info_size = self.variant_info.estimated_size()
-        
+
         # Get size of the Cholesky factor if it exists
         factor_size = 0
         if self._solver is not None:
             L = self._solver.L()
-            factor_size = (L.data.nbytes + 
-                         L.indices.nbytes + 
+            factor_size = (L.data.nbytes +
+                         L.indices.nbytes +
                          L.indptr.nbytes)
-        
+
         # Get size of other attributes
         other_size = 0 if self._which_indices is None else self._which_indices.nbytes
-        
+
         return matrix_size + variant_info_size + factor_size + other_size
 
     @property
@@ -96,6 +96,12 @@ class PrecisionOperator(LinearOperator):
             diag_pos = start + np.where(self._matrix.indices[start:end] == i)[0][0]
             diag_indices.append(diag_pos)
         return np.array(diag_indices)[self._get_mask]
+
+
+    def times_scalar(self, multiplier: float) -> None:
+        """Multiply the precision matrix by a scalar in place."""
+        self._matrix *= multiplier
+        self.del_solver()
 
     def update_matrix(self, update: np.ndarray) -> None:
         """Update the precision matrix by adding values to its diagonal.
