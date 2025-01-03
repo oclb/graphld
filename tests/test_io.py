@@ -84,37 +84,41 @@ def test_merge_snplists():
     })
 
     # Test matching by variant ID
-    merged_op = merge_snplists(op1, sumstats)
+    merged_op, indices = merge_snplists(op1, sumstats)
     assert merged_op.shape[0] == 3  # rs1, rs2, rs3
     assert len(merged_op.variant_info) == 3
     assert list(merged_op.variant_info['site_ids']) == ['rs1', 'rs2', 'rs3']
 
     # Test matching by position
-    merged_op = merge_snplists(op1, sumstats, match_by_position=True,
+    merged_op, indices = merge_snplists(op1, sumstats, match_by_position=True,
                               pos_col='POS')
     assert merged_op.shape[0] == 3  # positions 100, 200, 300
     assert len(merged_op.variant_info) == 3
     assert list(merged_op.variant_info['position']) == [100, 200, 300]
+    assert list(indices) == [0,1,2]
 
     # Test allele matching
-    merged_op = merge_snplists(op1, sumstats, ref_allele_col='A1', alt_allele_col='A2')
+    merged_op, indices = merge_snplists(op1, sumstats, ref_allele_col='A1', alt_allele_col='A2')
     assert merged_op.shape[0] == 3  # All variants match alleles
     assert len(merged_op.variant_info) == 3
+    assert list(indices) == [0,1,2]
 
     # Test VCF format
     sumstats_vcf = sumstats.rename({'SNP': 'ID'})
-    merged_op = merge_snplists(op1, sumstats_vcf, table_format='vcf')
+    merged_op, indices = merge_snplists(op1, sumstats_vcf, table_format='vcf')
     assert merged_op.shape[0] == 3
     assert len(merged_op.variant_info) == 3
+    assert list(indices) == [0,1,2]
 
     # Test appending columns
-    merged_op = merge_snplists(op1, sumstats, add_cols=['BETA', 'SE'])
+    merged_op, indices = merge_snplists(op1, sumstats, add_cols=['BETA', 'SE'])
     assert merged_op.shape[0] == 3
     assert len(merged_op.variant_info) == 3
     assert 'BETA' in merged_op.variant_info.columns
     assert 'SE' in merged_op.variant_info.columns
     assert list(merged_op.variant_info['BETA']) == [0.1, 0.2, 0.3]
     assert list(merged_op.variant_info['SE']) == [0.01, 0.02, 0.03]
+    assert list(indices) == [0,1,2]
 
     # Test is_representative column with duplicate indices
     v2 = pl.DataFrame({
@@ -139,7 +143,7 @@ def test_merge_snplists():
         'SE': [0.01, 0.015, 0.02, 0.025, 0.03]
     })
     
-    merged_op = merge_snplists(op2, sumstats2)
+    merged_op, indices = merge_snplists(op2, sumstats2)
     assert 'is_representative' in merged_op.variant_info.columns
     assert len(merged_op.variant_info) == 5  # Should keep all variants
     # First occurrence of each index should be marked as representative
@@ -148,7 +152,7 @@ def test_merge_snplists():
     assert list(merged_op.variant_info['site_ids']) == ['rs1', 'rs1_dup', 'rs2', 'rs2_dup', 'rs3']
 
     # Test allelic columns
-    merged_op = merge_snplists(op1, sumstats,
+    merged_op, indices = merge_snplists(op1, sumstats,
                               ref_allele_col='A1',
                               alt_allele_col='A2',
                               add_allelic_cols=['BETA'])

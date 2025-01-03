@@ -3,8 +3,7 @@ Input/output operations for LDGM data.
 """
 
 from pathlib import Path
-from typing import List, Optional, Union
-
+from typing import List, Optional, Union, Tuple
 import numpy as np
 import polars as pl
 from scipy.sparse import csc_matrix
@@ -166,9 +165,9 @@ def merge_snplists(precision_op: PrecisionOperator,
                    pos_col: str = 'POS',
                    table_format: str = '',
                    add_cols: list[str] = None,
-                   add_allelic_cols: list[str] = None) -> PrecisionOperator:
+                   add_allelic_cols: list[str] = None) -> Tuple[PrecisionOperator, np.ndarray]:
     """Merge a PrecisionOperator instance with summary statistics DataFrame.
-
+    
     Args:
         precision_op: PrecisionOperator instance
         sumstats: Summary statistics DataFrame
@@ -183,7 +182,9 @@ def merge_snplists(precision_op: PrecisionOperator,
             multiplied by the phase (-1 or 1) to align with ancestral/derived alleles
 
     Returns:
-        Modified PrecisionOperator with merged variant info and appended columns
+        Tuple containing:
+        - Modified PrecisionOperator with merged variant info and appended columns
+        - Array of indices into sumstats DataFrame indicating which rows were successfully merged
     """
     # Handle VCF format
     if table_format.lower() == 'vcf':
@@ -207,18 +208,22 @@ def merge_snplists(precision_op: PrecisionOperator,
     # Match variants
     if match_by_position:
         merged = precision_op.variant_info.join(
-            sumstats,
+            sumstats.with_row_count(),
             left_on=['position'],
             right_on=[pos_col],
             how='inner'
         )
     else:
         merged = precision_op.variant_info.join(
-            sumstats,
+            sumstats.with_row_count(),
             left_on='site_ids',
             right_on=variant_id_col,
             how='inner'
         )
+
+    # Get indices of successfully merged variants from sumstats
+    merge_field = pos_col if match_by_position else variant_id_col
+    sumstat_indices = merged.select('row_nr').to_numpy()
 
     # Check alleles if provided
     phase = None
@@ -283,7 +288,7 @@ def merge_snplists(precision_op: PrecisionOperator,
     )
     
     result.variant_info = merged
-    return result
+    return result, sumstat_indices
 
 
 def partition_variants(
