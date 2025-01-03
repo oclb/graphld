@@ -275,6 +275,10 @@ class PrecisionOperator(LinearOperator):
         # Since our matrix is symmetric, we can reuse _matvec
         return self._matvec(x.T).T if x.ndim > 1 else self._matvec(x)
 
+    def copy(self):
+        return PrecisionOperator(self._matrix, self.variant_info, self._which_indices, self._solver,
+                               self._cholesky_is_up_to_date)
+
     def __getitem__(self, key: Union[list, slice, np.ndarray]) -> 'PrecisionOperator':
         """Sets the _which_indices class attribute.
 
@@ -288,7 +292,12 @@ class PrecisionOperator(LinearOperator):
         Returns:
             New LDGM instance with updated _which_indices
         """
+        result = self.copy()
+        result.set_which_indices(key)
+        return result
 
+
+    def set_which_indices(self, key: Union[list, slice, np.ndarray]) -> None:
         # Convert key to indices array
         if isinstance(key, slice):
             indices = np.arange(self._matrix.shape[0])[key]
@@ -300,11 +309,10 @@ class PrecisionOperator(LinearOperator):
                 indices = key
         else:
             raise TypeError("Invalid key type. Use list, slice, or numpy array.")
+        
+        self._which_indices = indices
 
-        # Create new LDGM instance with same matrix but updated indices
-        return PrecisionOperator(self._matrix, self.variant_info, indices, self._solver,
-                               self._cholesky_is_up_to_date)
-
+        
     def solve(self,
         b: np.ndarray,
         method: str = "direct",
@@ -388,7 +396,7 @@ class PrecisionOperator(LinearOperator):
         self,
         method: str = "xdiag",
         initialization: Optional[Tuple[np.ndarray, np.ndarray]] = None,
-        n_samples: Optional[int] = None,
+        n_samples: int = 100,
         seed: Optional[int] = None,
     ) -> np.ndarray:
         """Compute the diagonal elements of the inverse of the precision matrix.
@@ -408,9 +416,6 @@ class PrecisionOperator(LinearOperator):
         if method not in ["exact", "hutchinson", "xnys", "xdiag"]:
             raise ValueError(f"Unknown method: {method}")
 
-        # Get the matrix size
-        n = self._matrix.shape[0]
-
         # Slow, exact inversion
         if method.lower() == "exact":
             if initialization is not None:
@@ -429,9 +434,7 @@ class PrecisionOperator(LinearOperator):
             rng = np.random.RandomState(seed)
 
             # Rademacher random vectors
-            if n_samples is None:
-                n_samples = n // 2
-            v = rng.choice([-1.0, 1.0], size=(n, n_samples))
+            v = rng.choice([-1.0, 1.0], size=(self.shape[0], min(self.shape[0], n_samples)))
             pv = v.copy()
 
         if method.lower() == "hutchinson":
@@ -447,11 +450,11 @@ class PrecisionOperator(LinearOperator):
         else:
             raise NotImplementedError
 
-        # If indices are specified, return only those elements
-        if self._which_indices is not None:
-            diag_estimate = diag_estimate[self._which_indices]
-            if initialization is not None:
-                y = y[self._which_indices]
+        # # If indices are specified, return only those elements
+        # if self._which_indices is not None:
+        #     diag_estimate = diag_estimate[self._which_indices]
+        #     if initialization is not None:
+        #         y = y[self._which_indices]
 
         return (diag_estimate, y) if initialization is not None else diag_estimate
 
