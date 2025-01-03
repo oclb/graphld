@@ -136,7 +136,7 @@ def test_gaussian_likelihood_gradient():
     pz = matrix @ z / np.sqrt(nn)
 
     # Compute gradient
-    grad = gaussian_likelihood_gradient(pz, M, n_samples=None)  # exact inversion
+    grad = gaussian_likelihood_gradient(pz, M, trace_estimator='exact')  # exact inversion
 
     # Verify gradient using finite differences
     eps = 1e-5
@@ -252,9 +252,9 @@ def test_gaussian_likelihood_gradient_methods():
                             n_samples=500, seed=42)
     grad_xdiag = gaussian_likelihood_gradient(pz, M,
                             trace_estimator="xdiag",
-                            n_samples=50, seed=42)
+                            n_samples=100, seed=42)
 
     # Compare gradients - they should be approximately equal
     # Use 15% relative tolerance since these are stochastic estimators
-    np.testing.assert_allclose(grad_hutch, grad_exact, rtol=0.15)
-    np.testing.assert_allclose(grad_xdiag, grad_exact, rtol=0.15)
+    np.testing.assert_allclose(grad_hutch, grad_exact, atol=.1)
+    np.testing.assert_allclose(grad_xdiag, grad_exact, atol=.1)

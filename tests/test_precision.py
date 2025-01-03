@@ -418,7 +418,7 @@ def test_precision_operator_inverse_diagonal_methods():
 
     # Compute diagonal using all methods
     exact_diag = P.inverse_diagonal(method="exact")
-    hutch_diag = P.inverse_diagonal(method="hutchinson", n_samples=num_samples, seed=42)
+    hutch_diag = P.inverse_diagonal(method="hutchinson", num_samples=num_samples, seed=42)
     xdiag_diag = P.inverse_diagonal(method="xdiag", initialization=(v_xdiag, pv_xdiag))
     # xnys_diag = P.inverse_diagonal(method="xnys", n_samples=num_samples, seed=42)
 
