@@ -174,6 +174,7 @@ Then call `ParallelProcessor.run` with the following arguments:
 - `populations`: Populations to process; None -> all
 - `chromosomes`: Chromosomes to process; None -> all
 - `num_processes`: Number of processes to use
+- `worker_params`: Optional parameters passed to each worker process
 - `**kwargs`: Additional arguments passed to `prepare_block_data`, `create_shared_memory`, and `supervise`
 
 For example:
@@ -183,11 +184,12 @@ import polars as pl
 
 class MyProcessor(ParallelProcessor):
     @staticmethod
-    def create_shared_memory(metadat: pl.DataFrame, **kwargs) -> SharedData:
+    def create_shared_memory(metadata: pl.DataFrame, block_data: list, **kwargs) -> SharedData:
         """Create shared memory arrays for input and output data.
         
         Args:
-            metadata: Polars DataFrame with LDGM metadata
+            metadata: Metadata DataFrame containing block information
+            block_data: List of block-specific data
             **kwargs: Additional arguments passed from run()
             
         Returns:
@@ -202,7 +204,7 @@ class MyProcessor(ParallelProcessor):
         })
 
     @staticmethod
-    def process_block(ldgm, flag, shared_data, block_offset, block_data):
+    def process_block(ldgm, flag, shared_data, block_offset, block_data, worker_params=None):
         """Process a single block of data.
         
         Args:
@@ -211,9 +213,7 @@ class MyProcessor(ParallelProcessor):
             shared_data: SharedData containing arrays
             block_offset: Starting index for this block in shared arrays
             block_data: Data specific to this block
-            
-        Returns:
-            Size of block processed
+            worker_params: Optional parameters passed to each worker
         """
         block_slice = slice(block_offset, block_offset + ldgm.shape[0])
 
@@ -225,18 +225,18 @@ class MyProcessor(ParallelProcessor):
         shared_data['output', block_slice] = solution
         
     @staticmethod
-    def supervise(manager, shared_data, **kwargs):
+    def supervise(manager: WorkerManager, shared_data: SharedData, block_data: list, **kwargs):
         """Supervise worker processes and handle results.
         
         Args:
             manager: WorkerManager instance
             shared_data: SharedData containing arrays
+            block_data: List of block-specific data
             **kwargs: Additional arguments passed from run()
 
         Returns:
             Final results after all blocks processed
         """
-        # Start workers and wait for completion
         # If the workers need to communciate, you can call these functions in a loop
         manager.start_workers()
         manager.await_workers()
@@ -249,7 +249,7 @@ class MyProcessor(ParallelProcessor):
         """Prepare data specific to each block.
         
         Args:
-            metadata: Polars DataFrame with LDGM metadata
+            metadata: Metadata DataFrame containing block information
             **kwargs: Additional arguments passed from run()
             
         Returns:
@@ -264,6 +264,25 @@ class MyProcessor(ParallelProcessor):
             })
             block_data.append(df)
         return block_data
+```
+
+You can then run your parallel processor with:
+```python
+# Create some worker-specific parameters
+worker_params = {
+    'max_iterations': 100,
+    'tolerance': 1e-6
+}
+
+# Run parallel processing
+results = MyProcessor.run(
+    ldgm_metadata_path="path/to/metadata.csv",
+    num_processes=12,
+    populations="EUR",
+    chromosomes=1,
+    worker_params=worker_params,  # Optional parameters for each worker
+    some_kwarg="value"  # Additional kwargs passed to all methods
+)
 ```
 
 ## File Formats
