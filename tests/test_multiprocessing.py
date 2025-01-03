@@ -20,7 +20,7 @@ class SolveProcessor(ParallelProcessor):
     """Processor for solving LDGM blocks in parallel."""
 
     @staticmethod
-    def create_shared_memory(metadata, seed=None, **kwargs) -> SharedData:
+    def create_shared_memory(metadata, block_data, seed=None, **kwargs) -> SharedData:
         """Create shared memory arrays."""
         # Calculate total size needed for arrays
         total_size = sum(block['numIndices'] for block in metadata.iter_rows(named=True))
@@ -38,7 +38,7 @@ class SolveProcessor(ParallelProcessor):
         return shared_data
 
     @staticmethod
-    def supervise(manager: WorkerManager, shared_data: SharedData, **kwargs):
+    def supervise(manager: WorkerManager, shared_data: SharedData, block_data: list, **kwargs):
         """Wait for all workers to finish and reshape results."""
         # Wait for workers to finish
         manager.start_workers()
@@ -46,7 +46,7 @@ class SolveProcessor(ParallelProcessor):
         return shared_data['solution']
 
     @staticmethod
-    def process_block(ldgm, flag, shared_data, block_offset, block_data):
+    def process_block(ldgm, flag, shared_data, block_offset, block_data=None, worker_params=None):
         """Process single block by solving with random vectors."""
         # Get input vector slice for this block
         vector = shared_data[('input', slice(block_offset, block_offset + ldgm.shape[0]))]
@@ -129,3 +129,15 @@ def test_multiprocessing():
     # Validate results
     assert np.allclose(parallel_results, serial_results, rtol=1e-10, atol=1e-10), \
         "Parallel and serial results do not match"
+
+    # Run serial version of SolveProcessor
+    serial_results = SolveProcessor.run_serial(
+        ldgm_metadata_path=metadata_file,
+        num_processes=NUM_PROCESSES,
+        seed=seed  # Pass pre-created shared data
+    )
+
+    # Validate results
+    assert np.allclose(parallel_results, serial_results, rtol=1e-10, atol=1e-10), \
+        "Parallel and serial results do not match"
+
