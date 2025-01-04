@@ -127,9 +127,9 @@ sumstats = sim.simulate([ldgm])  # Returns list of DataFrames with Z-scores
 
 Subclass `ParallelProcessor` and implement the following methods:
 - `prepare_block_data` (optional): Prepare data specific to each block as a list with one entry per LD block.
-- `create_shared_memory`: Create `SharedMemory` objects that can be used to communicate between processes and store results.
-- `process_block`: Do some computation for a single LD block, storing results in the `SharedMemory` object.
-- `supervise`: Start workers and handle communication using the `WorkerManager`, return results by reading from the `SharedMemory` object
+- `create_shared_memory`: Create `SharedData` objects that can be used to communicate between processes and store results.
+- `process_block`: Do some computation for a single LD block, storing results in the `SharedData` object.
+- `supervise`: Start workers and handle communication using the `WorkerManager`, return results by reading from the `SharedData` object
 
 Then call `ParallelProcessor.run` (for parallel processing) or `ParallelProcessor.run_series` (for serial processing/debugging).
 
