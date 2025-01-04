@@ -71,8 +71,8 @@ MATLAB/*
 ai.txt
 
 # Large data files
-data/ldgms/
-data/ldgms/*
+data/ldgms/*.edgelist
+data/ldgms/*.snplist
 data/sumstats/
 data/sumstats/*
 
