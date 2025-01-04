@@ -3,6 +3,7 @@
 This repository provides a Python API for working with [linkage disequilibrium graphical models](https://github.com/awohns/ldgm) (LDGMs) via a convenient interface, the `PrecisionOperator`. You can use this API to perform computations involving GWAS summary statistics and the LD matrix.
 For more information about LDGMs, see our [paper](https://pubmed.ncbi.nlm.nih.gov/37640881/):
 > Pouria Salehi Nowbandegani, Anthony Wilder Wohns, Jenna L. Ballard, Eric S. Lander, Alex Bloemendal, Benjamin M. Neale, and Luke J. O’Connor (2023) _Extremely sparse models of linkage disequilibrium in ancestrally diverse association studies_. Nat Genet. DOI: 10.1038/s41588-023-01487-8
+
 Some of the functions are translated from MATLAB functions contained in the [LDGM repository](https://github.com/awohns/ldgm/tree/main/MATLAB) and the [graphREML repository](https://github.com/huilisabrina/graphREML).
 
 ## Table of Contents
