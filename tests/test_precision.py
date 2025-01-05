@@ -614,3 +614,57 @@ def test_precision_operator_delete_factor():
     P.factor()
     refactored_size = P.nbytes
     assert refactored_size == factored_size
+
+def test_precision_operator_variant_solve():
+    """Test variant_solve functionality of PrecisionOperator.
+    
+    This test verifies that variant_solve correctly handles cases where multiple variants
+    share the same index (perfect LD). The function should:
+    1. Sum the input values for variants with the same index
+    2. Solve the system using these summed values
+    3. Assign the solution back to all variants that share an index
+    """
+    # Create a 2x2 precision matrix (2 indices)
+    data = np.array([2.0, -1.0, -1.0, 2.0], dtype=np.float32)
+    indices = np.array([0, 1, 0, 1])
+    indptr = np.array([0, 2, 4])
+    matrix = csc_matrix((data, indices, indptr), shape=(2, 2))
+
+    # Create variant info with 3 variants, where two share the same index
+    variant_info = pl.DataFrame({
+        'variant_id': ['rs1', 'rs2', 'rs3'],
+        'position': [1, 2, 3],
+        'chromosome': ['1', '1', '1']
+    })
+    indices = [0, 0, 1]
+    variant_info = variant_info.with_columns(pl.Series('index', indices))  # First two variants share index 0
+
+    # Create precision operator
+    P = PrecisionOperator(matrix.copy(), variant_info)
+
+    # Create input vector with different values for variants sharing index 0
+    b = np.array([1.0, 2.0, 3.0], dtype=np.float32)  # Values for the three variants
+    
+    # Test variant_solve
+    result = P.variant_solve(b)
+    
+    # Expected behavior:
+    # 1. Values for index 0 should be summed: 1.0 + 2.0 = 3.0
+    # 2. System solved with [3.0, 3.0]
+    # 3. Solution for index 0 assigned back to both variants
+    
+    # Verify result has correct length (number of variants)
+    assert len(result) == len(variant_info)
+    
+    # Verify variants sharing index 0 get the same value
+    assert result[0] == result[1]
+    
+    # Verify the solution satisfies the original system
+    # First, sum values for shared indices
+    b_summed = np.array([3.0, 3.0], dtype=np.float32)
+
+    # Then solve the system
+    expected = P.solve(b_summed)[indices]
+
+    # Finally, compare with summed result
+    assert np.allclose(expected, result)

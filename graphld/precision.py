@@ -81,6 +81,11 @@ class PrecisionOperator(LinearOperator):
         """Get the precision matrix."""
         return self._matrix
 
+    @property
+    def variant_indices(self):
+        """Get the indices of the variants in the precision matrix."""
+        return self.variant_info.select('index').to_numpy().flatten()
+
     @cached_property
     def diagonal_indices(self) -> np.ndarray:
         """Get indices of diagonal elements corresponding to _which_indices in _matrix.data.
@@ -391,6 +396,28 @@ class PrecisionOperator(LinearOperator):
         if self._which_indices is not None:
             solution = solution[self._which_indices, :]
         return solution.reshape(b.shape)
+
+    def variant_solve(self, b: np.ndarray) -> np.ndarray:
+        """Computes correlation_matrix @ b where the dimension is number of variants, not number of indices.
+        If two variants i,j have the same index (and are in perfect LD), b[i] and b[j] are summed, then
+        solve() is called, then the solution vector is assigned the same values in entries i,j.
+
+        Args:
+            b: Right-hand side vector
+
+        Returns:
+            Solution vector z
+        """
+        if len(b) != len(self.variant_info):
+            raise ValueError("b must have the same length as the number of variants")
+
+        y = np.zeros(self.shape[0])
+        np.add.at(y, self.variant_indices, b)
+        
+        y = self.solve(y)
+        
+        return y[self.variant_indices]
+        
 
     def inverse_diagonal(
         self,
