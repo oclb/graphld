@@ -193,6 +193,16 @@ def merge_snplists(precision_op: PrecisionOperator,
         ref_allele_col = 'REF'
         alt_allele_col = 'ALT'
 
+    # Find position column
+    pos_options = ['position', 'POS', 'BP']
+    if pos_col is not None:
+        pos_options.insert(0, pos_col)
+    pos_col = next((col for col in pos_options if col in sumstats.columns), None)
+    if pos_col is None:
+        raise ValueError(
+            f"Could not find position column. Tried: {', '.join(pos_options)}"
+        )
+
     # Validate inputs
     if match_by_position:
         if pos_col not in sumstats.columns:
@@ -326,7 +336,7 @@ def partition_variants(
         )
         
     # Find position column
-    pos_options = ['position', 'POS']
+    pos_options = ['position', 'POS', 'BP']
     if pos_col is not None:
         pos_options.insert(0, pos_col)
     pos_col = next((col for col in pos_options if col in variant_data.columns), None)
