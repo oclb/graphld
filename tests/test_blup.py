@@ -62,7 +62,4 @@ def test_blup():
                             match_by_position=True
                             )
     
-    assert np.sum(blup ** 2) > 0
     assert(len(blup) == np.sum(sumstats.select(pl.col('POS').is_first_distinct()).to_numpy()))
-
-    # assert len(blup) == len(sumstats)

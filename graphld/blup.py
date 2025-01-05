@@ -111,7 +111,10 @@ class BLUP(ParallelProcessor):
 
         manager.start_workers()
         manager.await_workers()
-        return shared_data['beta']
+        beta = shared_data['beta']
+        sumstats = pl.concat([df for df, _ in block_data])
+        return sumstats.with_columns(pl.Series('beta', beta))
+
 
     @classmethod
     def compute_blup(cls,
@@ -124,7 +127,7 @@ class BLUP(ParallelProcessor):
                 num_processes: Optional[int] = None,
                 run_in_serial: bool = False,
                 match_by_position: bool = False,
-                ) -> np.ndarray:
+                ) -> pl.DataFrame:
         """Simulate GWAS summary statistics for multiple LD blocks.
         
         Args:
@@ -138,11 +141,11 @@ class BLUP(ParallelProcessor):
         """ 
         if run_in_serial:
             return cls.run_serial(
-            ldgm_metadata_path=ldgm_metadata_path,
-            populations=populations,
-            chromosomes=chromosomes,
-            worker_params=(sigmasq,sample_size,match_by_position),
-            sumstats=sumstats)
+                ldgm_metadata_path=ldgm_metadata_path,
+                populations=populations,
+                chromosomes=chromosomes,
+                worker_params=(sigmasq,sample_size,match_by_position),
+                sumstats=sumstats)
 
         return cls.run(
             ldgm_metadata_path=ldgm_metadata_path,
