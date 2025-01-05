@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
 """Benchmark multiprocessing framework on whole genome LDGM solve."""
-SKIP_SERIAL = False
-NUM_SOLVES = 1
+SKIP_SERIAL = True
+NUM_SOLVES = 200
 NUM_FACTORS = 0
 NUM_PROCESSES = 12
-CHROMOSOME = 1
+CHROMOSOME = None
 POPULATION = "EUR"
 
 
@@ -24,7 +24,7 @@ class SolveProcessor(ParallelProcessor):
     """Test processor that solves LDGMs with vectors from DataFrames."""
 
     @staticmethod
-    def create_shared_memory(metadata, seed=None, **kwargs) -> SharedData:
+    def create_shared_memory(metadata, block_data, seed=None, **kwargs) -> SharedData:
         """Create shared memory arrays."""
         # Calculate total size needed
         total_size = sum(block['numIndices'] for block in metadata.iter_rows(named=True))
@@ -58,7 +58,7 @@ class SolveProcessor(ParallelProcessor):
         return block_data
 
     @staticmethod
-    def supervise(manager: WorkerManager, shared_data: SharedData, **kwargs):
+    def supervise(manager: WorkerManager, shared_data: SharedData, block_data: list, **kwargs):
         """Wait for all workers to finish and reshape results."""
         # Wait for workers to finish
         t = time.time()
@@ -67,7 +67,7 @@ class SolveProcessor(ParallelProcessor):
         return shared_data['solution']
 
     @staticmethod
-    def process_block(ldgm, flag, shared_data, block_offset, block_data):
+    def process_block(ldgm, flag, shared_data, block_offset, block_data=None, worker_params=None):
         """Process single block by solving with random vectors."""
         # Get input vector from block_data DataFrame
         vector = block_data['vector'].to_numpy()
