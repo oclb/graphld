@@ -236,6 +236,8 @@ def merge_snplists(precision_op: PrecisionOperator,
         ).alias('phase')
         merged = merged.with_columns(phase)
         merged = merged.filter(pl.col('phase') != 0)
+        # Update indices to only include variants with matching alleles
+        sumstat_indices = merged.select('row_nr').to_numpy()
 
     # Validate and add requested columns
         # Check allelic columns requirements
