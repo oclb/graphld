@@ -231,10 +231,6 @@ def merge_snplists(precision_op: PrecisionOperator,
             how='inner'
         )
 
-    # Get indices of successfully merged variants from sumstats
-    merge_field = pos_col if match_by_position else variant_id_col
-    sumstat_indices = merged.select('row_nr').to_numpy()
-
     # Check alleles if provided
     phase = None
     if all(col in sumstats.columns for col in [ref_allele_col, alt_allele_col]):
@@ -247,8 +243,7 @@ def merge_snplists(precision_op: PrecisionOperator,
         merged = merged.with_columns(phase)
         merged = merged.filter(pl.col('phase') != 0)
         # Update indices to only include variants with matching alleles
-        sumstat_indices = merged.select('row_nr').to_numpy()
-
+    
     # Validate and add requested columns
         # Check allelic columns requirements
     if add_allelic_cols and phase is None:
@@ -300,6 +295,8 @@ def merge_snplists(precision_op: PrecisionOperator,
     )
     
     result.variant_info = merged
+    sumstat_indices = merged.select('row_nr').to_numpy()
+
     return result, sumstat_indices
 
 
