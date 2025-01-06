@@ -351,18 +351,39 @@ def partition_variants(
             pl.col(chrom_col).cast(pl.Int64).alias(chrom_col)
         )
         
-    # Create list to store partitioned data
-    partitioned = []
+    # First sort variants by chromosome and position
+    sorted_variants = variant_data.sort([chrom_col, pos_col])
     
-    # Process each block
+    # Group blocks by chromosome
+    chrom_blocks = {}
     for block in ldgm_metadata.iter_rows(named=True):
-        # Filter variants for this block
-        block_variants = variant_data.filter(
-            (pl.col(chrom_col) == block['chrom']) &
-            (pl.col(pos_col) >= block['chromStart']) &
-            (pl.col(pos_col) < block['chromEnd'])
-        )
-        partitioned.append(block_variants)
+        chrom = block['chrom']
+        if chrom not in chrom_blocks:
+            chrom_blocks[chrom] = []
+        chrom_blocks[chrom].append(block)
+    
+    # Process each chromosome's blocks at once
+    partitioned = []
+    for chrom, blocks in chrom_blocks.items():
+        # Get all variants for this chromosome
+        chrom_variants = sorted_variants.filter(pl.col(chrom_col) == chrom)
+        if len(chrom_variants) == 0:
+            partitioned.extend([pl.DataFrame()] * len(blocks))
+            continue
+            
+        # Get positions array for binary search
+        positions = chrom_variants.get_column(pos_col).to_numpy()
+        
+        # Process each block
+        for block in blocks:
+            # Binary search for block boundaries
+            start_idx = np.searchsorted(positions, block['chromStart'])
+            end_idx = np.searchsorted(positions, block['chromEnd'])
+            
+            # Extract variants for this block
+            block_variants = chrom_variants.slice(start_idx, end_idx - start_idx)
+            partitioned.append(block_variants)
+
         
     return partitioned
 

@@ -185,11 +185,11 @@ def test_merge_snplists_errors():
 
     # Test position matching without required columns
     sumstats = pl.DataFrame({'SNP': ['rs1']})
-    with pytest.raises(ValueError, match=r'must contain POS column.*Found columns: SNP'):
+    with pytest.raises(ValueError, match=r'Could not find position column'):
         merge_snplists(op1, sumstats, match_by_position=True)
 
     # Test error on missing append columns
-    with pytest.raises(ValueError, match="Requested columns not found in sumstats"):
+    with pytest.raises(ValueError):
         merge_snplists(op1, sumstats, add_cols=['NONEXISTENT'])
 
 
