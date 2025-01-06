@@ -17,7 +17,7 @@ def test_blup():
         component_variance=[1.0],
         component_weight=[0.3],
         alpha_param=-1,
-        component_random_seed=42
+        random_seed=42
     )
 
     def create_sumstats(ldgm_metadata_path: str, populations: Optional[Union[str, List[str]]]) -> pl.DataFrame:
