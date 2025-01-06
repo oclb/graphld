@@ -6,6 +6,7 @@ from graphld.simulate import Simulate
 from graphld.multiprocessing import SharedData, ParallelProcessor, WorkerManager
 from graphld.likelihood import gaussian_likelihood, gaussian_likelihood_gradient, gaussian_likelihood_hessian
 from graphld.blup import BLUP
+from graphld.clumping import LDClumper
 
 __all__ = [
     'load_ldgm',
@@ -19,5 +20,6 @@ __all__ = [
     'gaussian_likelihood',
     'gaussian_likelihood_gradient',
     'gaussian_likelihood_hessian',
-    'BLUP'
+    'BLUP',
+    'LDClumper',
 ]
