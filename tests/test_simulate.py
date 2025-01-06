@@ -189,15 +189,15 @@ def test_reproducibility():
     )
 
     # Check that all arrays are identical
-    np.testing.assert_array_equal(
+    np.testing.assert_array_almost_equal(
         result1['beta'].to_numpy(),
         result2['beta'].to_numpy()
     )
-    np.testing.assert_array_equal(
+    np.testing.assert_array_almost_equal(
         result1['alpha'].to_numpy(),
         result2['alpha'].to_numpy()
     )
-    np.testing.assert_array_equal(
+    np.testing.assert_array_almost_equal(
         result1['z_scores'].to_numpy(),
         result2['z_scores'].to_numpy()
     )

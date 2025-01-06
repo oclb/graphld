@@ -98,9 +98,6 @@ def _simulate_beta_block(ldgm: PrecisionOperator,
     num_variants = len(af)
     num_indices = ldgm.shape[0]
 
-    print(f"number of variants: {num_variants}")
-    print(f"number of indices: {num_indices}")
-
     # Sample components
     weights = spec.component_weight
     variances = spec.component_variance
@@ -127,7 +124,6 @@ def _simulate_beta_block(ldgm: PrecisionOperator,
     
     h2_per_variant *= af_term
 
-    print(f"fraction of nonzero h2: {np.mean(h2_per_variant>0)}; fraction assigned: {np.mean(variances[component_assignments]>0)}")
     h2_per_variant *= variances[component_assignments]
 
     # Generate effect sizes for each variant
@@ -209,16 +205,8 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
         # Partition annotations into blocks
         annotation_blocks: list[pl.DataFrame] = partition_variants(metadata, annotations)
 
-        print("\nBlock sizes:")
-        for i, df in enumerate(annotation_blocks):
-            print(f"Block {i}: {len(df)} variants")
-
         cumulative_num_variants = np.cumsum(np.array([len(df) for df in annotation_blocks]))
         cumulative_num_variants = [0] + list(cumulative_num_variants[:-1])
-
-        print("\nCumulative offsets:")
-        for i, offset in enumerate(cumulative_num_variants):
-            print(f"Block {i} starts at: {offset}")
 
         return list(zip(annotation_blocks, cumulative_num_variants))
 
@@ -310,22 +298,13 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
                 chromosomes: Optional[Union[int, List[int]]] = None,
                 annotations: Optional[pl.DataFrame] = None
                 ) -> pl.DataFrame:
-        """Simulate GWAS summary statistics for multiple LD blocks.
+        """Simulate GWAS summary statistics for multiple LD blocks."""
         
-        Args:
-            ldgm_metadata_path: Path to metadata CSV file
-            populations: Optional list of populations to simulate
-            chromosomes: Optional list of chromosomes to simulate
-            annotations: Optional DataFrame containing variant annotations
-            
-        Returns:
-            DataFrame containing simulated summary statistics
-        """ 
         return self.run(
             ldgm_metadata_path=ldgm_metadata_path,
             populations=populations,
             chromosomes=chromosomes,
-            worker_params=self,  # Use instance itself as spec since it inherits from _SimulationSpecification
+            worker_params=self,  # Use instance itself as spec
             spec=self,  # Make spec available to supervisor
             annotations=annotations  # Pass annotations to prepare_block_data
         )
