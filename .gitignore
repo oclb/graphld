@@ -80,3 +80,6 @@ data/annot/*
 
 # Notebooks
 notebooks/*.ipynb
+
+# windsurf rules
+.windsurfrules
