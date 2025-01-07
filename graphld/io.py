@@ -179,7 +179,8 @@ def merge_snplists(precision_op: PrecisionOperator,
         table_format: Optional file format specification (e.g., 'vcf')
         add_cols: Optional list of column names from sumstats to append to variant_info
         add_allelic_cols: Optional list of column names from sumstats to append to variant_info,
-            multiplied by the phase (-1 or 1) to align with ancestral/derived alleles
+            multiplied by the phase (-1 or 1) to align with ancestral/derived alleles.
+            If no alleles are provided, these are added without sign-flipping.
 
     Returns:
         Tuple containing:
@@ -232,7 +233,7 @@ def merge_snplists(precision_op: PrecisionOperator,
         )
 
     # Check alleles if provided
-    phase = None
+    phase = 1
     if all(col in sumstats.columns for col in [ref_allele_col, alt_allele_col]):
         phase = merge_alleles(
             merged['anc_alleles'],
@@ -241,16 +242,11 @@ def merge_snplists(precision_op: PrecisionOperator,
             merged[alt_allele_col]
         ).alias('phase')
         merged = merged.with_columns(phase)
-        merged = merged.filter(pl.col('phase') != 0)
-        # Update indices to only include variants with matching alleles
-    
-    # Validate and add requested columns
-        # Check allelic columns requirements
-    if add_allelic_cols and phase is None:
-        msg = ("Cannot add allelic columns without allele information. "
-              "Please provide ref_allele_col and alt_allele_col.")
-        raise ValueError(msg)
         
+        # Update indices to only include variants with matching alleles
+        merged = merged.filter(pl.col('phase') != 0)
+        phase = merged['phase'].to_numpy()
+    
     add_cols = add_cols or []
     add_allelic_cols = add_allelic_cols or []
     new_cols = {}
@@ -267,7 +263,7 @@ def merge_snplists(precision_op: PrecisionOperator,
         new_cols[col] = pl.col(col)
     
     for col in add_allelic_cols:
-        new_cols[col] = pl.col(col) * pl.col('phase')
+        new_cols[col] = pl.col(col) * phase
 
     # Add all new columns at once if any
     if new_cols:
