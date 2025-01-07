@@ -378,8 +378,9 @@ class PrecisionOperator(LinearOperator):
 
         return solution
 
-    def solve_L(self, b: np.ndarray) -> np.ndarray:
-        """Solve the triangular system Lx = b, where LL' = _matrix.
+    def solve_Lt(self, b: np.ndarray) -> np.ndarray:
+        """Solve the triangular system L'x = b, where LL' = _matrix.
+        If b ~ MVN(0, I), then x ~ MVN(0, R).
 
         Args:
             b: Right-hand side vector
@@ -391,7 +392,7 @@ class PrecisionOperator(LinearOperator):
             self.factor()
 
         y = self._expand_vector(b)
-        solution = self._solver.solve_L(y, use_LDLt_decomposition=False)
+        solution = self._solver.solve_Lt(y, use_LDLt_decomposition=False)
 
         if self._which_indices is not None:
             solution = solution[self._which_indices, :]
