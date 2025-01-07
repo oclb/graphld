@@ -11,7 +11,7 @@ from multiprocessing import Value
 
 
 class LDClumper(ParallelProcessor):
-    """Fast LD clumping implementation using ParallelProcessor framework."""
+    """Fast LD clumping to find unlinked lead SNPs from GWAS summary statistics."""
 
     @classmethod
     def prepare_block_data(cls, metadata: pl.DataFrame, **kwargs) -> list[tuple]:
@@ -67,9 +67,9 @@ class LDClumper(ParallelProcessor):
             shared_data: Dictionary-like shared data object
             block_offset: Offset for this block
             block_data: Tuple of (sumstats DataFrame, variant_offset)
-            worker_params: Tuple of (rsq_threshold, chisq_threshold)
+            worker_params: Tuple of (rsq_threshold, chisq_threshold, z_col, match_by_position, variant_id_col)
         """
-        rsq_threshold, chisq_threshold = worker_params
+        rsq_threshold, chisq_threshold, z_col, match_by_position, variant_id_col = worker_params
         assert isinstance(block_data, tuple), "block_data must be a tuple"
         sumstats, variant_offset = block_data
         num_variants = len(sumstats)
@@ -77,18 +77,13 @@ class LDClumper(ParallelProcessor):
         # Merge variants with LDGM variant info and get indices of merged variants
         ldgm, sumstat_indices = merge_snplists(
             ldgm, sumstats,
-            match_by_position=True,
+            match_by_position=match_by_position,
             pos_col='POS',
+            variant_id_col=variant_id_col,
             ref_allele_col='REF',
             alt_allele_col='ALT',
-            add_allelic_cols=['Z'],
+            add_allelic_cols=[z_col],  # Z score column
         )
-        
-        # After merge, check that positions match
-        ldgm_pos = ldgm.variant_info.select('position').to_numpy().flatten()
-        sumstats_pos = sumstats.select('POS').to_numpy()[sumstat_indices.flatten()].flatten()
-        mismatches = np.where(ldgm_pos != sumstats_pos)[0]
-        assert len(mismatches)==0, f"Positions do not match after merging: {mismatches}"
 
         # Keep only first occurrence of each index
         first_index_mask = pl.Series(ldgm.variant_info.select(pl.col('is_representative')).to_numpy().flatten().astype(bool))
@@ -96,11 +91,11 @@ class LDClumper(ParallelProcessor):
         sumstat_indices = sumstat_indices[first_index_mask]
 
         # Get Z scores and compute chi-square statistics
-        z_scores = ldgm.variant_info.select('Z').to_numpy().flatten()
+        z_scores = ldgm.variant_info.select(z_col).to_numpy().flatten()  # Z score column
         chisq = z_scores ** 2
 
         # Check original sumstats chi-square values
-        original_z = sumstats.select('Z').to_numpy().flatten()
+        original_z = sumstats.select(z_col).to_numpy().flatten()  # Z score column
         original_chisq = original_z ** 2
         assert np.allclose(original_chisq[sumstat_indices.flatten()], chisq), "Chi-square values changed after merging"
 
@@ -180,7 +175,10 @@ class LDClumper(ParallelProcessor):
             populations: Optional[Union[str, List[str]]] = None,
             chromosomes: Optional[Union[int, List[int]]] = None,
             num_processes: Optional[int] = None,
-            run_in_serial: bool = False
+            run_in_serial: bool = False,
+            z_col: str = 'Z',
+            match_by_position: bool = True,
+            variant_id_col: str = 'SNP'
             ) -> pl.DataFrame:
         """Perform LD clumping on summary statistics.
         
@@ -193,6 +191,9 @@ class LDClumper(ParallelProcessor):
             chromosomes: Optional chromosome(s)
             num_processes: Optional number of processes
             run_in_serial: Whether to run in serial mode
+            z_col: Name of column containing Z scores
+            match_by_position: Whether to match SNPs by position instead of ID
+            variant_id_col: Name of column containing variant IDs if not matching by position
             
         Returns:
             DataFrame with additional column 'is_index' indicating index variants
@@ -202,14 +203,14 @@ class LDClumper(ParallelProcessor):
                 ldgm_metadata_path=ldgm_metadata_path,
                 populations=populations,
                 chromosomes=chromosomes,
-                worker_params=(rsq_threshold, chisq_threshold),
+                worker_params=(rsq_threshold, chisq_threshold, z_col, match_by_position, variant_id_col),
                 sumstats=sumstats)
 
         return cls.run(
             ldgm_metadata_path=ldgm_metadata_path,
             populations=populations,
             chromosomes=chromosomes,
-            worker_params=(rsq_threshold, chisq_threshold),
+            worker_params=(rsq_threshold, chisq_threshold, z_col, match_by_position, variant_id_col),
             num_processes=num_processes,
             sumstats=sumstats
         )

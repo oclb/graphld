@@ -1,6 +1,6 @@
 # GraphLD
 
-This repository provides a Python API for working with [linkage disequilibrium graphical models](https://github.com/awohns/ldgm) (LDGMs) via a convenient interface, the `PrecisionOperator`. You can use this API to perform computations involving GWAS summary statistics and the LD matrix.
+This repository provides a Python package for working with [linkage disequilibrium graphical models](https://github.com/awohns/ldgm) (LDGMs) via a convenient interface, the `PrecisionOperator`. It is intended for computationally efficient analyses of GWAS summary statistics.
 For more information about LDGMs, see our [paper](https://pubmed.ncbi.nlm.nih.gov/37640881/):
 > Pouria Salehi Nowbandegani, Anthony Wilder Wohns, Jenna L. Ballard, Eric S. Lander, Alex Bloemendal, Benjamin M. Neale, and Luke J. O’Connor (2023) _Extremely sparse models of linkage disequilibrium in ancestrally diverse association studies_. Nat Genet. DOI: 10.1038/s41588-023-01487-8
 
@@ -10,6 +10,7 @@ Some of the functions are translated from MATLAB functions contained in the [LDG
 - [Installation](#installation)
 - [Usage](#usage)
   - [Matrix Operations](#matrix-operations)
+  - [LD Clumping](#ld-clumping)
   - [Likelihood Functions](#likelihood-functions)
   - [Simulation](#simulation)
 - [Multiprocessing Framework](#multiprocessing-framework)
@@ -70,6 +71,19 @@ correlation_times_vector = ldgm.solve(result)
 assert np.allclose(correlation_times_vector, vector)
 ```
 
+### LD Clumping
+
+Given a set of GWAS summary statistics, LD clumping identifies independent index variants by iteratively selecting the variant with the highest $\chi^2$ statistic and pruning all variants in high LD with it. We provdie a fast implementation using multiprocessing.
+
+Example usage:
+
+```python
+clumped = gld.LDClumper.clump(
+    ldgm_metadata_path="data/metadata.csv"
+    sumstats=sumstats_dataframe_with_z_scores
+).filter(pl.col('is_index')) # is_index is added as a new column to the dataframe
+```
+
 ### Likelihood Functions
 
 The package provides functions for computing the likelihood of GWAS summary statistics under a Gaussian model:
@@ -81,8 +95,8 @@ $$pz = n^{-1/2} R^{-1}z \sim N(0, M), M = D + n^{-1}R^{-1}.$$
 
 The following functions are available:
 - `gaussian_likelihood(pz, M)`: Computes the log-likelihood
-- `gaussian_likelihood_gradient(pz, M, del_M_del_a=None)`: Computes the score (gradient), either with respect to the diagonal elements of `M` (equivalently `D`), or with respect to parameters `a` whose partial derivatives are provided in `del_M_del_a`. 
-- `gaussian_likelihood_hessian(pz, M, del_M_del_a)`: Computes the average information matrix, defined as the average of the observed and expected Fisher information. This is the second derivative of the log-likelihood with respect to the parameters `a` whose partial derivatives are provided in `del_M_del_a`.
+- `gaussian_likelihood_gradient(pz, M, del_M_del_a=None)`: Computes the gradient of the log-likelihood, either with respect to the diagonal elements of `M` (equivalently `D`), or with respect to parameters `a` whose partial derivatives are provided in `del_M_del_a`. 
+- `gaussian_likelihood_hessian(pz, M, del_M_del_a)`: Computes the average information matrix, defined as the average of the observed and expected Fisher information. This approximates the second derivative of the log-likelihood with respect to the parameters `a` whose partial derivatives are provided in `del_M_del_a`. The approximation is good when the gradient is nearly zero.
 
 For background, see our [graphREML preprint](https://www.medrxiv.org/content/10.1101/2024.11.04.24316716v1):
 >Hui Li, Tushar Kamath, Rahul Mazumder, Xihong Lin, & Luke J. O’Connor (2024). _Improved heritability partitioning and enrichment analyses using summary statistics with graphREML_. medRxiv, 2024-11.
@@ -90,7 +104,7 @@ For background, see our [graphREML preprint](https://www.medrxiv.org/content/10.
 
 ### Simulation
 
-*[Under construction]* A parallelized simulation function is provided. It samples GWAS summary statistics from their asymptotic sampling distribution with effect sizes drawn from a flexible mixture distribution.
+A parallelized simulation function is provided. It samples GWAS summary statistics from their asymptotic sampling distribution with effect sizes drawn from a flexible mixture distribution. It provides support for annotation-dependent and frequency-dependent architectures. Unlike the [MATLAB implementation](https://github.com/awohns/ldgm/blob/main/MATLAB/simulateSumstats.m), it does not support multiple ancestry groups.
 
 ```python
 import graphld as gld
@@ -103,16 +117,24 @@ ldgm = gld.load_ldgm(
 
 # Create simulator
 sim = gld.Simulate(
-    sample_size=10_000,                  # GWAS sample size
-    heritability=0.1,                   # Total trait heritability
-    component_variance=[1.0, 0.1],      # Relative effect size variance for each component
-    component_weight=[0.001, 0.01],       # Mixture weights (must sum to ≤ 1)
+    sample_size=10_000, 
+    heritability=0.1,
+    component_variance=[1.0, 0.1],     # Relative effect size variance for each component
+    component_weight=[0.001, 0.01],    # Mixture weight of each component (must sum to ≤ 1)
     alpha_param=-0.5                   # Allele frequency dependence parameter
 )
 
 # Simulate summary statistics for a list of LD blocks
 sumstats = sim.simulate([ldgm])  # Returns list of DataFrames with Z-scores
 ```
+The simulator is parallelized across LD blocks. On a fast 16-core laptop, a whole-genome simulation takes about 20 seconds.
+
+### Best Linear Unbiased Prediction (BLUP)
+BLUP effect sizes can be computed using the following formula:
+$$
+E(\beta) = \sqrt{n} D (nD + R^{-1})^{-1} R^{-1}z
+$$
+where we approximate $R^{-1}$ with the LDGM precision matrix. This is implemented in `graphld.blup`. It is parallelized across LD blocks; on a fast 16-core laptop, it runs in about 15 seconds.
 
 ## Multiprocessing Framework
 
