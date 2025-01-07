@@ -130,6 +130,8 @@ def _simulate_beta_block(ldgm: PrecisionOperator,
     beta = np.random.randn(num_variants) * np.sqrt(h2_per_variant)
     alpha = ldgm.variant_solve(beta)
 
+    assert np.sum(np.isnan(alpha)) == 0, 'Simulated NaN effect sizes'
+
     return beta.reshape(-1, 1), alpha.reshape(-1, 1)
 
 
@@ -149,7 +151,31 @@ def _simulate_noise_block(ldgm: PrecisionOperator,
     # Generate noise with variance equal to the LD matrix
     np.random.seed(random_seed)
     white_noise = np.random.randn(ldgm.shape[0])
-    return ldgm.solve_L(white_noise)[ldgm.variant_indices].reshape(-1, 1)
+    return ldgm.solve_Lt(white_noise)[ldgm.variant_indices].reshape(-1, 1)
+
+
+def _create_block_annotations(metadata: pl.DataFrame, ldgm_metadata_path: str) -> list[pl.DataFrame]:
+    """Create block-specific annotation DataFrames from SNP lists.
+    
+    Args:
+        metadata: DataFrame containing LDGM metadata
+        ldgm_metadata_path: Path to LDGM metadata file
+        
+    Returns:
+        List of DataFrames containing CHR and POS columns for each block
+    """
+    block_annotations = []
+    for row in metadata.iter_rows(named=True):
+        snplist_path = os.path.join(os.path.dirname(ldgm_metadata_path), row['snplistName'])
+        snplist = pl.read_csv(snplist_path, separator=',', has_header=True)
+        block_annotations.append(snplist.with_columns([
+            pl.lit(int(row['chrom'])).alias('CHR'),
+            pl.col('position').alias('BP'),
+            pl.col('site_ids').alias('SNP'),
+            pl.col('anc_alleles').alias('REF'),
+            pl.col('deriv_alleles').alias('ALT')
+        ]))
+    return block_annotations
 
 
 class Simulate(ParallelProcessor, _SimulationSpecification):
@@ -200,15 +226,14 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
         """
         annotations = kwargs.get('annotations')
         if annotations is None:
-            return [None] * len(metadata)
+            block_annotations = _create_block_annotations(metadata, kwargs['ldgm_metadata_path'])
+        else:
+            block_annotations = partition_variants(metadata, annotations)
             
-        # Partition annotations into blocks
-        annotation_blocks: list[pl.DataFrame] = partition_variants(metadata, annotations)
-
-        cumulative_num_variants = np.cumsum(np.array([len(df) for df in annotation_blocks]))
+        cumulative_num_variants = np.cumsum(np.array([len(df) for df in block_annotations]))
         cumulative_num_variants = [0] + list(cumulative_num_variants[:-1])
 
-        return list(zip(annotation_blocks, cumulative_num_variants))
+        return list(zip(block_annotations, cumulative_num_variants))
 
     @classmethod
     def process_block(cls, ldgm: PrecisionOperator, flag: Value, 
@@ -227,7 +252,7 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
             ldgm, sumstat_indices = merge_snplists(
                 ldgm, annotations,
                 match_by_position=True,
-                pos_col='POS',
+                pos_col='BP',
                 ref_allele_col='REF',
                 alt_allele_col='ALT'
             )
@@ -276,35 +301,63 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
         beta, alpha, noise = shared_data['beta'], shared_data['alpha'], shared_data['noise']
         
         # Compute scaling parameter to achieve desired heritability
-        spec = kwargs.get('spec')
-        if spec is None:
-            raise ValueError("spec must be provided in kwargs")
-        heritability = spec.heritability
-        
-        scaling_param = np.sqrt(heritability / np.dot(beta,alpha)) if heritability > 0 else 1
+        spec = kwargs['spec']
+        h2 = spec.heritability
+        current_h2 = np.dot(beta,alpha)
+        assert current_h2 >= 0, "beta'*R*beta should be non-negative"
+        scaling_param = np.sqrt(h2 / current_h2) if current_h2 > 0 else 1
         beta *= scaling_param
         alpha *= scaling_param
         
-        # Return results
-        return pl.DataFrame({
-            'z_scores': noise + alpha,
-            'beta': beta,
-            'alpha': alpha,
-        })
+        # Concatenate block annotations and add simulation results
+        if block_data[0][0] is None:
+            # If no annotations, create a minimal DataFrame with just the simulation results
+            return pl.DataFrame({
+                'z_scores': noise + alpha,
+                'beta': beta,
+                'alpha': alpha,
+            })
+        else:
+            # Concatenate block annotations and select relevant columns
+            result = pl.concat([
+                df.select([
+                    'CHR', 
+                    'SNP',
+                    pl.col('BP').alias('POS'), 
+                ]) 
+                for df, _ in block_data
+            ])
+            
+            return result.with_columns([
+                pl.Series('Z', noise + np.sqrt(spec.sample_size) * alpha),
+                pl.Series('beta', beta),
+                pl.Series('alpha', alpha),
+            ])
 
     def simulate(self, 
                 ldgm_metadata_path: str,
                 populations: Optional[Union[str, List[str]]] = None,
                 chromosomes: Optional[Union[int, List[int]]] = None,
-                annotations: Optional[pl.DataFrame] = None
+                annotations: Optional[pl.DataFrame] = None,
+                run_in_serial: bool = False
                 ) -> pl.DataFrame:
         """Simulate GWAS summary statistics for multiple LD blocks."""
         
+        if run_in_serial:
+            return self.run_serial(
+                ldgm_metadata_path=ldgm_metadata_path,
+                populations=populations,
+                chromosomes=chromosomes,
+                worker_params=self,  # Use instance itself as spec
+                spec=self,
+                annotations=annotations  # Pass annotations to prepare_block_data
+            )
+            
         return self.run(
             ldgm_metadata_path=ldgm_metadata_path,
             populations=populations,
             chromosomes=chromosomes,
             worker_params=self,  # Use instance itself as spec
-            spec=self,  # Make spec available to supervisor
+            spec=self,
             annotations=annotations  # Pass annotations to prepare_block_data
         )

@@ -11,6 +11,7 @@ from typing import Optional, Union, List
 def create_annotations(ldgm_metadata_path: str, populations: Optional[Union[str, List[str]]]) -> pl.DataFrame:
     metadata: pl.DataFrame = read_ldgm_metadata(ldgm_metadata_path, populations=populations)
     annotations = {
+        'SNP': [],
         'CHR': [],
         'BP': [],
         'REF': [],
@@ -22,6 +23,7 @@ def create_annotations(ldgm_metadata_path: str, populations: Optional[Union[str,
         snplist = pl.read_csv(snplist_path, separator=',', has_header=True)
         chromosome = int(row['chrom'])
         annotations['CHR'].extend([chromosome] * len(snplist))
+        annotations['SNP'].extend(snplist['site_ids'].to_list())
         annotations['BP'].extend(snplist['position'].to_list())
         annotations['REF'].extend(snplist['anc_alleles'].to_list())
         annotations['ALT'].extend(snplist['deriv_alleles'].to_list())
@@ -66,6 +68,24 @@ def test_component_mixture():
         alpha_param=-1,
         random_seed=44
     )
+
+    # Create annotations from metadata
+    metadata_path = "data/test/metadata.csv"
+    annotations = create_annotations(metadata_path, populations="EUR")
+
+    sim_result = sim.simulate(
+        ldgm_metadata_path=metadata_path,
+        populations="EUR",
+        annotations=annotations
+    )
+
+    # Check that we have the expected proportion of non-zero effects
+    beta = sim_result['beta'].to_numpy()
+    non_zero = beta != 0
+    assert 0.01 < np.mean(non_zero) < 0.2
+
+    # Check sparse architecture
+    sim.component_variance = [0.0001, 0.00001]
 
     # Create annotations from metadata
     metadata_path = "data/test/metadata.csv"
@@ -198,6 +218,6 @@ def test_reproducibility():
         result2['alpha'].to_numpy()
     )
     np.testing.assert_array_almost_equal(
-        result1['z_scores'].to_numpy(),
-        result2['z_scores'].to_numpy()
+        result1['Z'].to_numpy(),
+        result2['Z'].to_numpy()
     )
