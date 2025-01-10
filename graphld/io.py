@@ -7,6 +7,7 @@ from typing import List, Optional, Union, Tuple
 import numpy as np
 import polars as pl
 from scipy.sparse import csc_matrix
+import os
 
 from .precision import PrecisionOperator
 
@@ -165,7 +166,8 @@ def merge_snplists(precision_op: PrecisionOperator,
                    pos_col: str = 'POS',
                    table_format: str = '',
                    add_cols: list[str] = None,
-                   add_allelic_cols: list[str] = None) -> Tuple[PrecisionOperator, np.ndarray]:
+                   add_allelic_cols: list[str] = None,
+                   modify_in_place: bool = False) -> Tuple[PrecisionOperator, np.ndarray]:
     """Merge a PrecisionOperator instance with summary statistics DataFrame.
     
     Args:
@@ -181,6 +183,7 @@ def merge_snplists(precision_op: PrecisionOperator,
         add_allelic_cols: Optional list of column names from sumstats to append to variant_info,
             multiplied by the phase (-1 or 1) to align with ancestral/derived alleles.
             If no alleles are provided, these are added without sign-flipping.
+        modify_in_place: Whether to modify the PrecisionOperator in place
 
     Returns:
         Tuple containing:
@@ -280,7 +283,10 @@ def merge_snplists(precision_op: PrecisionOperator,
     
     # Create new PrecisionOperator with merged variant info
     unique_indices = np.unique(merged['index'].to_numpy())
-    result = precision_op[unique_indices]
+    if modify_in_place:
+        precision_op.set_which_indices(unique_indices)
+    else:
+        precision_op = precision_op[unique_indices]
     
     # Create mapping from old indices to new contiguous ones
     index_map = {old_idx: new_idx for new_idx, old_idx in enumerate(unique_indices)}
@@ -290,10 +296,10 @@ def merge_snplists(precision_op: PrecisionOperator,
         pl.col('index').replace_strict(index_map).alias('index')
     )
     
-    result.variant_info = merged
+    precision_op.variant_info = merged
     sumstat_indices = merged.select('row_nr').to_numpy()
 
-    return result, sumstat_indices
+    return precision_op, sumstat_indices
 
 
 def partition_variants(
@@ -544,3 +550,39 @@ def read_ldgm_metadata(
         
     except Exception as e:
         raise ValueError(f"Error reading metadata file: {e}")
+
+
+def load_annotations(annot_path: str, 
+                    chromosome: Optional[int] = None, 
+                    infer_schema_length: int = 100_000
+                    ) -> pl.DataFrame:
+    """Load annotation data for specified chromosome(s).
+    
+    Args:
+        annot_path: Path to directory containing annotation files
+        chromosome: Specific chromosome number, or None for all chromosomes
+        infer_schema_length: Number of rows to infer schema from. Runs faster if this is smaller
+        but will throw an error if too small beause floating-point columns will be
+        cast as integers.
+    Returns:
+        DataFrame containing annotations
+    """
+    if chromosome is not None:
+        return pl.read_csv(
+            os.path.join(annot_path, f"baselineLD.{chromosome}.annot"),
+            separator='\t',
+            infer_schema_length=infer_schema_length
+        )
+    
+    # Load all chromosomes and concatenate
+    annotations = []
+    for chrom in range(1, 23):  # Assuming chromosomes 1-22
+        df = pl.read_csv(
+            os.path.join(annot_path, f"baselineLD.{chrom}.annot"),
+            separator='\t',
+            infer_schema_length=infer_schema_length
+        )
+        annotations.append(df)
+    return pl.concat(annotations)
+
+
