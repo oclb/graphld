@@ -159,7 +159,7 @@ def test_merge_snplists():
     assert 'phase' in merged_op.variant_info.columns
     assert 'BETA' in merged_op.variant_info.columns
     # Check that BETA has been phased correctly
-    expected_beta = [0.1, 0.2, 0.3]  # Original values
+    expected_beta = [-0.1, -0.2, -0.3]  # Original values
     actual_beta = list(merged_op.variant_info['BETA'])
     assert all(abs(a - e) < 1e-10 for a, e in zip(actual_beta, expected_beta))
 

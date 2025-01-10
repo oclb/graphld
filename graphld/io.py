@@ -160,8 +160,8 @@ def merge_alleles(anc_alleles: pl.Series, deriv_alleles: pl.Series,
 def merge_snplists(precision_op: PrecisionOperator,
                    sumstats: pl.DataFrame, *,
                    variant_id_col: str = 'SNP',
-                   ref_allele_col: str = 'A1',
-                   alt_allele_col: str = 'A2',
+                   ref_allele_col: str = 'REF',
+                   alt_allele_col: str = 'ALT',
                    match_by_position: bool = False,
                    pos_col: str = 'POS',
                    table_format: str = '',
@@ -196,6 +196,10 @@ def merge_snplists(precision_op: PrecisionOperator,
         pos_col = 'POS'
         ref_allele_col = 'REF'
         alt_allele_col = 'ALT'
+    elif table_format.lower() != 'ldsc':
+        match_by_position = False
+        ref_allele_col = 'A2'
+        alt_allele_col = 'A1'
 
     # Find position column
     pos_options = ['position', 'POS', 'BP']
@@ -220,20 +224,13 @@ def merge_snplists(precision_op: PrecisionOperator,
             raise ValueError(msg)
 
     # Match variants
-    if match_by_position:
-        merged = precision_op.variant_info.join(
-            sumstats.with_row_count(),
-            left_on=['position'],
-            right_on=[pos_col],
-            how='inner'
-        )
-    else:
-        merged = precision_op.variant_info.join(
-            sumstats.with_row_count(),
-            left_on='site_ids',
-            right_on=variant_id_col,
-            how='inner'
-        )
+    match_by = ('position', pos_col) if match_by_position else ('site_ids', variant_id_col)
+    merged = precision_op.variant_info.join(
+        sumstats.with_row_count(),
+        left_on=[match_by[0]],
+        right_on=[match_by[1]],
+        how='inner'
+    )
 
     # Check alleles if provided
     phase = 1
