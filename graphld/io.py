@@ -196,7 +196,7 @@ def merge_snplists(precision_op: PrecisionOperator,
         pos_col = 'POS'
         ref_allele_col = 'REF'
         alt_allele_col = 'ALT'
-    elif table_format.lower() != 'ldsc':
+    elif table_format.lower() == 'ldsc':
         match_by_position = False
         ref_allele_col = 'A2'
         alt_allele_col = 'A1'
