@@ -6,37 +6,11 @@ POPULATION = "EUR"
 RUN_IN_SERIAL = False
 
 import time
-from graphld import Simulate, read_ldgm_metadata, LDClumper
+from graphld import Simulate, read_ldgm_metadata, LDClumper, load_annotations
 from typing import *
 import polars as pl
 import numpy as np
 import os
-
-def load_annotations(chromosome: Optional[int] = None) -> pl.DataFrame:
-    """Load annotation data for specified chromosome(s).
-    
-    Args:
-        chromosome: Specific chromosome number, or None for all chromosomes
-    Returns:
-        DataFrame containing annotations
-    """
-    if chromosome is not None:
-        return pl.read_csv(
-            os.path.join(ANNOT_PATH, f"baselineLD.{chromosome}.annot"),
-            separator='\t',
-            infer_schema_length=None
-        )
-    
-    # Load all chromosomes and concatenate
-    annotations = []
-    for chrom in range(1, 23):  # Assuming chromosomes 1-22
-        df = pl.read_csv(
-            os.path.join(ANNOT_PATH, f"baselineLD.{chrom}.annot"),
-            separator='\t',
-            infer_schema_length=None
-        )
-        annotations.append(df)
-    return pl.concat(annotations)
 
 def main():
     """Test simulation with variant annotations."""
@@ -45,7 +19,7 @@ def main():
     np.random.seed(42)
 
     t = time.time()
-    annotations = load_annotations(CHROMOSOME)
+    annotations = load_annotations(ANNOT_PATH, CHROMOSOME)
     print(f"Time to load annotations: {time.time() - t:.3f}s")
     t = time.time()
 
