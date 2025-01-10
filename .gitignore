@@ -73,6 +73,7 @@ ai.txt
 # Large data files
 data/ldgms/*.edgelist
 data/ldgms/*.snplist
+data/rsid_position.csv
 data/sumstats/
 data/sumstats/*
 data/annot

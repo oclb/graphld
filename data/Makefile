@@ -9,6 +9,8 @@ download:
 	curl -L -o - https://zenodo.org/record/8157131/files/sumstats.tar.gz| tar -xz
 	mv ldgms/*/* ldgms
 	ls -d ldgms/*/ | xargs rmdir
+	chmod +x create_rsid_position.sh
+	./create_rsid_position.sh > rsid_position.csv
 	
 download_eur:
 	mkdir ldgms
@@ -16,6 +18,8 @@ download_eur:
 	curl -L -o - https://zenodo.org/record/8157131/files/snplists_GRCh38positions.tar.gz | tar -xz -C ldgms
 	mv ldgms/*/* ldgms
 	ls -d ldgms/*/ | xargs rmdir
+	chmod +x create_rsid_position.sh
+	./create_rsid_position.sh > rsid_position.csv
 	
 download_all:
 	mkdir ldgms
@@ -31,4 +35,5 @@ download_all:
 	curl -L -o - https://zenodo.org/record/8157131/files/ukb.tar | tar -xz -C ldgms
 	mv ldgms/*/* ldgms
 	ls -d ldgms/*/ | xargs rmdir
-
+	chmod +x create_rsid_position.sh
+	./create_rsid_position.sh > rsid_position.csv
