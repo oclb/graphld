@@ -81,7 +81,7 @@ def gaussian_likelihood_gradient(
                                     seed=seed)
 
     # Compute gradient diagonal elements
-    node_grad = -0.5 * (minv_diag - b**2)
+    node_grad = -0.5 * (minv_diag.flatten() - b.flatten()**2)
 
     return node_grad if del_M_del_a is None else node_grad @ del_M_del_a
 
@@ -110,9 +110,11 @@ def gaussian_likelihood_hessian(
 
     # Compute b = M^(-1) * pz
     b = M.solve(pz)
+    if b.ndim == 1:
+        b = b.reshape(-1, 1)
 
     # Compute b_scaled = b .* del_sigma_del_a
-    b_scaled = b[:, np.newaxis] * del_M_del_a
+    b_scaled = b * del_M_del_a
 
     # Compute M^(-1) * b_scaled
     minv_b_scaled = M.solve(b_scaled)
