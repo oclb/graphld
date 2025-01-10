@@ -2,7 +2,7 @@
 
 import tempfile
 import pytest
-from graphld.vcf import read_gwas_vcf
+from graphld.vcf_io import read_gwas_vcf
 
 
 def test_read_gwas_vcf():
