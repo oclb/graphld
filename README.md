@@ -4,7 +4,11 @@ This repository provides a Python package for working with [linkage disequilibri
 For more information about LDGMs, see our [paper](https://pubmed.ncbi.nlm.nih.gov/37640881/):
 > Pouria Salehi Nowbandegani, Anthony Wilder Wohns, Jenna L. Ballard, Eric S. Lander, Alex Bloemendal, Benjamin M. Neale, and Luke J. O’Connor (2023) _Extremely sparse models of linkage disequilibrium in ancestrally diverse association studies_. Nat Genet. DOI: 10.1038/s41588-023-01487-8
 
-Some of the functions are translated from MATLAB functions contained in the [LDGM repository](https://github.com/awohns/ldgm/tree/main/MATLAB) and the [graphREML repository](https://github.com/huilisabrina/graphREML).
+Some of the functions are translated from MATLAB functions contained in the [LDGM repository](https://github.com/awohns/ldgm/tree/main/MATLAB) and the [graphREML repository](https://github.com/huilisabrina/graphREML). 
+
+Giulio Genovese has implemented a LDGM-VCF file format specification and a bcftools plugin written in C with some of the same functionality, available [here](https://github.com/freeseek/score). The LDGM-VCF specification (and the GWAS-VCF specification) will be supported in a future update.
+
+All three implementations (in MATLAB, Python, and C) rely under the hood on [SuiteSparse](https://github.com/DrTimothyAldenDavis/SuiteSparse), so they should have similar performance. 
 
 ## Table of Contents
 - [Installation](#installation)
@@ -16,10 +20,12 @@ Some of the functions are translated from MATLAB functions contained in the [LDG
 - [Multiprocessing Framework](#multiprocessing-framework)
 - [File Formats](#file-formats)
 
+
 ## Installation
 
 Required system dependencies:
-- [SuiteSparse](https://github.com/DrTimothyAldenDavis/SuiteSparse) (for CHOLMOD): On Mac, install with `brew install suitesparse`
+- [SuiteSparse](https://github.com/DrTimothyAldenDavis/SuiteSparse) (for CHOLMOD): On Mac, install with `brew install suitesparse`. SuiteSparse is wrapped in [scikit-sparse](https://scikit-sparse.readthedocs.io/en/latest/).
+- IntelMKL (for Intel chips): The performance of SuiteSparse is significantly improved by using IntelMKL instead of OpenBLAS, which will likely be the default. See Giulio Genovese's documentation [here](https://github.com/freeseek/score?tab=readme-ov-file#intel-mkl).
 
 ### Using uv (recommended)
 
@@ -33,18 +39,17 @@ uv sync
 For development installation:
 ```bash
 uv sync --dev --extra dev # editable with pytest dependencies
-uv run pytest # test suite
+uv run pytest
 ```
 
 ### Downloading LDGMs
 Pre-computed LDGMs for the 1000 Genomes Project data are available at [Zenodo](https://zenodo.org/records/8157131). You can download them using the provided Makefile in the `data/` directory:
 
 ```bash
-# download LDGM precision matrices from the five continental ancestries in the 1000 Genomes Project
 cd data && make download
 ```
 
-The Makefile also contains `download_all` and `download_eur` targets.
+The Makefile also contains a `download_all` target to download additional data and a `download_eur` target to download European-ancestry LDGMs only.
 
 ## Usage
 
@@ -200,3 +205,18 @@ Tab-separated file with columns:
 5. Alternative allele
 
 It is recommended that you do not use the `variant ID` column for merging and instead use chromosome/position/ref/alt, as some variants lack RSIDs. 
+
+### LDSC Format Summary Statistics (.sumstats)
+The [LDSC summary statistics file format](https://github.com/bulik/ldsc/wiki/Summary-Statistics-File-Format) is upported via the `read_ldsc_sumstats` function. This function:
+- Automatically computes Z-scores from Beta/se if not provided
+- Automatically restricts to LDGM SNPs and adds chromosome numbers and positions in GRCh38 coordinates
+
+
+### GWAS-VCF (.vcf)
+The [GWAS-VCF specification](https://github.com/MRCIEU/gwasvcf) is supported via the `read_gwas_vcf` function. It is a VCF file with the following mandatory FORMAT fields::
+
+- `ES`: Effect size estimate
+- `SE`: Standard error of effect size
+- `LP`: -log10 p-value
+
+Additional optional fields are supported and described in the GWAS-VCF specification.
