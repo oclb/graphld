@@ -549,11 +549,15 @@ def read_ldgm_metadata(
         raise ValueError(f"Error reading metadata file: {e}")
 
 
+POSITIONS_FILE = 'data/rsid_position.csv'
 def load_annotations(annot_path: str, 
                     chromosome: Optional[int] = None, 
-                    infer_schema_length: int = 100_000
+                    infer_schema_length: int = 100_000,
+                    add_alleles: bool = False,
+                    add_positions: bool = True,
+                    positions_file: str = POSITIONS_FILE,
                     ) -> pl.DataFrame:
-    """Load annotation data for specified chromosome(s).
+    """Load annotation data for specified chromosome(s) and merge with LDGMs data.
     
     Args:
         annot_path: Path to directory containing annotation files
@@ -580,6 +584,39 @@ def load_annotations(annot_path: str,
             infer_schema_length=infer_schema_length
         )
         annotations.append(df)
+
+    if add_positions or add_alleles:
+        snplist_data = pl.read_csv(
+            positions_file,
+            separator=',',
+            columns=['chrom', 'site_ids', 'position', 'anc_alleles', 'deriv_alleles']
+        )
+        
+        snplist_data.rename({
+                'chrom': 'CHR',
+                'site_ids': 'SNP',
+                'position': 'POS',
+                'anc_alleles': 'A2',
+                'deriv_alleles': 'A1'
+            })
+
+        with_columns = ['SNP']
+        if add_positions:
+            with_columns += ['chrom', 'POS']
+        if add_alleles:
+            with_columns += ['A2', 'A1']
+        
+        snplist_data = snplist_data.with_columns(pl.col(with_columns).cast(pl.Int64))
+
+        # Merge with positions
+        df = df.join(
+            on='SNP',
+            how='inner'
+        )
+
+    if not add_positions:
+        df = df.rename({'BP': 'POS'})
+    
     return pl.concat(annotations)
 
 

@@ -78,6 +78,7 @@ data/sumstats/
 data/sumstats/*
 data/annot
 data/annot/*
+data/temp/*
 
 # Notebooks
 notebooks/*.ipynb

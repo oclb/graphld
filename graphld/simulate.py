@@ -170,10 +170,10 @@ def _create_block_annotations(metadata: pl.DataFrame, ldgm_metadata_path: str) -
         snplist = pl.read_csv(snplist_path, separator=',', has_header=True)
         block_annotations.append(snplist.with_columns([
             pl.lit(int(row['chrom'])).alias('CHR'),
-            pl.col('position').alias('BP'),
+            pl.col('position').alias('POS'),
             pl.col('site_ids').alias('SNP'),
-            pl.col('anc_alleles').alias('REF'),
-            pl.col('deriv_alleles').alias('ALT')
+            pl.col('anc_alleles').alias('A2'),
+            pl.col('deriv_alleles').alias('A1')
         ]))
     return block_annotations
 
@@ -226,10 +226,10 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
         """
         annotations = kwargs.get('annotations')
         if annotations is None:
-            block_annotations = _create_block_annotations(metadata, kwargs['ldgm_metadata_path'])
+            block_annotations = _create_block_annotations(metadata, kwargs.get('ldgm_metadata_path_duplicate'))
         else:
             block_annotations = partition_variants(metadata, annotations)
-            
+    
         cumulative_num_variants = np.cumsum(np.array([len(df) for df in block_annotations]))
         cumulative_num_variants = [0] + list(cumulative_num_variants[:-1])
 
@@ -310,54 +310,45 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
         alpha *= scaling_param
         
         # Concatenate block annotations and add simulation results
-        if block_data[0][0] is None:
-            # If no annotations, create a minimal DataFrame with just the simulation results
-            return pl.DataFrame({
-                'z_scores': noise + alpha,
-                'beta': beta,
-                'alpha': alpha,
-            })
-        else:
-            # Concatenate block annotations and select relevant columns
-            result = pl.concat([
-                df.select([
-                    'CHR', 
-                    'SNP',
-                    pl.col('BP').alias('POS'), 
-                ]) 
-                for df, _ in block_data
-            ])
-            
-            return result.with_columns([
-                pl.Series('Z', noise + np.sqrt(spec.sample_size) * alpha),
-                pl.Series('beta', beta),
-                pl.Series('alpha', alpha),
-            ])
-
-    def simulate(self, 
-                ldgm_metadata_path: str,
-                populations: Optional[Union[str, List[str]]] = None,
-                chromosomes: Optional[Union[int, List[int]]] = None,
-                annotations: Optional[pl.DataFrame] = None,
-                run_in_serial: bool = False
-                ) -> pl.DataFrame:
-        """Simulate GWAS summary statistics for multiple LD blocks."""
+        result = pl.concat([
+            df.select(['CHR', 'SNP', 'POS', 'A1', 'A2'])
+            for df, _ in block_data
+        ])
         
-        if run_in_serial:
-            return self.run_serial(
-                ldgm_metadata_path=ldgm_metadata_path,
-                populations=populations,
-                chromosomes=chromosomes,
-                worker_params=self,  # Use instance itself as spec
-                spec=self,
-                annotations=annotations  # Pass annotations to prepare_block_data
-            )
-            
-        return self.run(
+        return result.with_columns([
+            pl.Series('Z', noise + np.sqrt(spec.sample_size) * alpha),
+            pl.Series('beta', beta),
+            pl.Series('alpha', alpha),
+        ])
+
+    def simulate(
+            self,
+            ldgm_metadata_path: str,
+            populations: Optional[Union[str, List[str]]] = None,
+            chromosomes: Optional[Union[int, List[int]]] = None,
+            run_in_serial: bool = False,
+            annotations: Optional[pl.DataFrame] = None
+            ) -> pl.DataFrame:
+        """Simulate genetic data.
+        
+        Args:
+            ldgm_metadata_path: Path to LDGM metadata file
+            populations: Population(s) to filter
+            chromosomes: Chromosome(s) to filter
+            run_in_serial: Whether to run in serial mode
+            annotations: Optional variant annotations
+        
+        Returns:
+            Simulated genetic data DataFrame
+        """
+        run_fn = self.run_serial if run_in_serial else self.run
+        
+        return run_fn(
             ldgm_metadata_path=ldgm_metadata_path,
             populations=populations,
             chromosomes=chromosomes,
             worker_params=self,  # Use instance itself as spec
             spec=self,
-            annotations=annotations  # Pass annotations to prepare_block_data
+            annotations=annotations,  
+            ldgm_metadata_path_duplicate=ldgm_metadata_path # So that it is passed to prepare_block_data
         )

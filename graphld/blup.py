@@ -113,21 +113,22 @@ class BLUP(ParallelProcessor):
         manager.await_workers()
         beta = shared_data['beta']
         sumstats = pl.concat([df for df, _ in block_data])
-        return sumstats.with_columns(pl.Series('beta', beta))
+        return sumstats.with_columns(pl.Series('weight', beta))
 
 
     @classmethod
     def compute_blup(cls,
-                ldgm_metadata_path: str,
-                sumstats: pl.DataFrame,
-                sigmasq: float,
-                sample_size: float,
-                populations: Optional[Union[str, List[str]]] = None,
-                chromosomes: Optional[Union[int, List[int]]] = None,
-                num_processes: Optional[int] = None,
-                run_in_serial: bool = False,
-                match_by_position: bool = False,
-                ) -> pl.DataFrame:
+            ldgm_metadata_path: str,
+            sumstats: pl.DataFrame,
+            sigmasq: float,
+            sample_size: float,
+            populations: Optional[Union[str, List[str]]] = None,
+            chromosomes: Optional[Union[int, List[int]]] = None,
+            num_processes: Optional[int] = None,
+            run_in_serial: bool = False,
+            match_by_position: bool = False,
+            verbose: bool = False,
+            ) -> pl.DataFrame:
         """Simulate GWAS summary statistics for multiple LD blocks.
         
         Args:
@@ -135,23 +136,24 @@ class BLUP(ParallelProcessor):
             sumstats: Sumstats dataframe containing Z scores
             populations: Optional population name
             chromosomes: Optional chromosome or list of chromosomes
+            verbose: Print additional information if True
             
         Returns:
             Array of BLUP effect sizes, same length as sumstats
         """ 
-        if run_in_serial:
-            return cls.run_serial(
-                ldgm_metadata_path=ldgm_metadata_path,
-                populations=populations,
-                chromosomes=chromosomes,
-                worker_params=(sigmasq,sample_size,match_by_position),
-                sumstats=sumstats)
-
-        return cls.run(
+        run_fn = cls.run_serial if run_in_serial else cls.run
+        result = run_fn(
             ldgm_metadata_path=ldgm_metadata_path,
             populations=populations,
             chromosomes=chromosomes,
-            worker_params=(sigmasq,sample_size,match_by_position), 
             num_processes=num_processes,
+            worker_params=(sigmasq, sample_size, match_by_position),
             sumstats=sumstats
         )
+        
+        if verbose:
+            print(f"Number of variants in summary statistics: {len(result)}")
+            nonzero_count = (result['weight'] != 0).sum()
+            print(f"Number of variants with nonzero weights: {nonzero_count}")
+        
+        return result

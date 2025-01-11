@@ -1,39 +1,25 @@
 """Run BLUP on height summary statistics."""
 RUN_SERIAL = False
-CHROMOSOME = None
-
+CHROMOSOME = 22
+MATCH_POSITION = True
+POPULATION = "EUR"
+SUMSTATS_PATH = "data/sumstats/height.hg38.vcf"
+SAMPLE_SIZE = 100_000
 from time import time
 import polars as pl
 from graphld import BLUP
+from graphld.vcf_io import read_gwas_vcf
 
 def main():
-    # Load summary statistics
-    sumstats = pl.read_csv(
-        "data/sumstats/body_HEIGHTz.sumstats",
-        separator="\t"
-    )
-
-    # Convert Beta/SE to Z-scores if not already present
-    if 'Z' not in sumstats.columns:
-        sumstats = sumstats.with_columns(
-            (pl.col('Beta') / pl.col('se')).alias('Z')
-        )
-    # Map column names
-    sumstats = sumstats.with_columns([
-        pl.col('A1').alias('ALT'),  # Effect allele
-        pl.col('A2').alias('REF'),  # Reference allele
-    ])
-
-    # Ensure required columns are present
-    required_cols = ['SNP', 'CHR', 'POS', 'REF', 'ALT', 'Z', 'N']
-    missing_cols = [col for col in required_cols if col not in sumstats.columns]
-    if missing_cols:
-        raise ValueError(f"Missing required columns: {', '.join(missing_cols)}")
+    sumstats = read_gwas_vcf(SUMSTATS_PATH)
 
     # Get median sample size if it varies
     num_snps = len(sumstats)
-    sample_size = float(sumstats.select('N').mean().item())
-
+    if 'N' in sumstats.columns:
+        sample_size = float(sumstats.select('N').mean().item())
+    else:
+        sample_size = SAMPLE_SIZE
+    
     # Compute per-SNP variance based on total heritability
     total_h2 = 0.5  # expected heritability for height
     sigmasq = total_h2 / num_snps
@@ -49,10 +35,10 @@ def main():
         sumstats=sumstats,
         sigmasq=sigmasq,
         sample_size=sample_size,
-        populations="EUR",
+        populations=POPULATION,
         chromosomes=CHROMOSOME,
         run_in_serial=RUN_SERIAL,
-        match_by_position=False,
+        match_by_position=MATCH_POSITION,
     )
 
     print(f"BLUP took {time() - t:.2f} seconds")
