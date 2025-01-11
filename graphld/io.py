@@ -556,6 +556,7 @@ def load_annotations(annot_path: str,
                     add_alleles: bool = False,
                     add_positions: bool = True,
                     positions_file: str = POSITIONS_FILE,
+                    file_pattern: str = "baselineLD.{chrom}.annot"
                     ) -> pl.DataFrame:
     """Load annotation data for specified chromosome(s) and merge with LDGMs data.
     
@@ -563,27 +564,50 @@ def load_annotations(annot_path: str,
         annot_path: Path to directory containing annotation files
         chromosome: Specific chromosome number, or None for all chromosomes
         infer_schema_length: Number of rows to infer schema from. Runs faster if this is smaller
-        but will throw an error if too small beause floating-point columns will be
+        but will throw an error if too small because floating-point columns will be
         cast as integers.
+        file_pattern: Filename pattern to match, with {chrom} as a placeholder for chromosome number
+    
     Returns:
         DataFrame containing annotations
-    """
-    if chromosome is not None:
-        return pl.read_csv(
-            os.path.join(annot_path, f"baselineLD.{chromosome}.annot"),
-            separator='\t',
-            infer_schema_length=infer_schema_length
-        )
     
-    # Load all chromosomes and concatenate
+    Raises:
+        ValueError: If no matching annotation files are found
+    """
+    import glob
+    import os
+
+    # Determine which chromosomes to process
+    if chromosome is not None:
+        chrom_range = [chromosome]
+    else:
+        chrom_range = range(1, 23)  # Assuming chromosomes 1-22
+    
+    # Find matching files
     annotations = []
-    for chrom in range(1, 23):  # Assuming chromosomes 1-22
+    for chrom in chrom_range:
+        # Replace {chrom} in the pattern with the actual chromosome number
+        search_pattern = os.path.join(annot_path, file_pattern.format(chrom=chrom))
+        matching_files = glob.glob(search_pattern)
+        
+        if not matching_files:
+            print(f"Warning: No annotation files found for chromosome {chrom} using pattern {search_pattern}")
+            continue
+        
+        # Read the first matching file for this chromosome
         df = pl.read_csv(
-            os.path.join(annot_path, f"baselineLD.{chrom}.annot"),
+            matching_files[0],
             separator='\t',
             infer_schema_length=infer_schema_length
         )
         annotations.append(df)
+    
+    # Check if any files were found
+    if not annotations:
+        raise ValueError(f"No annotation files found in {annot_path} matching pattern {file_pattern}")
+    
+    # Concatenate all dataframes
+    annotations = pl.concat(annotations) if len(annotations) > 1 else annotations[0]
 
     if add_positions or add_alleles:
         snplist_data = pl.read_csv(
@@ -592,31 +616,30 @@ def load_annotations(annot_path: str,
             columns=['chrom', 'site_ids', 'position', 'anc_alleles', 'deriv_alleles']
         )
         
-        snplist_data.rename({
+        snplist_data = snplist_data.rename({
                 'chrom': 'CHR',
                 'site_ids': 'SNP',
                 'position': 'POS',
                 'anc_alleles': 'A2',
                 'deriv_alleles': 'A1'
             })
-
+        
         with_columns = ['SNP']
         if add_positions:
-            with_columns += ['chrom', 'POS']
+            with_columns += ['CHR', 'POS']
         if add_alleles:
             with_columns += ['A2', 'A1']
         
-        snplist_data = snplist_data.with_columns(pl.col(with_columns).cast(pl.Int64))
+        snplist_data = snplist_data.select(with_columns)
 
         # Merge with positions
-        df = df.join(
+        annotations = annotations.join(
+            snplist_data,
             on='SNP',
             how='inner'
         )
 
     if not add_positions:
-        df = df.rename({'BP': 'POS'})
-    
-    return pl.concat(annotations)
+        annotations = annotations.rename({'BP': 'POS'})
 
-
+    return annotations
