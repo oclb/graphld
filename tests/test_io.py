@@ -408,7 +408,7 @@ def test_partition_variants():
         partition_variants(metadata, bad_variants)
 
 
-def test_load_annotations(load_annotations, test_annotations_path):
+def test_load_annotations(test_annotations_path):
     """Test loading annotations with different options."""
     
     # Create test annotations
