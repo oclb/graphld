@@ -8,31 +8,7 @@ import pytest
 from graphld import Simulate, read_ldgm_metadata
 from typing import Optional, Union, List
 
-def create_annotations(ldgm_metadata_path: str, populations: Optional[Union[str, List[str]]]) -> pl.DataFrame:
-    metadata: pl.DataFrame = read_ldgm_metadata(ldgm_metadata_path, populations=populations)
-    annotations = {
-        'SNP': [],
-        'CHR': [],
-        'BP': [],
-        'REF': [],
-        'ALT': [],
-        'base': []
-    }
-    for row in metadata.iter_rows(named=True):
-        snplist_path = os.path.join(os.path.dirname(ldgm_metadata_path), row['snplistName'])
-        snplist = pl.read_csv(snplist_path, separator=',', has_header=True)
-        chromosome = int(row['chrom'])
-        annotations['CHR'].extend([chromosome] * len(snplist))
-        annotations['SNP'].extend(snplist['site_ids'].to_list())
-        annotations['BP'].extend(snplist['position'].to_list())
-        annotations['REF'].extend(snplist['anc_alleles'].to_list())
-        annotations['ALT'].extend(snplist['deriv_alleles'].to_list())
-        annotations['base'].extend([1] * len(snplist))
-
-    return pl.DataFrame(annotations)
-
-
-def test_simulate_with_annotations():
+def test_simulate_with_annotations(metadata_path, create_annotations):
     """Test simulation with variant annotations."""
     # Create simulator with specific settings
     sim = Simulate(
@@ -45,7 +21,6 @@ def test_simulate_with_annotations():
     )
 
     # Create annotations from metadata
-    metadata_path = "data/test/metadata.csv"
     annotations = create_annotations(metadata_path, populations="EUR")
 
     sim_result = sim.simulate(
@@ -54,11 +29,12 @@ def test_simulate_with_annotations():
         annotations=annotations
     )
 
-    num_annotated_variants = np.sum(annotations.select(pl.col('BP').is_first_distinct()).to_numpy())
+    num_annotated_variants = np.sum(annotations.select(pl.col('POS').is_first_distinct()).to_numpy())
     assert len(sim_result) == num_annotated_variants
     assert np.sum(sim_result.select('beta').to_numpy() != 0) > 0
 
-def test_component_mixture():
+
+def test_component_mixture(metadata_path, create_annotations):
     """Test simulation with multiple variance components."""
     sim = Simulate(
         sample_size=100_000,
@@ -70,7 +46,6 @@ def test_component_mixture():
     )
 
     # Create annotations from metadata
-    metadata_path = "data/test/metadata.csv"
     annotations = create_annotations(metadata_path, populations="EUR")
 
     sim_result = sim.simulate(
@@ -88,7 +63,6 @@ def test_component_mixture():
     sim.component_variance = [0.0001, 0.00001]
 
     # Create annotations from metadata
-    metadata_path = "data/test/metadata.csv"
     annotations = create_annotations(metadata_path, populations="EUR")
 
     sim_result = sim.simulate(
@@ -104,7 +78,7 @@ def test_component_mixture():
 
 
 @pytest.mark.skip(reason="Annotation-dependent polygenicity not implemented yet")
-def test_annotation_dependent_polygenicity():
+def test_annotation_dependent_polygenicity(metadata_path, create_annotations):
     """Test annotation-dependent polygenicity."""
     # Create simulator with annotation-dependent polygenicity
     sim = Simulate(
@@ -118,7 +92,6 @@ def test_annotation_dependent_polygenicity():
     )
 
     # Create annotations with a binary feature
-    metadata_path = "data/test/metadata.csv"
     annotations = create_annotations(metadata_path, populations="EUR")
     annotations = annotations.with_columns([
         (pl.col('POS') % 2 == 0).alias('binary_feature')  # Binary feature
@@ -140,14 +113,10 @@ def test_annotation_dependent_polygenicity():
     assert abs(causal_even - causal_odd) > 0.05  # Should see difference in causal probability
 
 
-def test_heritability_scaling():
+def test_heritability_scaling(metadata_path, create_annotations):
     """Test that total heritability scales correctly."""
     h2_values = [0.1, 0.5, 0.9]
     
-    # Create annotations from metadata
-    metadata_path = "data/test/metadata.csv"
-    annotations = create_annotations(metadata_path, populations="EUR")
-
     for h2 in h2_values:
         sim = Simulate(
             sample_size=100_000,
@@ -161,7 +130,6 @@ def test_heritability_scaling():
         result = sim.simulate(
             ldgm_metadata_path=metadata_path,
             populations="EUR",
-            annotations=annotations
         )
 
         # Compute realized heritability
@@ -172,7 +140,7 @@ def test_heritability_scaling():
         np.testing.assert_allclose(realized_h2, h2, rtol=1e-2)
 
 
-def test_reproducibility():
+def test_reproducibility(metadata_path, create_annotations):
     """Test that simulations are reproducible with same random seed."""
     sim1 = Simulate(
         sample_size=100_000,
@@ -193,7 +161,6 @@ def test_reproducibility():
     )
 
     # Create annotations from metadata
-    metadata_path = "data/test/metadata.csv"
     annotations = create_annotations(metadata_path, populations="EUR")
 
     result1 = sim1.simulate(

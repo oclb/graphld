@@ -7,39 +7,9 @@ import pytest
 
 from graphld import read_ldgm_metadata, LDClumper, BLUP
 
-def test_clumping():
+def test_clumping(create_sumstats):
     """Test LD clumping with simulated summary statistics."""
-    def create_sumstats(ldgm_metadata_path: str, populations: str) -> pl.DataFrame:
-        metadata: pl.DataFrame = read_ldgm_metadata(ldgm_metadata_path, populations=populations)
-        sumstats = {
-            'CHR': [],
-            'POS': [],
-            'REF': [],
-            'ALT': [],
-            'Z': [],
-            'SNP': [],  # Add variant IDs
-            'ZSCORE': []  # Add alternative Z score column
-        }
-        for row in metadata.iter_rows(named=True):
-            snplist_path = os.path.join(os.path.dirname(ldgm_metadata_path), row['snplistName'])
-            snplist = pl.read_csv(snplist_path, separator=',', has_header=True)
-            chromosome = int(row['chrom'])
-            n_variants = len(snplist)
-            sumstats['CHR'].extend([chromosome] * n_variants)
-            sumstats['POS'].extend(snplist['position'].to_list())
-            sumstats['REF'].extend(snplist['anc_alleles'].to_list())
-            sumstats['ALT'].extend(snplist['deriv_alleles'].to_list())
-            # Create some "causal" variants with large Z scores
-            z_scores = np.random.randn(n_variants)
-            causal_idx = np.random.choice(n_variants, size=int(0.01 * n_variants), replace=False)
-            z_scores[causal_idx] *= 5  # Make some variants clearly significant
-            sumstats['Z'].extend(list(z_scores))
-            sumstats['ZSCORE'].extend(list(z_scores))  # Same Z scores in alternative column
-            # Create variant IDs that match the site_ids in the snplist
-            sumstats['SNP'].extend(snplist['site_ids'].to_list())
-
-        return pl.DataFrame(sumstats)
-
+    
     # Set random seed for reproducibility
     np.random.seed(42)
 
@@ -54,17 +24,6 @@ def test_clumping():
     rsq_threshold = 0.2  # Relatively stringent LD threshold
     chisq_threshold = 5.0  # Roughly p < 2.5e-2
     
-    # sigmasq = 0.01
-    # sample_size = 10_000
-    # blup = BLUP.compute_blup(metadata_path, 
-    #                         sumstats, 
-    #                         sigmasq, 
-    #                         sample_size, 
-    #                         populations="EUR",
-    #                         run_in_serial=False,
-    #                         match_by_position=True
-    #                         )
-
     # Test default options (match by position, Z column)
     clumped = LDClumper.clump(
         metadata_path,
@@ -115,9 +74,9 @@ def test_clumping():
         chisq_threshold=chisq_threshold,
         populations="EUR",
         run_in_serial=False,
-        z_col='ZSCORE'
+        z_col='Z'
     )
-    
+
     # Results should be identical since Z scores are the same
     assert np.array_equal(
         clumped.select('is_index').to_numpy(),

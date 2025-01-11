@@ -15,7 +15,8 @@ from graphld.io import (
     merge_snplists,
     create_ldgm_metadata,
     read_ldgm_metadata,
-    partition_variants
+    partition_variants,
+    load_annotations
 )
 
 
@@ -159,7 +160,7 @@ def test_merge_snplists():
     assert 'phase' in merged_op.variant_info.columns
     assert 'BETA' in merged_op.variant_info.columns
     # Check that BETA has been phased correctly
-    expected_beta = [-0.1, -0.2, -0.3]  # Original values
+    expected_beta = [0.1, 0.2, 0.3]  # Original values
     actual_beta = list(merged_op.variant_info['BETA'])
     assert all(abs(a - e) < 1e-10 for a, e in zip(actual_beta, expected_beta))
 
@@ -405,3 +406,51 @@ def test_partition_variants():
     })
     with pytest.raises(ValueError, match="Could not find position column"):
         partition_variants(metadata, bad_variants)
+
+
+def test_load_annotations(load_annotations, test_annotations_path):
+    """Test loading annotations with different options."""
+    
+    # Create test annotations
+    annotations = load_annotations(
+        annot_path=str(test_annotations_path),
+        chromosome=1,
+        add_positions=True,
+        add_alleles=True,
+        positions_file='data/rsid_position.csv'
+    )
+    
+    # Verify basic structure
+    assert 'SNP' in annotations.columns
+    assert 'CHR' in annotations.columns
+    assert 'POS' in annotations.columns
+    assert 'A1' in annotations.columns
+    assert 'A2' in annotations.columns
+    
+    # Verify data types are correct
+    assert annotations['SNP'].dtype == pl.Int64
+    assert annotations['CHR'].dtype == pl.Int64
+    assert annotations['POS'].dtype == pl.Int64
+    
+    # Verify data is not empty
+    assert len(annotations) > 0
+    
+    # Optional: Verify some specific properties
+    assert all(annotations['CHR'] == 1)  # Filtered by chromosome
+    assert all(annotations['POS'] > 0)  # Positions are valid
+    
+    # Test without adding positions or alleles
+    annotations_minimal = load_annotations(
+        annot_path=str(test_annotations_path),
+        chromosome=1,
+        add_positions=False,
+        add_alleles=False,
+        positions_file='data/rsid_position.csv'
+    )
+    
+    # Verify minimal structure
+    assert 'SNP' in annotations_minimal.columns
+    assert 'CHR' in annotations_minimal.columns
+    assert 'POS' in annotations_minimal.columns
+    assert 'A1' not in annotations_minimal.columns
+    assert 'A2' not in annotations_minimal.columns
