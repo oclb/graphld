@@ -632,6 +632,9 @@ def load_annotations(annot_path: str,
         
         snplist_data = snplist_data.select(with_columns)
 
+        # Existing coordinates might be in wrong genome build
+        annotations = annotations.drop(['CHR', 'BP'])
+
         # Merge with positions
         annotations = annotations.join(
             snplist_data,

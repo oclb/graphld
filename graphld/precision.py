@@ -123,6 +123,9 @@ class PrecisionOperator(LinearOperator):
             msg = f"Update vector length {len(update)} does not match matrix shape {self.shape}"
             raise ValueError(msg)
 
+        if np.allclose(update, 0):
+            return
+
         for idx, entry in zip(self.diagonal_indices, update, strict=False):
             self._matrix.data[idx] += entry
 

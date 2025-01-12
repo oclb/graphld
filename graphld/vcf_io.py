@@ -28,6 +28,7 @@ def split_sample_column(df: pl.DataFrame) -> pl.DataFrame:
     result = result.with_columns(
         (pl.col('ES') / pl.col('SE')).alias('Z')
     )
+    result = result.filter(~pl.col('Z').is_nan())
     
     return result
 
