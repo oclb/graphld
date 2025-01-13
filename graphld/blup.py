@@ -1,7 +1,6 @@
-from typing import Any, Callable, Dict, List, Optional, Union, Tuple
 from typing import Any, Dict, List, Optional, Union
-from multiprocessing import Process, Value, Array, cpu_count
-import time
+from multiprocessing import Value
+from time import time
 import numpy as np
 import polars as pl
 from .io import partition_variants
@@ -141,6 +140,7 @@ class BLUP(ParallelProcessor):
         Returns:
             Array of BLUP effect sizes, same length as sumstats
         """ 
+        start = time()
         run_fn = cls.run_serial if run_in_serial else cls.run
         result = run_fn(
             ldgm_metadata_path=ldgm_metadata_path,
@@ -150,8 +150,10 @@ class BLUP(ParallelProcessor):
             worker_params=(sigmasq, sample_size, match_by_position),
             sumstats=sumstats
         )
+        runtime = time() - start
         
         if verbose:
+            print(f"Time to compute BLUP: {runtime:.1f}s")
             print(f"Number of variants in summary statistics: {len(result)}")
             nonzero_count = (result['weight'] != 0).sum()
             print(f"Number of variants with nonzero weights: {nonzero_count}")

@@ -226,7 +226,7 @@ def merge_snplists(precision_op: PrecisionOperator,
     # Match variants
     match_by = ('position', pos_col) if match_by_position else ('site_ids', variant_id_col)
     merged = precision_op.variant_info.join(
-        sumstats.with_row_count(),
+        sumstats.with_row_index(name="row_nr"),
         left_on=[match_by[0]],
         right_on=[match_by[1]],
         how='inner'

@@ -113,7 +113,6 @@ def read_gwas_vcf(file_path: str, num_rows: Optional[int]=None, verbose: bool = 
         has_header=True, 
         n_rows=num_rows
     )
-    print(len(df))
     
     df = split_sample_column(df)
     df = process_chromosome_column(df)
