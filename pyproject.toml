@@ -23,6 +23,7 @@ dependencies = [
     "polars>=1.17.1",
     "scipy>=1.14.1",
     "scikit-sparse>=0.4.12",
+    "jupyter>=1.1.1",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +37,9 @@ dev = [
 
 [project.urls]
 Repository = "https://github.com/oclb/graphld"
+
+[project.scripts]
+graphld = "graphld.cli:main"
 
 [tool.setuptools]
 packages = ["graphld"]

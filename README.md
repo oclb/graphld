@@ -19,7 +19,7 @@ All three implementations (in MATLAB, Python, and C) rely under the hood on [Sui
   - [Simulation](#simulation)
 - [Multiprocessing Framework](#multiprocessing-framework)
 - [File Formats](#file-formats)
-
+- [Command Line Interface (CLI)](#command-line-interface-cli)
 
 ## Installation
 
@@ -220,3 +220,32 @@ The [GWAS-VCF specification](https://github.com/MRCIEU/gwasvcf) is supported via
 - `LP`: -log10 p-value
 
 Additional optional fields are supported and described in the GWAS-VCF specification.
+
+## Command Line Interface (CLI)
+
+The CLI has commands for `blup`, `clump`, and `simulate`. It supports the following common options:
+- `-h` or `--help`
+- `-c` or `--chromosome`
+- `-p` or `--population`: If unspecified, all populations found with the metadata file are used
+- `-v` or `--verbose`
+- `-q` or `--quiet`
+- `-n` or `--num_samples`: Sample size for simulation or BLUP
+- `--metadata`: Custom path to LDGM metadata file, if different from default
+- `--num_processes`: Number of parallel processes
+- `--run_in_serial`: Turn off parallel processing
+
+Subcommands have the following additional options:
+
+`graphld blup`:
+- `-H` or `--heritability`: BLUP requires a heritability estimate
+
+`graphld clump`:
+- `--min_chisq`: Minimum $\chi^2$ threshold for clumping
+- `--max_rsq`: Maximum $r^2$ threshold for clumping 
+
+`graphld simulate`:
+- `-H` or `--heritability`: Heritability of simulated trait
+- `--component_variance`: Relative effect-size variance of each mixture component; scaled to match desired heritability
+- `--component_weight`: Weight of each mixture component; should sum to $\leq 1$
+- `--alpha_param`: Alpha parameter controlling frequency-dependent architecture; between -1 and 0; default $-0.5$
+- `--random_seed`
