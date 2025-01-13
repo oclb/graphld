@@ -25,7 +25,7 @@ def metadata_path(test_data_dir):
 @pytest.fixture
 def sumstats_path(test_data_dir):
     """Get test sumstats path."""
-    return test_data_dir / "test_sumstats.sumstats"
+    return test_data_dir / "example.sumstats"
 
 
 def test_blup(metadata_path, sumstats_path):
