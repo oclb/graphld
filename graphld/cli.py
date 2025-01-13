@@ -8,6 +8,7 @@ from pathlib import Path
 
 import graphld as gld
 from graphld.vcf_io import read_gwas_vcf
+from graphld.ldsc_io import read_ldsc_sumstats
 import polars as pl
 
 title = """
@@ -76,7 +77,7 @@ def _blup(
         match_by_position = True
         sample_size_col = 'NS'
     elif sumstats.endswith('.sumstats'):
-        sumstats = pl.read_csv(sumstats, separator='\t')
+        sumstats = read_ldsc_sumstats(sumstats)
         match_by_position = False
         sample_size_col = 'N'
     else:
@@ -154,7 +155,7 @@ def _clump(
     if sumstats.endswith('.vcf'):
         sumstats_df = read_gwas_vcf(sumstats)
     elif sumstats.endswith('.sumstats'):
-        sumstats_df = pl.read_csv(sumstats, separator='\t')
+        sumstats_df = read_ldsc_sumstats(sumstats)
     else:
         raise ValueError("Input file must end in .vcf or .sumstats")
     
@@ -168,7 +169,7 @@ def _clump(
         run_in_serial=run_in_serial,
         chromosomes=chromosome,
         populations=population
-    ).filter(pl.col('is_index'))
+    ).filter(pl.col('is_index')).drop('is_index')
     
     # Write output
     clumped.write_csv(out, separator='\t')

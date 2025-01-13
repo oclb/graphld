@@ -44,7 +44,7 @@ def read_ldsc_sumstats(
     )
     
     # Compute Z score if needed
-    if 'Beta' in df.columns:
+    if 'Beta' in df.columns and 'Z' not in df.columns:
         df = df.with_columns(
             (pl.col('Beta') / pl.col('se')).alias('Z')
         ).drop(['Beta', 'se'])
