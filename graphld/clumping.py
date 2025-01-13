@@ -3,11 +3,12 @@
 from typing import Any, Union, List, Optional
 import polars as pl
 import numpy as np
+from multiprocessing import Value
+from time import time
 
 from .multiprocessing import ParallelProcessor, WorkerManager, SerialManager, SharedData
 from .precision import PrecisionOperator
 from .io import partition_variants, merge_snplists
-from multiprocessing import Value
 
 
 class LDClumper(ParallelProcessor):
@@ -174,11 +175,12 @@ class LDClumper(ParallelProcessor):
             chisq_threshold: float,
             populations: Optional[Union[str, List[str]]] = None,
             chromosomes: Optional[Union[int, List[int]]] = None,
-            num_processes: Optional[int] = None,
             run_in_serial: bool = False,
+            num_processes: Optional[int] = None,
             z_col: str = 'Z',
             match_by_position: bool = True,
-            variant_id_col: str = 'SNP'
+            variant_id_col: str = 'SNP',
+            verbose: bool = False,
             ) -> pl.DataFrame:
         """Perform LD clumping on summary statistics.
         
@@ -198,19 +200,21 @@ class LDClumper(ParallelProcessor):
         Returns:
             DataFrame with additional column 'is_index' indicating index variants
         """
-        if run_in_serial:
-            return cls.run_serial(
-                ldgm_metadata_path=ldgm_metadata_path,
+
+        start = time()
+        run_fn = cls.run_serial if run_in_serial else cls.run
+        result = run_fn(ldgm_metadata_path=ldgm_metadata_path,
                 populations=populations,
                 chromosomes=chromosomes,
+                num_processes=num_processes,
                 worker_params=(rsq_threshold, chisq_threshold, z_col, match_by_position, variant_id_col),
                 sumstats=sumstats)
+        runtime = time() - start
 
-        return cls.run(
-            ldgm_metadata_path=ldgm_metadata_path,
-            populations=populations,
-            chromosomes=chromosomes,
-            worker_params=(rsq_threshold, chisq_threshold, z_col, match_by_position, variant_id_col),
-            num_processes=num_processes,
-            sumstats=sumstats
-        )
+        if verbose:
+            print(f"Time to perform LD clumping: {runtime:.1f}s")
+            print(f"Number of variants in summary statistics: {len(result)}")
+            nonzero_count = (result['is_index']).sum()
+            print(f"Number of index variants: {nonzero_count}")
+        
+        return result

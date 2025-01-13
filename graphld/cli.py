@@ -10,6 +10,7 @@ import graphld as gld
 from graphld.vcf_io import read_gwas_vcf
 from graphld.ldsc_io import read_ldsc_sumstats
 import polars as pl
+from .io import load_annotations
 
 title = """
 ██████╗ ██████╗  █████╗ ██████╗ ██╗  ██╗██╗     ██████╗ 
@@ -168,7 +169,8 @@ def _clump(
         num_processes=num_processes,
         run_in_serial=run_in_serial,
         chromosomes=chromosome,
-        populations=population
+        populations=population,
+        verbose=verbose,
     ).filter(pl.col('is_index')).drop('is_index')
     
     # Write output
@@ -189,7 +191,8 @@ def _simulate(
     chromosome: Optional[int] = None,
     population: Optional[str] = None,
     verbose: bool = False,
-    sample_size: int = 1000
+    sample_size: int = 1000,
+    annotations: Optional[str] = None
 ) -> None:
     """Run genetic simulation with configurable parameters.
     
@@ -209,6 +212,7 @@ def _simulate(
         population: Optional population to filter analysis
         verbose: Whether to print verbose output
         sample_size: Number of samples to simulate (default: 1000)
+        annotations: Path to annotation file for simulation
     
     Raises:
         ValueError: If parameters are invalid
@@ -223,11 +227,12 @@ def _simulate(
         raise ValueError(f"Sample size must be positive, got {sample_size}")
     
     # Load annotations if needed
-    annotations = None
-    if annotation_dependent_polygenicity or annotation_columns:
-        annotations = load_annotations(
-            "data/annot/",  # Default annotation path
-            chromosome
+    annotations_df = None
+    if annotations:
+        annotations_df = load_annotations(
+            annotations,
+            chromosome,
+            add_alleles=True,
         )
     
     # Create Simulate object
@@ -246,8 +251,10 @@ def _simulate(
         ldgm_metadata_path=metadata,
         populations=population,
         chromosomes=chromosome,
-        annotations=annotations,
-        run_in_serial=run_in_serial
+        annotations=annotations_df,
+        run_in_serial=run_in_serial,
+        num_processes=num_processes,
+        verbose=verbose,
     )
     
     # Write output
@@ -310,8 +317,6 @@ def _main(args):
     _add_common_arguments(sim_p)  # Add common arguments to simulate subparser
     sim_p.add_argument("sumstats", type=str, 
                        help="Path to output summary statistics file (.sumstats)")
-    sim_p.add_argument("--sample_size", type=int, default=1000,
-                       help="Number of samples to simulate (default: 1000)")
     sim_p.add_argument("-H", "--heritability", type=float, default=0.2,
                        help="Heritability (default: 0.2)")
     sim_p.add_argument("--component_variance", type=lambda s: [float(x) for x in s.split(',')],
@@ -324,11 +329,13 @@ def _main(args):
                        help="Alpha parameter (default: -0.5)")
     sim_p.add_argument("--annotation_dependent_polygenicity", action="store_true",
                        help="Annotation dependent polygenicity")
-    sim_p.add_argument("--random_seed", type=int, default=42,
-                       help="Random seed (default: 42)")
+    sim_p.add_argument("--random_seed", type=int, default=None,
+                    help="Random seed (default: None)")
     sim_p.add_argument("--annotation_columns", type=lambda s: s.split(','),
                        default=None,
                        help="Annotation columns")
+    sim_p.add_argument("-a", "--annotations", type=str, default=None,
+                       help="Directory containing annotation files ending in .annot")
     sim_p.set_defaults(func=_simulate)
 
     # Parse arguments
@@ -411,6 +418,10 @@ def _main(args):
                     parsed_args.verbose = True
                 elif additional_args[i] in ['-q', '--quiet']:
                     parsed_args.quiet = True
+                elif additional_args[i] in ['-n', '--num_samples']:
+                    parsed_args.num_samples = int(additional_args[i+1])
+                elif additional_args[i] in ['-a', '--annotations']:
+                    parsed_args.annotations = additional_args[i+1]
 
     # Pull passed arguments/options as a string for printing
     cmd_str = _construct_cmd_string(parsed_args, argp)
@@ -470,7 +481,8 @@ def _main(args):
             parsed_args.chromosome, 
             parsed_args.population, 
             parsed_args.verbose,
-            parsed_args.sample_size
+            parsed_args.num_samples,
+            parsed_args.annotations
         )
 
 def main():

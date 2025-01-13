@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 METADATA_PATH = "data/ldgms/metadata.csv"
 ANNOT_PATH = "data/annot/"
-CHROMOSOME = None
+CHROMOSOME = 22
 POPULATION = "EUR"
 RUN_IN_SERIAL = False
 
 import time
-from graphld import Simulate, read_ldgm_metadata, LDClumper, load_annotations
+from graphld import Simulate, read_ldgm_metadata, LDClumper
+from graphld.io import load_annotations
 from typing import *
 import polars as pl
 import numpy as np
@@ -19,7 +20,7 @@ def main():
     np.random.seed(42)
 
     t = time.time()
-    annotations = load_annotations(ANNOT_PATH, CHROMOSOME)
+    annotations = load_annotations(ANNOT_PATH, CHROMOSOME, add_alleles=True)
     print(f"Time to load annotations: {time.time() - t:.3f}s")
     t = time.time()
 

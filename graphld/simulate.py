@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 from multiprocessing import Process, Value, Array, cpu_count
 import os
-import time
+from time import time
 import traceback
 from itertools import zip_longest
 
@@ -266,7 +266,10 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
         
         # Simulate effect sizes using the merged data
         beta, alpha = _simulate_beta_block(ldgm, worker_params)
-        noise = _simulate_noise_block(ldgm, random_seed=worker_params.random_seed + variant_offset)
+        
+        block_random_seed = None if worker_params.random_seed is None \
+            else worker_params.random_seed + variant_offset
+        noise = _simulate_noise_block(ldgm, random_seed=block_random_seed)
 
         # Create zero-filled arrays for all variants in sumstats
         beta_reshaped = np.zeros((num_variants, 1))
@@ -327,7 +330,9 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
             populations: Optional[Union[str, List[str]]] = None,
             chromosomes: Optional[Union[int, List[int]]] = None,
             run_in_serial: bool = False,
-            annotations: Optional[pl.DataFrame] = None
+            num_processes: Optional[int] = None,
+            annotations: Optional[pl.DataFrame] = None,
+            verbose: bool = False,
             ) -> pl.DataFrame:
         """Simulate genetic data.
         
@@ -341,14 +346,24 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
         Returns:
             Simulated genetic data DataFrame
         """
+        start = time()
         run_fn = self.run_serial if run_in_serial else self.run
-        
-        return run_fn(
+        result = run_fn(
             ldgm_metadata_path=ldgm_metadata_path,
             populations=populations,
             chromosomes=chromosomes,
             worker_params=self,  # Use instance itself as spec
             spec=self,
             annotations=annotations,  
-            ldgm_metadata_path_duplicate=ldgm_metadata_path # So that it is passed to prepare_block_data
+            ldgm_metadata_path_duplicate=ldgm_metadata_path, # So that it is passed to prepare_block_data
+            num_processes=num_processes,
         )
+        runtime = time() - start
+
+        if verbose:
+            print(f"Time to simulate summary statistics: {runtime:.1f}s")
+            print(f"Number of variants in summary statistics: {len(result)}")
+            nonzero_count = (result['beta'] != 0).sum()
+            print(f"Number of variants with nonzero beta: {nonzero_count}")
+        
+        return result
