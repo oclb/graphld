@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Print the single header
-echo "chrom,site_ids,position"
+echo "chrom,site_ids,position,anc_alleles,deriv_alleles"
 
 # Loop over each *.snplist file
 for file in ldgms/*.snplist; do
@@ -17,7 +17,7 @@ for file in ldgms/*.snplist; do
         BEGIN { FS = "," }    # split on commas
         NR == 1 { next }      # skip header line of each file
         $9 != "NA" {
-            print CHR "," $9 "," $10
+            print CHR "," $9 "," $10 "," $2 "," $3
         }
     ' "$file"
 done
