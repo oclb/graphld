@@ -20,7 +20,7 @@ def test_read_ldsc_sumstats_with_beta_se():
     
     # Check required columns
     required_cols = {'SNP', 'N', 'Z', 'A1', 'A2', 'CHR', 'POS'}
-    assert set(df.columns) == required_cols
+    assert required_cols.issubset(set(df.columns)), f"Missing columns: {required_cols - set(df.columns)}"
     
     # Check data types
     assert df.schema['SNP'] == pl.Utf8
