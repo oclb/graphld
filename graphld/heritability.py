@@ -69,7 +69,7 @@ def _newton_step(gradient: np.ndarray, hessian: np.ndarray) -> np.ndarray:
     # print(f"Performing step with gradient: {gradient}, hessian diagonal: {np.diag(hessian)}")
     # print(hessian)
     
-    ll = np.trace(hessian) / len(hessian) * 20
+    ll = np.trace(hessian) / len(hessian) * 2000
     return -np.linalg.solve(hessian + ll * np.eye(len(hessian)), gradient)
 
 def softmax_robust(x: np.ndarray) -> np.ndarray:
@@ -90,6 +90,7 @@ def _get_softmax_link_function(n_snps: int) -> tuple[Callable, Callable]:
         - Link function mapping (annot, theta) to per-SNP heritabilities
         - Gradient of the link function
     """
+    np.seterr(over='ignore')
 
     def _link_fn(annot: np.ndarray, theta: np.ndarray) -> np.ndarray:
         """Softmax link function."""
@@ -99,9 +100,9 @@ def _get_softmax_link_function(n_snps: int) -> tuple[Callable, Callable]:
         """Gradient of softmax link function."""
         x = annot @ theta
         result = annot / n_snps / (1 + np.exp(-x))
-        mask = x < 0
+        mask = x.flatten() < 0
         if mask.any():
-            result[mask] = (annot[mask] * np.exp(x[mask]) / 
+            result[mask,:] = (annot[mask,:] * np.exp(x[mask]) / 
                             (1 + np.exp(x[mask])) / n_snps)
         return result
 
@@ -364,7 +365,6 @@ class GraphREML(ParallelProcessor):
         num_params = kwargs.get('num_params')
         verbose = kwargs.get('verbose')
         sample_size = kwargs.get('sample_size')
-        num_iterations = kwargs.get('num_iterations')
         
         log_likelihood_history = []
         for rep in range(num_iterations):
@@ -372,7 +372,7 @@ class GraphREML(ParallelProcessor):
                 print(f"starting iteration {rep} with params {shared_data['params']}")
             
             # Calculate likelihood, gradient, and hessian for each block
-            manager.start_workers()
+            manager.start_workers(flags['COMPUTE_ALL'])
             manager.await_workers()
             shared_data['is_first_iter'] = 0
 
@@ -393,6 +393,8 @@ class GraphREML(ParallelProcessor):
             heritability = np.sum(shared_data['variant_h2'] / sample_size)
             if verbose:
                 print(f"heritability: {heritability}")
+                print(f"Variants with nonzero h2: {np.sum(shared_data['variant_h2'] != 0)}")
+                print(f"Variants: {len(shared_data['variant_h2'])}")
 
         return heritability, log_likelihood_history
 

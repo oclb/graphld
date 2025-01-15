@@ -300,10 +300,11 @@ class ParallelProcessor(ABC):
 
                 # Process all blocks and collect solutions
                 block_offset = offset
+                starting_flag = flag.value
                 for ldgm, data in zip(ldgms, block_data):
                     cls.process_block(ldgm, flag, shared_data, block_offset, data, worker_params)
                     block_offset += ldgm.shape[0]
-
+                assert flag.value == starting_flag, "process_block should not change flag"
                 # Signal completion
                 flag.value = 0
 

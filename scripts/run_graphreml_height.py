@@ -6,24 +6,25 @@ import numpy as np
 from graphld.heritability import ModelOptions, MethodOptions, run_graphREML
 from graphld.io import load_annotations
 from graphld.vcf_io import read_gwas_vcf
-
+from graphld.ldsc_io import read_ldsc_sumstats
 METADATA_PATH = "data/ldgms/metadata.csv"
 ANNOT_PATH = "data/annot/"
-SUMSTATS_PATH = "data/sumstats/height.hg38.vcf"
-CHROMOSOME = None
+SUMSTATS_PATH = "data/sumstats/body_HEIGHTz.sumstats"
+CHROMOSOME = 22
 POPULATION = "EUR"
 MATCH_POSITION = True
 RUN_SERIAL = False
-NUM_REPS = 5
+NUM_REPS = 500
 NUM_PROCESSES = 12
 NUM_SAMPLES = 100
 SAMPLE_SIZE = 400000
-NUM_ANNOT = None
+NUM_ANNOT = 4
 VERBOSE = True
 
 def main():
     t = time.time()
-    sumstats = read_gwas_vcf(SUMSTATS_PATH)
+    # sumstats = read_gwas_vcf(SUMSTATS_PATH)
+    sumstats = read_ldsc_sumstats(SUMSTATS_PATH)
     print(len(sumstats))
     print(f"Time to read sumstats: {time.time() - t:.3f}s")
     

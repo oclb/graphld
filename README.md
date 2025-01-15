@@ -6,9 +6,9 @@ For more information about LDGMs, see our [paper](https://pubmed.ncbi.nlm.nih.go
 
 Some of the functions are translated from MATLAB functions contained in the [LDGM repository](https://github.com/awohns/ldgm/tree/main/MATLAB) and the [graphREML repository](https://github.com/huilisabrina/graphREML). 
 
-Giulio Genovese has implemented a LDGM-VCF file format specification and a bcftools plugin written in C with some of the same functionality, available [here](https://github.com/freeseek/score). The LDGM-VCF specification (and the GWAS-VCF specification) will be supported in a future update.
+Giulio Genovese has implemented a LDGM-VCF file format specification and a bcftools plugin written in C with some of the same functionality, available [here](https://github.com/freeseek/score).
 
-All three implementations (in MATLAB, Python, and C) rely under the hood on [SuiteSparse](https://github.com/DrTimothyAldenDavis/SuiteSparse), so they should have similar performance. 
+All three APIs (in MATLAB, Python, and C) rely under the hood on [SuiteSparse](https://github.com/DrTimothyAldenDavis/SuiteSparse), so they should have similar performance. 
 
 ## Table of Contents
 - [Installation](#installation)
