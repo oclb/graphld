@@ -63,13 +63,33 @@ class MethodOptions:
     num_processes: Optional[int] = None
     verbose: bool = False
 
+def _surrogate_marker(ldgm: PrecisionOperator, missing_index: int, candidates: pl.DataFrame) -> int:
+    """Find a surrogate marker for a missing variant.
+
+    Args:
+        ldgm: LDGM object
+        missing_variant: Variant ID to be imputed
+        candidates: Array of candidate variant IDs
+
+    Returns:
+        ID of the surrogate marker
+    """
+    indicator = np.zeros(ldgm.shape[0])
+    indicator[missing_index] = 1
+    index_correlations = ldgm.solve(indicator)
+    candidate_correlations = index_correlations[candidates.select('index').to_numpy()]
+    surrogate = np.argmax(candidate_correlations ** 2)
+
+    return candidates.filter(pl.col('surrogate_nr') == surrogate).to_dicts()[0]
+
+
 
 def _newton_step(gradient: np.ndarray, hessian: np.ndarray) -> np.ndarray:
     """Compute Newton step: -H^{-1}g."""
     # print(f"Performing step with gradient: {gradient}, hessian diagonal: {np.diag(hessian)}")
     # print(hessian)
     
-    ll = np.trace(hessian) / len(hessian) * 2000
+    ll = np.trace(hessian) / len(hessian) * 50
     return -np.linalg.solve(hessian + ll * np.eye(len(hessian)), gradient)
 
 def softmax_robust(x: np.ndarray) -> np.ndarray:
@@ -199,6 +219,8 @@ class GraphREML(ParallelProcessor):
             - z: Raw Z-scores after filtering
             - Pz: Z-scores premultiplied by precision matrix
         """
+        # print(sumstats.select('Z').head(55))
+
         # Merge annotations with LDGM variant info
         from .io import merge_snplists
         ldgm, sumstat_indices = merge_snplists(
@@ -212,8 +234,25 @@ class GraphREML(ParallelProcessor):
             modify_in_place=True
         )
 
+        variant_info = ldgm.variant_info.with_row_index(name="vi_row_nr")
+        variant_info_nonmissing = variant_info.filter(pl.col('Z').is_not_null()).with_row_index(name="surrogate_nr")
+        variant_info_missing = variant_info.filter(pl.col('Z').is_null())
+        indices_arr = np.array(variant_info.get_column('index').to_numpy())
+        z_arr = np.array(variant_info.get_column('Z').to_numpy())
+        for row in variant_info_missing.to_dicts():
+            surrogate_row = _surrogate_marker(ldgm, row['index'], variant_info_nonmissing)
+            indices_arr[row['vi_row_nr']] = surrogate_row['index']
+            z_arr[row['vi_row_nr']] = surrogate_row['Z']
+
+        ldgm.variant_info = variant_info.with_columns([
+            pl.Series('index', indices_arr),
+            pl.Series('Z', z_arr)
+        ]).drop('vi_row_nr')
+
+        print(f"Number of missing rows: {len(variant_info_missing)}")
+        
         # Keep only first occurrence of each index for Z-scores
-        first_index_mask = ldgm.variant_info.select(pl.col('index').is_first_distinct()).to_numpy().flatten()
+        first_index_mask = variant_info.select(pl.col('index').is_first_distinct()).to_numpy().flatten()
         z = ldgm.variant_info.select('Z').filter(first_index_mask).to_numpy()
 
         # Compute Pz
@@ -430,14 +469,18 @@ def run_graphREML(model_options: ModelOptions,
         - convergence diagnostics
     """
     # Merge summary stats with annotations
+    if not method_options.match_by_position:
+        raise NotImplementedError
+        # TODO correctly handle !match_by_position; currently CHR and POS become CHR_right, POS_right
+    
     join_cols = ['CHR', 'POS'] if method_options.match_by_position else ['SNP']
     merged_data = summary_stats.join(
         annotation_data,
         on=join_cols,
-        how='inner'
+        how='right'
     )
     print(f"Number of variants merged with annotations: {len(merged_data)}")
-
+    print(merged_data.head())
 
     run_fn = GraphREML.run_serial if method_options.run_serial else GraphREML.run
     return run_fn(
