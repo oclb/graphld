@@ -149,10 +149,14 @@ def merge_alleles(anc_alleles: pl.Series, deriv_alleles: pl.Series,
     exact_match = (anc == ref) & (der == alt)
     flipped_match = (anc == alt) & (der == ref)
 
+    # Null alleles are given NaN phase so that corresponding Z scores will be NaN
+    null_match = (ref_alleles.is_null().to_numpy() & alt_alleles.is_null().to_numpy())
+
     # Convert to phase
-    phase = np.zeros(len(anc), dtype=np.int64)
+    phase = np.zeros(len(anc), dtype=np.float32)
     phase[exact_match] = 1
     phase[flipped_match] = -1
+    phase[null_match] = np.nan
 
     return pl.Series(phase)
 
