@@ -54,14 +54,28 @@ class MethodOptions:
         run_serial: Run in serial rather than parallel
         num_processes: If None, autodetect
         verbose: Flag for verbose output
+        use_surrogate_markers: Whether to use surrogate markers for missing variants
+        trust_region_size: Initial trust region size parameter
+        trust_region_rho_lb: Lower bound for trust region ratio
+        trust_region_rho_ub: Upper bound for trust region ratio
+        trust_region_scalar: Scaling factor for trust region updates
+        max_trust_iterations: Maximum number of trust region iterations
+        reset_trust_region: Whether to reset trust region size at each iteration
     """
     gradient_num_samples: int = 100
     match_by_position: bool = False
     num_iterations: int = 10
-    convergence_tol: float = 1e-1
+    convergence_tol: float = 1e-3
     run_serial: bool = False
     num_processes: Optional[int] = None
     verbose: bool = False
+    use_surrogate_markers: bool = True
+    trust_region_size: float = 1e-1
+    trust_region_rho_lb: float = 1e-4
+    trust_region_rho_ub: float = .99
+    trust_region_scalar: float = 5
+    max_trust_iterations: int = 20
+    reset_trust_region: bool = True
 
 def _surrogate_marker(ldgm: PrecisionOperator, missing_index: int, candidates: pl.DataFrame) -> int:
     """Find a surrogate marker for a missing variant.
@@ -81,8 +95,6 @@ def _surrogate_marker(ldgm: PrecisionOperator, missing_index: int, candidates: p
     surrogate = np.argmax(candidate_correlations ** 2)
 
     return candidates.filter(pl.col('surrogate_nr') == surrogate).to_dicts()[0]
-
-
 
 def _newton_step(gradient: np.ndarray, hessian: np.ndarray) -> np.ndarray:
     """Compute Newton step: -H^{-1}g."""
@@ -382,6 +394,17 @@ class GraphREML(ParallelProcessor):
                             (block_index + 1) * num_annot**2)
         shared_data['hessian', hessian_slice] = hessian.flatten()
 
+    @staticmethod
+    def _annotation_heritability(variant_h2: np.ndarray, annot: pl.DataFrame, ref_col: int) -> Tuple[np.ndarray, np.ndarray]:
+        """Computes the heritability of each annotation based on the given h2 values.
+        """
+        annot_mat = annot.to_numpy().T
+        annot_h2 = annot_mat @ variant_h2
+        annot_size = np.sum(annot_mat, axis=1)
+        annot_enrichment = annot_size[ref_col] * annot_h2 / (annot_h2[ref_col] * annot_size)
+
+        return annot_h2, annot_enrichment
+
 
     @classmethod
     def supervise(cls, manager: WorkerManager, shared_data: SharedData, block_data: list, **kwargs):
@@ -404,8 +427,31 @@ class GraphREML(ParallelProcessor):
         num_params = kwargs.get('num_params')
         verbose = kwargs.get('verbose')
         sample_size = kwargs.get('sample_size')
+        method = kwargs.get('method')
+        model = kwargs.get('model')
         
         log_likelihood_history = []
+        trust_region_lambda = method.trust_region_size
+        
+        def _trust_region_step(gradient: np.ndarray, hessian: np.ndarray, trust_region_lambda: float) -> np.ndarray:
+            """Compute trust region step by solving (H + λD)x = -g.
+            
+            Args:
+                gradient: Gradient vector
+                hessian: Hessian matrix
+                trust_region_lambda: Trust region parameter
+                
+            Returns:
+                Step vector
+            """
+            hess_mod = hessian + trust_region_lambda * np.diag(np.diag(hessian))
+            hess_mod += np.finfo(float).eps * np.eye(len(hessian))
+            
+            # TODO from MATLAB; commented out for now
+            # hess_mod += 1e-2 * trust_region_lambda
+            
+            return np.linalg.solve(hess_mod, gradient)
+
         for rep in range(num_iterations):
             if verbose:
                 print(f"starting iteration {rep} with params {shared_data['params']}")
@@ -418,22 +464,72 @@ class GraphREML(ParallelProcessor):
             likelihood = cls._sum_blocks(shared_data['likelihood'], (1,))
             gradient = cls._sum_blocks(shared_data['gradient'], (num_params,))
             hessian = cls._sum_blocks(shared_data['hessian'], (num_params,num_params))
-
-            # TODO replace with trust region
-            step = _newton_step(gradient, hessian)
-            shared_data['params'] = shared_data['params'] + step
-
-            # as placeholder - similar will be needed for trust region
-            manager.start_workers(flags['COMPUTE_LIKELIHOOD_ONLY'])
-            manager.await_workers()
-            assert likelihood != cls._sum_blocks(shared_data['likelihood'], (1,))
             
-            log_likelihood_history.append(likelihood[0])
+            old_params = shared_data['params'].copy()
+            old_likelihood = likelihood[0]
+            
+            # Reset trust region size if specified
+            if method.reset_trust_region or rep == 0:
+                trust_region_lambda = method.trust_region_size
+                
+            # Trust region optimization loop
+            for trust_iter in range(method.max_trust_iterations):
+                # Compute proposed step
+                step = _trust_region_step(gradient, hessian, trust_region_lambda)
+                shared_data['params'] = old_params - step
+                
+                # Evaluate proposed step
+                manager.start_workers(flags['COMPUTE_LIKELIHOOD_ONLY'])
+                manager.await_workers()
+                new_likelihood = cls._sum_blocks(shared_data['likelihood'], (1,))[0]
+                
+                # Compute actual vs predicted increase
+                actual_increase = new_likelihood - old_likelihood
+                predicted_increase = -(step.T @ gradient - 0.5 * step.T @ (hessian @ step))
+                
+                # Check if step is acceptable
+                if actual_increase < 0:  # Likelihood decreased (worse)
+                    rho = -1
+                else:
+                    rho = abs(actual_increase) / predicted_increase if predicted_increase > 0 else actual_increase / predicted_increase if predicted_increase > 0 else -1
+                    
+                # Update trust region size
+                if rho < method.trust_region_rho_lb:
+                    trust_region_lambda *= method.trust_region_scalar
+                    shared_data['params'] = old_params  # Revert step
+                elif rho > method.trust_region_rho_ub:
+                    trust_region_lambda /= method.trust_region_scalar
+                    break  # Accept step and continue to next iteration
+                else:
+                    break  # Accept step with current trust region size
+                    
+                if trust_iter == method.max_trust_iterations - 1:
+                    if verbose:
+                        print("Warning: Maximum trust region iterations reached")
+                    shared_data['params'] = old_params - step  # Use last step
+            
+            log_likelihood_history.append(new_likelihood)
             heritability = np.sum(shared_data['variant_h2'] / sample_size)
+
+            annotations = pl.concat([dict['sumstats'].select(model.annotation_columns) for dict in block_data])
+            ref_col = 0 # Maybe TODO
+            annotation_heritability, annotation_enrichment = cls._annotation_heritability(
+                shared_data['variant_h2'], annotations, ref_col)
+            
             if verbose:
                 print(f"heritability: {heritability}")
+                print(f"enrichment: {annotation_enrichment}")
                 print(f"Variants with nonzero h2: {np.sum(shared_data['variant_h2'] != 0)}")
                 print(f"Variants: {len(shared_data['variant_h2'])}")
+                print(f"Trust region lambda: {trust_region_lambda}")
+                print(f"max and min variant h2: {np.max(shared_data['variant_h2'])}, {np.min(shared_data['variant_h2'])}")
+                
+            # Check convergence
+            if len(log_likelihood_history) >= 2:
+                if abs(log_likelihood_history[-1] - log_likelihood_history[-2]) < method.convergence_tol:
+                    if verbose:
+                        print("Converged!")
+                    break
 
         return heritability, log_likelihood_history
 
@@ -474,13 +570,12 @@ def run_graphREML(model_options: ModelOptions,
         # TODO correctly handle !match_by_position; currently CHR and POS become CHR_right, POS_right
     
     join_cols = ['CHR', 'POS'] if method_options.match_by_position else ['SNP']
+    merge_how = 'right' if method_options.use_surrogate_markers else 'inner'
     merged_data = summary_stats.join(
         annotation_data,
         on=join_cols,
-        how='right'
+        how=merge_how
     )
-    print(f"Number of variants merged with annotations: {len(merged_data)}")
-    print(merged_data.head())
 
     run_fn = GraphREML.run_serial if method_options.run_serial else GraphREML.run
     return run_fn(
