@@ -1,5 +1,4 @@
 download:
-	mkdir ldgms
 	curl -L -o - https://zenodo.org/record/8157131/files/AFR.precision.tar.gz | tar -xz -C ldgms
 	curl -L -o - https://zenodo.org/record/8157131/files/AMR.precision.tar.gz | tar -xz -C ldgms
 	curl -L -o - https://zenodo.org/record/8157131/files/EAS.precision.tar.gz | tar -xz -C ldgms
@@ -13,7 +12,6 @@ download:
 	./create_rsid_position.sh > rsid_position.csv
 	
 download_eur:
-	mkdir ldgms
 	curl -L -o - https://zenodo.org/record/8157131/files/EUR.precision.tar.gz | tar -xz -C ldgms
 	curl -L -o - https://zenodo.org/record/8157131/files/snplists_GRCh38positions.tar.gz | tar -xz -C ldgms
 	mv ldgms/*/* ldgms
@@ -22,7 +20,6 @@ download_eur:
 	./create_rsid_position.sh > rsid_position.csv
 	
 download_all:
-	mkdir ldgms
 	curl -L -o ldgms/1kg_nygc_trios_removed_All_pops_geno_ids_pops.csv https://zenodo.org/record/8157131/files/1kg_nygc_trios_removed_All_pops_geno_ids_pops.csv
 	curl -L -o - https://zenodo.org/record/8157131/files/AFR.precision.tar.gz | tar -xz -C ldgms
 	curl -L -o - https://zenodo.org/record/8157131/files/AMR.precision.tar.gz | tar -xz -C ldgms
