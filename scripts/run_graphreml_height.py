@@ -137,7 +137,7 @@ def main():
 
     # Run GraphREML
     start_time = time.time()
-    h2, enrichment, likelihood, params, params_se, h2_se, enrichment_se = run_graphREML(
+    results = run_graphREML(
         model_options=model_options,
         method_options=method_options,
         summary_stats=sumstats,
@@ -148,16 +148,15 @@ def main():
     )
     runtime = time.time() - start_time
     print(f"Time to run GraphREML: {runtime:.3f}s")
-    print(f"Estimated heritability: {h2}")
-    print(f"SE of estimated heritability: {h2_se}")
+    print(f"Estimated heritability: {results['heritability']}")
+    print(f"SE of estimated heritability: {results['heritability_se']}")
 
-    print(f"Estimated enrichment: {enrichment}")
-    print(f"SE of estimated enrichment: {enrichment_se}")
-    print(f"Likelihood changes: {np.diff(np.array(likelihood))}")
-
+    print(f"Estimated enrichment: {results['enrichment']}")
+    print(f"SE of estimated enrichment: {results['enrichment_se']}")
+    print(f"Likelihood changes: {np.diff(np.array(results['likelihood_history']))}")
 
     # Log results
-    log_results(h2, enrichment, likelihood, runtime)
+    log_results(results['heritability'], results['enrichment'], results['likelihood_history'], runtime)
 
 if __name__ == '__main__':
     main()

@@ -13,6 +13,7 @@ All three APIs (in MATLAB, Python, and C) rely under the hood on [SuiteSparse](h
 ## Table of Contents
 - [Installation](#installation)
 - [Usage](#usage)
+  - [Heritability Estimation](#heritability-estimation)
   - [Matrix Operations](#matrix-operations)
   - [LD Clumping](#ld-clumping)
   - [Likelihood Functions](#likelihood-functions)
@@ -52,6 +53,52 @@ cd data && make download
 The Makefile also contains a `download_all` target to download additional data and a `download_eur` target to download European-ancestry LDGMs only.
 
 ## Usage
+
+### Heritability Estimation
+
+graphREML is a heritability estimator that leverages LDGM precision matrices to combine the statistical advantages of REML with the computational advantages of summary statistics-based methods like S-LDSC.
+
+```python
+from graphld.heritability import ModelOptions, MethodOptions, run_graphREML
+from graphld.io import load_annotations
+from graphld.ldsc_io import read_ldsc_sumstats
+
+# Load LDSC-format summary statistics
+sumstats = read_ldsc_sumstats("path/to/sumstats.sumstats")
+
+# Load LDSC-format annotation data (*.annot)
+annotations = load_annotations("path/to/annot/", chromosomes=[1])
+
+# Default options
+model_options = ModelOptions()
+method_options = MethodOptions()
+
+# Run heritability estimation
+results = run_graphREML(
+    model_options=model_options,
+    method_options=method_options,
+    summary_stats=sumstats,
+    annotation_data=annotations,
+    ldgm_metadata_path="path/to/ldgms/metadata.csv"
+)
+
+# Access results
+print(f"Heritability: {results['heritability']}")
+print(f"Heritability SE: {results['heritability_se']}")
+print(f"Enrichment: {results['enrichment']}")
+print(f"Enrichment SE: {results['enrichment_se']}")
+```
+
+The estimator returns a dictionary containing:
+- `heritability`: Heritability estimates for each annotation
+- `heritability_se`: Standard errors for heritability estimates
+- `enrichment`: Enrichment values (relative to baseline)
+- `enrichment_se`: Standard errors for enrichment values
+- `likelihood_history`: Optimization history
+- `params`: Final parameter values
+- `param_se`: Standard errors for parameters
+
+For a complete example, see [scripts/run_graphreml_height.py](scripts/run_graphreml_height.py).
 
 ### Matrix Operations
 
