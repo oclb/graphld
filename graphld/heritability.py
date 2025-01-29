@@ -13,6 +13,15 @@ from .precision import PrecisionOperator
 from .likelihood import *
 from .io import *
 
+FLAGS = {
+    'ERROR': -2,
+    'SHUTDOWN': -1,
+    'FINISHED': 0,
+    'COMPUTE_ALL': 1,
+    'COMPUTE_LIKELIHOOD_ONLY': 2,
+    'INITIALIZE': 3
+}
+
 @dataclass
 class ModelOptions:
     """Stores model parameters for graphREML.
@@ -65,7 +74,7 @@ class MethodOptions:
     gradient_num_samples: int = 100
     match_by_position: bool = False
     num_iterations: int = 10
-    convergence_tol: float = 1e-3
+    convergence_tol: float = 0
     run_serial: bool = False
     num_processes: Optional[int] = None
     verbose: bool = False
@@ -74,7 +83,7 @@ class MethodOptions:
     trust_region_rho_lb: float = 1e-4
     trust_region_rho_ub: float = .99
     trust_region_scalar: float = 5
-    max_trust_iterations: int = 20
+    max_trust_iterations: int = 5
     reset_trust_region: bool = True
 
 def _surrogate_marker(ldgm: PrecisionOperator, missing_index: int, candidates: pl.DataFrame) -> int:
@@ -95,14 +104,6 @@ def _surrogate_marker(ldgm: PrecisionOperator, missing_index: int, candidates: p
     surrogate = np.argmax(candidate_correlations ** 2)
 
     return candidates.filter(pl.col('surrogate_nr') == surrogate).to_dicts()[0]
-
-def _newton_step(gradient: np.ndarray, hessian: np.ndarray) -> np.ndarray:
-    """Compute Newton step: -H^{-1}g."""
-    # print(f"Performing step with gradient: {gradient}, hessian diagonal: {np.diag(hessian)}")
-    # print(hessian)
-    
-    ll = np.trace(hessian) / len(hessian) * 50
-    return -np.linalg.solve(hessian + ll * np.eye(len(hessian)), gradient)
 
 def softmax_robust(x: np.ndarray) -> np.ndarray:
     """Numerically stable softmax implementation."""
@@ -145,10 +146,8 @@ class GraphREML(ParallelProcessor):
 
     @classmethod
     def _sum_blocks(cls, array: np.ndarray, shape_each_block: tuple) -> np.ndarray:
-        array = array.reshape((*shape_each_block, -1))
-        result = array.sum(axis=-1)
-        assert result.shape == shape_each_block
-        return result
+        array = array.reshape((-1,*shape_each_block))
+        return array.sum(axis=0)
 
     @classmethod
     def prepare_block_data(cls, metadata: pl.DataFrame, **kwargs) -> list[tuple]:
@@ -167,8 +166,7 @@ class GraphREML(ParallelProcessor):
                 block_index: Index of this block
                 Pz: Pre-computed precision-premultiplied Z scores for this block
         """
-        sumstats = kwargs.get('sumstats')
-        # Partition annotations into blocks
+        sumstats: pl.DataFrame = kwargs.get('sumstats')
         sumstats_blocks: list[pl.DataFrame] = partition_variants(metadata, sumstats)
 
         cumulative_num_variants = np.cumsum(np.array([len(df) for df in sumstats_blocks]))
@@ -206,16 +204,13 @@ class GraphREML(ParallelProcessor):
             'likelihood': num_blocks,
             'gradient': num_blocks * num_params,
             'hessian': num_blocks * num_params ** 2,
-            'is_first_iter': None
         })
-
-        result['is_first_iter'] = 1
 
         return result
 
     @staticmethod
     def _initialize_block_zscores(ldgm: PrecisionOperator, 
-                                sumstats: pl.DataFrame,
+                                annot_df: pl.DataFrame,
                                 annotation_columns: List[str],
                                 match_by_position: bool
                                 ) -> Tuple[np.ndarray, np.ndarray]:
@@ -223,7 +218,7 @@ class GraphREML(ParallelProcessor):
         
         Args:
             ldgm: LDGM object
-            sumstats: Summary statistics DataFrame
+            annot_df: Dataframe containing merged annotations and summary statistics
             annotation_columns: List of annotation column names
 
         Returns:
@@ -231,12 +226,10 @@ class GraphREML(ParallelProcessor):
             - z: Raw Z-scores after filtering
             - Pz: Z-scores premultiplied by precision matrix
         """
-        # print(sumstats.select('Z').head(55))
-
         # Merge annotations with LDGM variant info
         from .io import merge_snplists
-        ldgm, sumstat_indices = merge_snplists(
-            ldgm, sumstats,
+        ldgm, annot_indices = merge_snplists(
+            ldgm, annot_df,
             match_by_position=match_by_position,
             pos_col='POS',
             ref_allele_col='REF',
@@ -245,6 +238,10 @@ class GraphREML(ParallelProcessor):
             add_cols=annotation_columns,
             modify_in_place=True
         )
+        print(f"Number of variants in sumstats before merging: {len(annot_df)}")
+        print(f"Number of variants after merging: {len(ldgm.variant_info)}")
+        if len(ldgm.variant_info) == 0:
+            print("No variants left after merging annotations and sumstats")
 
         variant_info = ldgm.variant_info.with_row_index(name="vi_row_nr")
         variant_info_nonmissing = variant_info.filter(pl.col('Z').is_not_null()).with_row_index(name="surrogate_nr")
@@ -258,7 +255,8 @@ class GraphREML(ParallelProcessor):
 
         ldgm.variant_info = variant_info.with_columns([
             pl.Series('index', indices_arr),
-            pl.Series('Z', z_arr)
+            pl.Series('Z', z_arr),
+            pl.Series('annot_indices', annot_indices)
         ]).drop('vi_row_nr')
 
         print(f"Number of missing rows: {len(variant_info_missing)}")
@@ -300,40 +298,41 @@ class GraphREML(ParallelProcessor):
             - hessian: Hessian matrix
             - per_variant_h2: With current parameters, heritability per variant
         """
-        # Get link function and its gradient
         link_fn, link_fn_grad = _get_softmax_link_function(num_snps)
 
-        # Compute precision matrix diagonal, aggregating variants with same index
+        # Compute change in diag(M), aggregating variants with same index
         per_variant_h2 = link_fn(annotations, params)
         delta_D = np.zeros(ldgm.shape[0])
         np.add.at(delta_D, ldgm.variant_indices, per_variant_h2.flatten() - old_variant_h2.flatten())
+        
+        # Update diag(M)
         ldgm.update_matrix(delta_D)
 
+        # New log likelihood
         likelihood = gaussian_likelihood(Pz, ldgm)
 
         if likelihood_only:
-            ldgm.del_factor()
+            ldgm.del_factor() # To reduce memory usage
             return likelihood, None, None, per_variant_h2
 
-        # Compute gradient of precision matrix wrt parameters
+        # Gradient of per-variant h2 wrt parameters
         del_h2_del_a = link_fn_grad(annotations, params)
         
+        # Gradient of diag(M)
         del_M_del_a = np.zeros((ldgm.shape[0], params.shape[0]))
         np.add.at(del_M_del_a, ldgm.variant_indices, del_h2_del_a)
 
-
+        # Gradient of log likelihood
         gradient = gaussian_likelihood_gradient(
             Pz, ldgm, del_M_del_a=del_M_del_a,
             n_samples=n_samples,
         )
 
-        # Compute hessian
         hessian = gaussian_likelihood_hessian(
             Pz, ldgm, del_M_del_a=del_M_del_a
         )
-        assert ~np.any(np.isnan(hessian))
 
-        ldgm.del_factor()
+        ldgm.del_factor() # To reduce memory usage
 
         return likelihood, gradient, hessian, per_variant_h2
 
@@ -344,45 +343,56 @@ class GraphREML(ParallelProcessor):
                      block_offset: int,
                      block_data: Any = None,
                      worker_params: Tuple[ModelOptions, MethodOptions] = None) -> None:
-        """Computes likelihood, gradient, and hessian for a single block. If flag is 2, it only computes the likelihood.
+        """Computes likelihood, gradient, and hessian for a single block.
         """
+        model_options: ModelOptions
+        method_options: MethodOptions
         model_options, method_options = worker_params
-        num_annot = len(model_options.annotation_columns)
-        block_data_dict = block_data
-        sumstats = block_data_dict['sumstats']
-        variant_offset = block_data_dict['variant_offset']
-        block_index = block_data_dict['block_index']
         
-        if shared_data['is_first_iter'] == 1:
-            # First iteration - initialize Z-scores
+        sumstats: pl.DataFrame = block_data['sumstats']
+        variant_offset: int = block_data['variant_offset']
+        block_index: int = block_data['block_index']
+        num_annot = len(model_options.annotation_columns)
+        
+        Pz: np.ndarray
+        if flag.value == FLAGS['INITIALIZE']:
             ldgm, Pz = cls._initialize_block_zscores(ldgm, 
                                                     sumstats, 
                                                     model_options.annotation_columns,
                                                     method_options.match_by_position)
-            block_data_dict['Pz'] = Pz
+            
+            # Work in effect-size as opposed to Z score units
+            Pz /= np.sqrt(model_options.sample_size)
+            ldgm.times_scalar(1.0 / model_options.sample_size)
+            block_data['Pz'] = Pz
+
+            # ldgm is modified in place and re-used in subsequent iterations
+            
         else:
-            Pz = block_data_dict['Pz']
+            Pz = block_data['Pz']
 
-        # Get annotations from sumstats
-        annot = ldgm.variant_info.select(model_options.annotation_columns).to_numpy()
+        annot: np.ndarray = ldgm.variant_info.select(model_options.annotation_columns).to_numpy()
+        annot_indices: np.ndarray = ldgm.variant_info.select('annot_indices').to_numpy().flatten()
+        max_index: int = np.max(annot_indices) + 1 if len(annot_indices) > 0 else 0
+        block_variants: slice = slice(variant_offset, variant_offset + max_index)
+        old_variant_h2: np.ndarray = shared_data['variant_h2', block_variants][annot_indices]
 
-        block_variants = slice(variant_offset, variant_offset + len(ldgm.variant_info))
-        variant_h2 = shared_data['variant_h2', block_variants]
-
-        likelihood_only = (flag.value==2)
+        likelihood_only = (flag.value == FLAGS['COMPUTE_LIKELIHOOD_ONLY'])
         likelihood, gradient, hessian, variant_h2 = cls._compute_block_likelihood(
             ldgm=ldgm,
             Pz=Pz,
             annotations=annot,
             params=shared_data['params'].reshape(-1,1),
             num_snps=model_options.link_fn_denominator,
-            old_variant_h2=variant_h2,
+            old_variant_h2=old_variant_h2,
             n_samples=method_options.gradient_num_samples,
             likelihood_only=likelihood_only
         )
 
         shared_data['likelihood', block_index] = likelihood
-        shared_data['variant_h2', block_variants] = variant_h2
+        variant_h2_padded = np.zeros(max_index)
+        variant_h2_padded[annot_indices] = variant_h2.flatten()
+        shared_data['variant_h2', block_variants] = variant_h2_padded
         if likelihood_only:
             return
 
@@ -393,6 +403,80 @@ class GraphREML(ParallelProcessor):
         hessian_slice = slice(block_index * num_annot**2,
                             (block_index + 1) * num_annot**2)
         shared_data['hessian', hessian_slice] = hessian.flatten()
+
+    @staticmethod
+    def _compute_pseudojackknife(gradient_blocks: np.ndarray, hessian_blocks: np.ndarray, params: np.ndarray) -> np.ndarray:
+        """Compute pseudo-jackknife estimates for parameters.
+        
+        Args:
+            gradient_blocks: Array of shape (num_blocks, num_params) containing block-wise gradients
+            hessian_blocks: Array of shape (num_blocks, num_params, num_params) containing block-wise Hessians
+            params: Array of shape (num_params,) containing parameter values
+            
+        Returns:
+            Array of shape (num_blocks, num_params) containing jackknife parameter estimates
+        """
+        num_blocks = gradient_blocks.shape[0]
+        num_params = params.shape[0]
+        
+        # Sum blocks to get full gradient and Hessian
+        gradient = gradient_blocks.sum(axis=0)  # Shape: (num_params,) - sum across blocks
+        hessian = hessian_blocks.sum(axis=0)    # Shape: (num_params, num_params) - sum across blocks
+        
+        # Initialize output array
+        jackknife = np.zeros((num_blocks, num_params))
+        
+        # Compute jackknife estimate for each block
+        for block in range(num_blocks):
+            # Remove current block from total gradient and Hessian
+            block_gradient = gradient_blocks[block]  # Shape: (num_params,)
+            block_hessian = hessian_blocks[block]  # Shape: (num_params, num_params)
+            
+            # Compute leave-one-out gradient and Hessian
+            loo_gradient = gradient - block_gradient
+            loo_hessian = hessian - block_hessian + 1e-12 * np.eye(num_params)
+            
+            # Compute jackknife estimate for this block
+            jackknife[block] = params + np.linalg.solve(loo_hessian, loo_gradient)
+            
+        return jackknife
+
+    @staticmethod
+    def _compute_jackknife_heritability(block_data: list, jackknife_params: np.ndarray, n_snps: int, model: ModelOptions) -> np.ndarray:
+        """Compute jackknife heritability estimates.
+        
+        Args:
+            block_data: List of dictionaries containing block-specific data
+            jackknife_params: Array of shape (num_blocks, num_params) containing jackknife parameter estimates
+            n_snps: Total number of SNPs for link function denominator
+            model: Model options containing annotation column names
+            
+        Returns:
+            Array of shape (num_blocks, num_annotations) containing jackknife heritability estimates
+        """
+        num_blocks = len(block_data)
+        num_jk = jackknife_params.shape[0]
+        num_params = jackknife_params.shape[1]
+        
+        # Get link function
+        link_fn, _ = _get_softmax_link_function(n_snps)
+        
+        # Initialize output array
+        jackknife_h2 = np.zeros((num_jk, num_params))
+        
+        # Compute heritability for each jackknife estimate
+        for block in range(num_blocks):
+            # Get annotations for this block
+            annotations = block_data[block]['sumstats'].select(model.annotation_columns).to_numpy()
+            
+            for jk in range(num_jk):
+                # Compute per-SNP heritability using jackknife parameters
+                per_snp_h2 = link_fn(annotations, jackknife_params[jk, :])
+                
+                # Add to total heritability (reshape per_snp_h2 to column vector)
+                jackknife_h2[jk, :] += (per_snp_h2[:, np.newaxis] * annotations).sum(axis=0)
+        
+        return jackknife_h2
 
     @staticmethod
     def _annotation_heritability(variant_h2: np.ndarray, annot: pl.DataFrame, ref_col: int) -> Tuple[np.ndarray, np.ndarray]:
@@ -415,58 +499,38 @@ class GraphREML(ParallelProcessor):
             block_data: annotation + gwas data passed to workers
             **kwargs: Additional arguments
         """
-        flags = {
-            'ERROR': -2,
-            'SHUTDOWN': -1,
-            'FINISHED': 0,
-            'COMPUTE_ALL': 1,
-            'COMPUTE_LIKELIHOOD_ONLY': 2,
-        }
 
         num_iterations = kwargs.get('num_iterations')
         num_params = kwargs.get('num_params')
         verbose = kwargs.get('verbose')
-        sample_size = kwargs.get('sample_size')
-        method = kwargs.get('method')
-        model = kwargs.get('model')
-        
-        log_likelihood_history = []
+        method: MethodOptions = kwargs.get('method')
+        model: ModelOptions = kwargs.get('model')
         trust_region_lambda = method.trust_region_size
+        log_likelihood_history = []
         
         def _trust_region_step(gradient: np.ndarray, hessian: np.ndarray, trust_region_lambda: float) -> np.ndarray:
             """Compute trust region step by solving (H + λD)x = -g.
-            
-            Args:
-                gradient: Gradient vector
-                hessian: Hessian matrix
-                trust_region_lambda: Trust region parameter
-                
-            Returns:
-                Step vector
             """
             hess_mod = hessian + trust_region_lambda * np.diag(np.diag(hessian))
             hess_mod += np.finfo(float).eps * np.eye(len(hessian))
             
-            # TODO from MATLAB; commented out for now
-            # hess_mod += 1e-2 * trust_region_lambda
-            
-            return np.linalg.solve(hess_mod, gradient)
+            return np.linalg.solve(hess_mod, -gradient)
 
         for rep in range(num_iterations):
             if verbose:
-                print(f"starting iteration {rep} with params {shared_data['params']}")
+                print(f"\n\tStarting iteration {rep}...")
             
             # Calculate likelihood, gradient, and hessian for each block
-            manager.start_workers(flags['COMPUTE_ALL'])
+            flag = FLAGS['INITIALIZE'] if rep == 0 else FLAGS['COMPUTE_ALL']
+            manager.start_workers(flag)
             manager.await_workers()
-            shared_data['is_first_iter'] = 0
 
-            likelihood = cls._sum_blocks(shared_data['likelihood'], (1,))
+            likelihood = cls._sum_blocks(shared_data['likelihood'], (1,))[0]
             gradient = cls._sum_blocks(shared_data['gradient'], (num_params,))
             hessian = cls._sum_blocks(shared_data['hessian'], (num_params,num_params))
             
             old_params = shared_data['params'].copy()
-            old_likelihood = likelihood[0]
+            old_likelihood = likelihood
             
             # Reset trust region size if specified
             if method.reset_trust_region or rep == 0:
@@ -476,24 +540,22 @@ class GraphREML(ParallelProcessor):
             for trust_iter in range(method.max_trust_iterations):
                 # Compute proposed step
                 step = _trust_region_step(gradient, hessian, trust_region_lambda)
-                shared_data['params'] = old_params - step
+                shared_data['params'] = old_params + step
                 
                 # Evaluate proposed step
-                manager.start_workers(flags['COMPUTE_LIKELIHOOD_ONLY'])
+                manager.start_workers(FLAGS['COMPUTE_LIKELIHOOD_ONLY'])
                 manager.await_workers()
                 new_likelihood = cls._sum_blocks(shared_data['likelihood'], (1,))[0]
                 
                 # Compute actual vs predicted increase
                 actual_increase = new_likelihood - old_likelihood
-                predicted_increase = -(step.T @ gradient - 0.5 * step.T @ (hessian @ step))
+                predicted_increase = step.T @ gradient + 0.5 * step.T @ (hessian @ step)
+                assert predicted_increase > 0, f"predicted increase must be positive but is {predicted_increase}"
+                if verbose:
+                    print(f"\tActual increase: {actual_increase}, Predicted increase: {predicted_increase}")
                 
-                # Check if step is acceptable
-                if actual_increase < 0:  # Likelihood decreased (worse)
-                    rho = -1
-                else:
-                    rho = abs(actual_increase) / predicted_increase if predicted_increase > 0 else actual_increase / predicted_increase if predicted_increase > 0 else -1
-                    
-                # Update trust region size
+                # Check if step is acceptable and update trust region size if needed
+                rho = actual_increase / predicted_increase
                 if rho < method.trust_region_rho_lb:
                     trust_region_lambda *= method.trust_region_scalar
                     shared_data['params'] = old_params  # Revert step
@@ -506,32 +568,59 @@ class GraphREML(ParallelProcessor):
                 if trust_iter == method.max_trust_iterations - 1:
                     if verbose:
                         print("Warning: Maximum trust region iterations reached")
-                    shared_data['params'] = old_params - step  # Use last step
-            
+                                        
             log_likelihood_history.append(new_likelihood)
-            heritability = np.sum(shared_data['variant_h2'] / sample_size)
 
-            annotations = pl.concat([dict['sumstats'].select(model.annotation_columns) for dict in block_data])
-            ref_col = 0 # Maybe TODO
-            annotation_heritability, annotation_enrichment = cls._annotation_heritability(
-                shared_data['variant_h2'], annotations, ref_col)
-            
             if verbose:
-                print(f"heritability: {heritability}")
-                print(f"enrichment: {annotation_enrichment}")
-                print(f"Variants with nonzero h2: {np.sum(shared_data['variant_h2'] != 0)}")
-                print(f"Variants: {len(shared_data['variant_h2'])}")
                 print(f"Trust region lambda: {trust_region_lambda}")
-                print(f"max and min variant h2: {np.max(shared_data['variant_h2'])}, {np.min(shared_data['variant_h2'])}")
-                
+                print("Gradient:", gradient)
+                if len(log_likelihood_history) >= 2:
+                    print(f"Change in likelihood: {log_likelihood_history[-1] - log_likelihood_history[-2]}")
+            
             # Check convergence
             if len(log_likelihood_history) >= 2:
                 if abs(log_likelihood_history[-1] - log_likelihood_history[-2]) < method.convergence_tol:
-                    if verbose:
-                        print("Converged!")
                     break
 
-        return heritability, log_likelihood_history
+        # After optimization
+        annotations = pl.concat([dict['sumstats'].select(model.annotation_columns) for dict in block_data])
+        ref_col = 0 # Maybe TODO
+        
+        # Get block-wise gradients and Hessians for jackknife
+        num_blocks = len(block_data)
+        gradient_blocks = shared_data['gradient'].reshape((num_blocks, num_params))
+        hessian_blocks = shared_data['hessian'].reshape((num_blocks, num_params, num_params))
+        
+        # Compute jackknife estimates
+        jackknife_params = cls._compute_pseudojackknife(gradient_blocks, hessian_blocks, shared_data['params'])
+        
+        # Compute jackknife heritability estimates and standard errors
+        jackknife_h2 = cls._compute_jackknife_heritability(block_data, jackknife_params, model.link_fn_denominator, model)
+        
+        # Compute standard errors using jackknife formula: SE = sqrt((n-1) * var(estimates))
+        n_blocks = jackknife_params.shape[0]
+        param_se = np.sqrt((n_blocks - 1) * np.var(jackknife_params, axis=0, ddof=1))
+        h2_se = np.sqrt((n_blocks - 1) * np.var(jackknife_h2, axis=0, ddof=1))
+        
+        # Compute enrichment for each jackknife estimate
+        # Get proportion of SNPs in each annotation
+        annot_props = annotations.mean(axis=0)
+        # Convert each jackknife h2 into enrichment
+        jackknife_enrichment = jackknife_h2 / annot_props[np.newaxis, :]
+        jackknife_enrichment = jackknife_enrichment / jackknife_enrichment[:, [0]]  # Normalize by first column
+        # Compute enrichment standard errors
+        enrichment_se = np.sqrt((n_blocks - 1) * np.var(jackknife_enrichment, axis=0, ddof=1))
+        
+        annotation_heritability, annotation_enrichment = cls._annotation_heritability(
+            shared_data['variant_h2'], annotations, ref_col)
+        
+        if verbose:
+            print(f"Heritability: {annotation_heritability}")
+            print(f"Enrichment: {annotation_enrichment}")
+
+        return (annotation_heritability, annotation_enrichment, 
+                log_likelihood_history, shared_data['params'].copy(),
+                param_se, h2_se, enrichment_se)
 
 def run_graphREML(model_options: ModelOptions,
                   method_options: MethodOptions,

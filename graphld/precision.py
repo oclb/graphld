@@ -106,7 +106,7 @@ class PrecisionOperator(LinearOperator):
     def times_scalar(self, multiplier: float) -> None:
         """Multiply the precision matrix by a scalar in place."""
         self._matrix *= multiplier
-        self.del_solver()
+        self.del_factor()
 
     def update_matrix(self, update: np.ndarray) -> None:
         """Update the precision matrix by adding values to its diagonal.
@@ -123,8 +123,8 @@ class PrecisionOperator(LinearOperator):
             msg = f"Update vector length {len(update)} does not match matrix shape {self.shape}"
             raise ValueError(msg)
 
-        if np.allclose(update, 0):
-            return
+        # if np.allclose(update, 0):
+        #     return
 
         for idx, entry in zip(self.diagonal_indices, update, strict=False):
             self._matrix.data[idx] += entry

@@ -55,6 +55,12 @@ def read_ldsc_sumstats(
     if missing_cols:
         raise ValueError(f"Missing required columns: {missing_cols}")
     
+    # Rename A1, A2 to ALT, REF
+    df = df.with_columns(
+        pl.col('A1').alias('ALT'),
+        pl.col('A2').alias('REF')
+    ).drop(['A1', 'A2'])
+
     if add_positions:
         # Read positions file
         positions = pl.read_csv(

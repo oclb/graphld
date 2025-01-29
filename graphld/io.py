@@ -298,7 +298,7 @@ def merge_snplists(precision_op: PrecisionOperator,
     )
     
     precision_op.variant_info = merged
-    sumstat_indices = merged.select('row_nr').to_numpy()
+    sumstat_indices = merged.select('row_nr').to_numpy().flatten().astype(int)
 
     return precision_op, sumstat_indices
 
