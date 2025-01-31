@@ -7,7 +7,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from graphld.cli import _blup, _clump, _simulate, _graphreml
+from graphld.cli import _blup, _clump, _simulate, _reml
 
 
 @pytest.fixture
@@ -122,8 +122,8 @@ def test_invalid_sumstats_format():
             )
 
 
-def test_graphreml_basic(metadata_path, create_annotations, create_sumstats):
-    """Test basic GraphREML functionality."""
+def test_reml_basic(metadata_path, create_annotations, create_sumstats):
+    """Test basic REML functionality."""
     # Create test data using fixtures
     sumstats = create_sumstats(str(metadata_path), 'EUR')
     annotations = create_annotations(metadata_path, 'EUR')
@@ -140,7 +140,7 @@ def test_graphreml_basic(metadata_path, create_annotations, create_sumstats):
         annot_dir.mkdir()
         annotations.write_csv(annot_dir / "baselineLD.22.annot", separator='\t')
         
-        _graphreml(
+        _reml(
             type("Args", (), {
                 "sumstats": str(sumstats_file),
                 "annot": str(annot_dir),
@@ -182,8 +182,8 @@ def test_graphreml_basic(metadata_path, create_annotations, create_sumstats):
         assert enrichment["Name"][0] == "test"
 
 
-def test_graphreml_no_name(metadata_path, create_annotations, create_sumstats):
-    """Test GraphREML without a name parameter."""
+def test_reml_no_name(metadata_path, create_annotations, create_sumstats):
+    """Test REML without a name parameter."""
     # Create test data using fixtures
     sumstats = create_sumstats(str(metadata_path), 'EUR')
     annotations = create_annotations(metadata_path, 'EUR')
@@ -200,7 +200,7 @@ def test_graphreml_no_name(metadata_path, create_annotations, create_sumstats):
         annot_dir.mkdir()
         annotations.write_csv(annot_dir / "baselineLD.22.annot", separator='\t')
         
-        _graphreml(
+        _reml(
             type("Args", (), {
                 "sumstats": str(sumstats_file),
                 "annot": str(annot_dir),
@@ -226,8 +226,8 @@ def test_graphreml_no_name(metadata_path, create_annotations, create_sumstats):
         assert heritability["Name"][0] == "NA"
 
 
-def test_graphreml_chromosome_filter(metadata_path, create_annotations, create_sumstats):
-    """Test GraphREML with chromosome filtering."""
+def test_reml_chromosome_filter(metadata_path, create_annotations, create_sumstats):
+    """Test REML with chromosome filtering."""
     # Create test data using fixtures
     sumstats = create_sumstats(str(metadata_path), 'EUR')
     annotations = create_annotations(metadata_path, 'EUR')
@@ -244,7 +244,7 @@ def test_graphreml_chromosome_filter(metadata_path, create_annotations, create_s
         annot_dir.mkdir()
         annotations.write_csv(annot_dir / "baselineLD.1.annot", separator='\t')  # Use chromosome 1
         
-        _graphreml(
+        _reml(
             type("Args", (), {
                 "sumstats": str(sumstats_file),
                 "annot": str(annot_dir),
@@ -271,11 +271,11 @@ def test_graphreml_chromosome_filter(metadata_path, create_annotations, create_s
 
 
 @pytest.mark.xfail(raises=FileNotFoundError)
-def test_graphreml_missing_files():
-    """Test GraphREML with missing input files."""
+def test_reml_missing_files():
+    """Test REML with missing input files."""
     with tempfile.TemporaryDirectory() as tmpdir:
         out_prefix = Path(tmpdir) / "test"
-        _graphreml(
+        _reml(
             type("Args", (), {
                 "sumstats": "nonexistent.sumstats",
                 "annot": "nonexistent_dir",

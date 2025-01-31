@@ -21,7 +21,7 @@ classifiers = [
 dependencies = [
     "numpy",
     "polars>=1.17.1",
-    "scipy>=1.14.1",
+    "scipy>=1.13",
     "scikit-sparse>=0.4.12",
     "jupyter>=1.1.1",
 ]
