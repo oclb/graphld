@@ -42,6 +42,34 @@ uv sync --dev --extra dev # editable with pytest dependencies
 uv run pytest
 ```
 
+### Using conda and pip install
+Example codes are based on the O2 cluster in the Harvard Medical School computing system. 
+
+- Create a conda `env` for `suitesparse` and activate it: you may need to revert or reinstall some Python packages
+```bash
+module load miniconda3/4.10.3
+conda create -n suitesparse conda-forge::suitesparse python=3.11.0
+conda activate suitesparse
+```
+- You may need to revert or reinstall some Python packages, if prompted. For example, to install the correct version of `numpy`, use:
+```bash
+pip install numpy==1.26.4
+```
+- Install `scikit-sparse`: you may need to add some `conda` channels (see below)
+```bash
+conda config --add channels conda-forge
+conda config --set channel_priority strict
+conda install scikit-sparse
+```
+- Install and run graphLD
+```bash
+cd sparseld && pip install .
+```
+- Test if it works
+```bash
+graphld -h
+```
+
 ### Downloading LDGMs
 Pre-computed LDGMs for the 1000 Genomes Project data are available at [Zenodo](https://zenodo.org/records/8157131). You can download them using the provided Makefile in the `data/` directory:
 
