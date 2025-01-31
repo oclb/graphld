@@ -7,7 +7,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from graphld.cli import _blup, _clump, _simulate
+from graphld.cli import _blup, _clump, _simulate, _graphreml
 
 
 @pytest.fixture
@@ -26,6 +26,12 @@ def metadata_path(test_data_dir):
 def sumstats_path(test_data_dir):
     """Get test sumstats path."""
     return test_data_dir / "example.sumstats"
+
+
+@pytest.fixture
+def annotation_dir(test_data_dir):
+    """Get test annotation directory."""
+    return test_data_dir / "annot"
 
 
 def test_blup(metadata_path, sumstats_path):
@@ -114,3 +120,178 @@ def test_invalid_sumstats_format():
                 population=None,
                 verbose=False
             )
+
+
+def test_graphreml_basic(metadata_path, create_annotations, create_sumstats):
+    """Test basic GraphREML functionality."""
+    # Create test data using fixtures
+    sumstats = create_sumstats(str(metadata_path), 'EUR')
+    annotations = create_annotations(metadata_path, 'EUR')
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out_prefix = Path(tmpdir) / "test"
+        
+        # Write sumstats to temporary file
+        sumstats_file = Path(tmpdir) / "sumstats.csv"
+        sumstats.write_csv(sumstats_file, separator='\t')
+        
+        # Write annotations to temporary file
+        annot_dir = Path(tmpdir) / "annot"
+        annot_dir.mkdir()
+        annotations.write_csv(annot_dir / "baselineLD.22.annot", separator='\t')
+        
+        _graphreml(
+            type("Args", (), {
+                "sumstats": str(sumstats_file),
+                "annot": str(annot_dir),
+                "out": str(out_prefix),
+                "metadata": str(metadata_path),
+                "num_samples": 1000,
+                "name": "test",
+                "intercept": 1.0,
+                "num_iterations": 2,  # Small number for testing
+                "convergence_tol": 0.001,
+                "run_in_serial": True,
+                "num_processes": None,
+                "verbose": False,
+                "num_jackknife_blocks": 100,
+                "match_by_rsid": False,
+                "chromosome": None,
+                "population": None,
+            })()
+        )
+
+        # Check that output files exist
+        assert (out_prefix.with_suffix(".heritability.csv")).exists()
+        assert (out_prefix.with_suffix(".enrichment.csv")).exists()
+
+        # Verify file contents
+        heritability = pl.read_csv(out_prefix.with_suffix(".heritability.csv"))
+        enrichment = pl.read_csv(out_prefix.with_suffix(".enrichment.csv"))
+
+        # Check basic structure
+        assert "Name" in heritability.columns
+        assert "File" in heritability.columns
+        assert "Name" in enrichment.columns
+        assert "File" in enrichment.columns
+
+        # Verify data
+        assert len(heritability) > 0
+        assert len(enrichment) > 0
+        assert heritability["Name"][0] == "test"
+        assert enrichment["Name"][0] == "test"
+
+
+def test_graphreml_no_name(metadata_path, create_annotations, create_sumstats):
+    """Test GraphREML without a name parameter."""
+    # Create test data using fixtures
+    sumstats = create_sumstats(str(metadata_path), 'EUR')
+    annotations = create_annotations(metadata_path, 'EUR')
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out_prefix = Path(tmpdir) / "test"
+        
+        # Write sumstats to temporary file
+        sumstats_file = Path(tmpdir) / "sumstats.csv"
+        sumstats.write_csv(sumstats_file, separator='\t')
+        
+        # Write annotations to temporary file
+        annot_dir = Path(tmpdir) / "annot"
+        annot_dir.mkdir()
+        annotations.write_csv(annot_dir / "baselineLD.22.annot", separator='\t')
+        
+        _graphreml(
+            type("Args", (), {
+                "sumstats": str(sumstats_file),
+                "annot": str(annot_dir),
+                "out": str(out_prefix),
+                "metadata": str(metadata_path),
+                "num_samples": 1000,
+                "name": None,  # Test with no name
+                "intercept": 1.0,
+                "num_iterations": 2,
+                "convergence_tol": 0.001,
+                "run_in_serial": True,
+                "num_processes": None,
+                "verbose": False,
+                "num_jackknife_blocks": 100,
+                "match_by_rsid": False,
+                "chromosome": None,
+                "population": None,
+            })()
+        )
+
+        # Check files and verify 'NA' is used for name
+        heritability = pl.read_csv(out_prefix.with_suffix(".heritability.csv"))
+        assert heritability["Name"][0] == "NA"
+
+
+def test_graphreml_chromosome_filter(metadata_path, create_annotations, create_sumstats):
+    """Test GraphREML with chromosome filtering."""
+    # Create test data using fixtures
+    sumstats = create_sumstats(str(metadata_path), 'EUR')
+    annotations = create_annotations(metadata_path, 'EUR')
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out_prefix = Path(tmpdir) / "test"
+        
+        # Write sumstats to temporary file
+        sumstats_file = Path(tmpdir) / "sumstats.csv"
+        sumstats.write_csv(sumstats_file, separator='\t')
+        
+        # Write annotations to temporary file
+        annot_dir = Path(tmpdir) / "annot"
+        annot_dir.mkdir()
+        annotations.write_csv(annot_dir / "baselineLD.1.annot", separator='\t')  # Use chromosome 1
+        
+        _graphreml(
+            type("Args", (), {
+                "sumstats": str(sumstats_file),
+                "annot": str(annot_dir),
+                "out": str(out_prefix),
+                "metadata": str(metadata_path),
+                "num_samples": 1000,
+                "name": "test",
+                "intercept": 1.0,
+                "num_iterations": 2,
+                "convergence_tol": 0.001,
+                "run_in_serial": True,
+                "num_processes": None,
+                "verbose": False,
+                "num_jackknife_blocks": 100,
+                "match_by_rsid": False,
+                "chromosome": 1,  # Test with chromosome 1
+                "population": None,
+            })()
+        )
+
+        # Verify files exist and contain data
+        assert (out_prefix.with_suffix(".heritability.csv")).exists()
+        assert (out_prefix.with_suffix(".enrichment.csv")).exists()
+
+
+@pytest.mark.xfail(raises=FileNotFoundError)
+def test_graphreml_missing_files():
+    """Test GraphREML with missing input files."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out_prefix = Path(tmpdir) / "test"
+        _graphreml(
+            type("Args", (), {
+                "sumstats": "nonexistent.sumstats",
+                "annot": "nonexistent_dir",
+                "out": str(out_prefix),
+                "metadata": "nonexistent.csv",
+                "num_samples": 1000,
+                "name": "test",
+                "intercept": 1.0,
+                "num_iterations": 2,
+                "convergence_tol": 0.001,
+                "run_in_serial": True,
+                "num_processes": None,
+                "verbose": False,
+                "num_jackknife_blocks": 100,
+                "match_by_rsid": False,
+                "chromosome": None,
+                "population": None,
+            })()
+        )

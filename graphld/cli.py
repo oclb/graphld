@@ -11,6 +11,7 @@ from graphld.vcf_io import read_gwas_vcf
 from graphld.ldsc_io import read_ldsc_sumstats
 import polars as pl
 from .io import load_annotations
+from .heritability import ModelOptions, MethodOptions, run_graphREML
 
 title = """
 ██████╗ ██████╗  █████╗ ██████╗ ██╗  ██╗██╗     ██████╗ 
@@ -177,7 +178,7 @@ def _clump(
     clumped.write_csv(out, separator='\t')
 
 def _simulate(
-    sumstats: str,
+    sumstats_out: str,
     metadata: str,
     heritability: float,
     component_variance: Optional[List[float]] = None,
@@ -197,7 +198,7 @@ def _simulate(
     """Run genetic simulation with configurable parameters.
     
     Args:
-        sumstats: Path to output summary statistics file
+        sumstats_out: Path to output summary statistics file
         metadata: Path to LDGM metadata file
         heritability: Total heritability of simulated trait
         component_variance: List of variance components
@@ -258,7 +259,101 @@ def _simulate(
     )
     
     # Write output
-    sim_result.write_csv(sumstats, separator='\t')
+    sim_result.write_csv(sumstats_out, separator='\t')
+
+def _detect_sumstats_type(sumstats_path: str):
+    """Detect summary statistics file type based on file extension."""
+    from graphld.ldsc_io import read_ldsc_sumstats
+    from graphld.vcf_io import read_gwas_vcf
+    
+    # Lowercase extension for case-insensitive matching
+    ext = os.path.splitext(sumstats_path)[1].lower()
+    
+    if ext in ['.vcf', '.vcf.gz']:
+        return read_gwas_vcf(sumstats_path)
+    else:
+        return read_ldsc_sumstats(sumstats_path)
+
+def _reml(args):
+    """Run GraphREML command."""
+    print('Loading summary statistics from', args.sumstats)
+    sumstats = _detect_sumstats_type(args.sumstats)
+    
+    print('Loading annotations from', args.annot)
+    annotations = load_annotations(args.annot, chromosome=args.chromosome)
+    num_snps_annot = len(annotations)
+
+    # Get annotation columns
+    excluded_cols = {'SNP', 'CM', 'BP', 'CHR', 'POS', 'A1', 'A2'}
+    annotation_columns = [col for col in annotations.columns if col not in excluded_cols]
+    
+    # Create model and method options
+    model_options = ModelOptions(
+        sample_size=args.num_samples,
+        intercept=args.intercept,
+        annotation_columns=annotation_columns,
+        link_fn_denominator=num_snps_annot,
+    )
+    
+    method_options = MethodOptions(
+        match_by_position=not args.match_by_rsid,  # Note: inverted since we changed default
+        num_iterations=args.num_iterations,
+        convergence_tol=args.convergence_tol,
+        run_serial=args.run_in_serial,
+        num_processes=args.num_processes,
+        verbose=args.verbose,
+        num_jackknife_blocks=args.num_jackknife_blocks,
+    )
+    
+    # Run GraphREML
+    print('Running GraphREML...')
+    results = run_graphREML(
+        model_options=model_options,
+        method_options=method_options,
+        summary_stats=sumstats,
+        annotation_data=annotations,
+        ldgm_metadata_path=args.metadata,
+        populations=[args.population] if args.population else None,
+        chromosomes=[args.chromosome] if args.chromosome else None,
+    )
+    
+    # Prepare output files
+    heritability_file = args.out + '.heritability.csv'
+    enrichment_file = args.out + '.enrichment.csv'
+    parameters_file = args.out + '.parameters.csv'
+    
+    # Function to write results
+    def write_results(filename, values, std_errors, header_prefix=''):
+        file_exists = Path(filename).exists()
+        mode = 'a' if file_exists else 'w'
+        with open(filename, mode) as f:
+            if not file_exists:
+                # Write header
+                headers = ['Name', 'File']
+                for col in annotation_columns:
+                    headers.extend([f'{header_prefix}{col}', f'SE_{header_prefix}{col}'])
+                f.write(','.join(headers) + '\n')
+            
+            # Write data
+            row = [args.name or 'NA', args.sumstats]
+            for val, se in zip(values, std_errors):
+                row.extend([str(val), str(se)])
+            f.write(','.join(row) + '\n')
+    
+    # Write heritability and enrichment results
+    write_results(heritability_file, 
+                 results['heritability'], 
+                 results.get('heritability_se', [0]*len(results['heritability'])))
+    
+    write_results(enrichment_file, 
+                 results['enrichment'], 
+                 results.get('enrichment_se', [0]*len(results['enrichment'])))
+    
+    # Only write parameters if they exist
+    if 'parameters' in results:
+        write_results(parameters_file, 
+                     results['parameters'], 
+                     results.get('parameter_se', [0]*len(results['parameters'])))
 
 def _add_common_arguments(parser):
     """Add arguments that are common to all subcommands."""
@@ -272,10 +367,203 @@ def _add_common_arguments(parser):
                       help="Run in serial mode")
     parser.add_argument("-c", "--chromosome", type=int, default=None,
                       help="Chromosome to filter analysis")
-    parser.add_argument("-p", "--population", type=str, default=None,
+    parser.add_argument("-p", "--population", type=str, default="EUR",
                       help="Population to filter analysis")
     parser.add_argument("-v", "--verbose", action="store_true", default=False)
     parser.add_argument("-q", "--quiet", action="store_true", default=False)
+
+def _add_io_arguments(parser):
+    """Add common input/output arguments."""
+    parser.add_argument(
+        'sumstats',
+        help='Path to summary statistics file (.vcf or .sumstats)',
+    )
+    parser.add_argument(
+        'out',
+        help='Output file path',
+    )
+
+def _add_blup_parser(subparsers):
+    """Add parser for blup command."""
+    parser = subparsers.add_parser(
+        'blup',
+        help='Run BLUP',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    
+    # Add common I/O arguments
+    _add_io_arguments(parser)
+    
+    # Add common arguments
+    _add_common_arguments(parser)
+    
+    # Add BLUP-specific arguments
+    parser.add_argument(
+        '--heritability',
+        type=float,
+        required=True,
+        help='Heritability parameter (between 0 and 1)',
+    )
+    
+    parser.set_defaults(func=_blup)
+
+def _add_clump_parser(subparsers):
+    """Add parser for clump command."""
+    parser = subparsers.add_parser(
+        'clump',
+        help='Run LD clumping',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    
+    # Add common I/O arguments
+    _add_io_arguments(parser)
+    
+    # Add common arguments
+    _add_common_arguments(parser)
+    
+    # Add clump-specific arguments
+    parser.add_argument(
+        '--min_chisq',
+        type=float,
+        default=0,
+        help='Minimum chi-squared value for variant inclusion',
+    )
+    parser.add_argument(
+        '--max_rsq',
+        type=float,
+        default=0.1,
+        help='Maximum R-squared threshold for LD pruning',
+    )
+    
+    parser.set_defaults(func=_clump)
+
+def _add_simulate_parser(subparsers):
+    """Add parser for simulate command."""
+    parser = subparsers.add_parser(
+        "simulate", 
+        help="Perform genetic simulation",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    
+    # Single positional argument for output sumstats
+    parser.add_argument(
+        'sumstats_out', 
+        help='Path to output summary statistics file'
+    )
+    
+    # Add common arguments
+    _add_common_arguments(parser)
+    
+    # Simulation-specific arguments
+    parser.add_argument(
+        "-H", "--heritability", 
+        type=float, 
+        default=0.2,
+        help="Heritability (default: 0.2)"
+    )
+    parser.add_argument(
+        "--component_variance", 
+        type=lambda s: [float(x) for x in s.split(',')],
+        default=[1.0],
+        help="Component variance (default: [1.0])"
+    )
+    parser.add_argument(
+        "--component_weight", 
+        type=lambda s: [float(x) for x in s.split(',')],
+        default=[1.0],
+        help="Component weight (default: [1.0])"
+    )
+    parser.add_argument(
+        "--alpha_param", 
+        type=float, 
+        default=-0.5,
+        help="Alpha parameter (default: -0.5)"
+    )
+    parser.add_argument(
+        "--annotation_dependent_polygenicity", 
+        action="store_true",
+        help="Annotation dependent polygenicity"
+    )
+    parser.add_argument(
+        "--random_seed", 
+        type=int, 
+        default=None,
+        help="Random seed (default: None)"
+    )
+    parser.add_argument(
+        "--annotation_columns", 
+        type=lambda s: s.split(','),
+        default=None,
+        help="Annotation columns"
+    )
+    parser.add_argument(
+        "-a", "--annotations", 
+        type=str, 
+        default=None,
+        help="Directory containing annotation files ending in .annot"
+    )
+    
+    parser.set_defaults(func=_simulate)
+
+def _add_reml_parser(subparsers):
+    """Add parser for reml command."""
+    parser = subparsers.add_parser(
+        'reml',
+        help='Run GraphREML',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+
+    # Add common I/O arguments
+    _add_io_arguments(parser)
+
+    # Required arguments
+    parser.add_argument(
+        '--annot',
+        help='Path to annotation directory',
+        required=True,
+    )
+
+    # Add common arguments
+    _add_common_arguments(parser)
+
+    # Optional arguments specific to reml
+    parser.add_argument(
+        '--name',
+        help='Name for this analysis (will be included in output files)',
+        default=None,
+    )
+    parser.add_argument(
+        '--intercept',
+        help='LD score regression intercept',
+        type=float,
+        default=1.0,
+    )
+    parser.add_argument(
+        '--num_iterations',
+        help='Number of iterations',
+        type=int,
+        default=10,
+    )
+    parser.add_argument(
+        '--convergence_tol',
+        help='Convergence tolerance',
+        type=float,
+        default=1e-4,
+    )
+    parser.add_argument(
+        '--num_jackknife_blocks',
+        help='Number of jackknife blocks',
+        type=int,
+        default=200,
+    )
+    parser.add_argument(
+        '--match-by-rsid',
+        help='Match variants by RSID instead of position',
+        action='store_true',
+        default=False,
+    )
+
+    parser.set_defaults(func=_reml)
 
 def _main(args):
     argp = argparse.ArgumentParser(
@@ -289,54 +577,16 @@ def _main(args):
     subp = argp.add_subparsers(dest="cmd", required=True, help="Subcommands for graphld")
 
     # BLUP command
-    blup_p = subp.add_parser("blup", help="Compute BLUP effect sizes")
-    _add_common_arguments(blup_p)  # Add common arguments to BLUP subparser
-    blup_p.add_argument("sumstats", type=str, 
-                        help="Path to summary statistics file (.vcf or .sumstats)")
-    blup_p.add_argument("out", type=str, 
-                        help="Output file path")
-    blup_p.add_argument("-H", "--heritability", type=float, default=0.2,
-                        help="Heritability (default: 0.2)")
-    blup_p.set_defaults(func=_blup)
+    _add_blup_parser(subp)
 
     # LD clumping command
-    clump_p = subp.add_parser("clump", help="Perform LD clumping")
-    _add_common_arguments(clump_p)  # Add common arguments to clump subparser
-    clump_p.add_argument("sumstats", type=str, 
-                         help="Path to summary statistics file (.vcf or .sumstats)")
-    clump_p.add_argument("out", type=str, 
-                         help="Output file path")
-    clump_p.add_argument("--min_chisq", type=float, default=30,
-                         help="Minimum chi-squared value (default: 0.001)")
-    clump_p.add_argument("--max_rsq", type=float, default=0.1,
-                         help="Maximum R-squared value (default: 0.1)")
-    clump_p.set_defaults(func=_clump)
+    _add_clump_parser(subp)
 
     # Genetic simulation command
-    sim_p = subp.add_parser("simulate", help="Perform genetic simulation")
-    _add_common_arguments(sim_p)  # Add common arguments to simulate subparser
-    sim_p.add_argument("sumstats", type=str, 
-                       help="Path to output summary statistics file (.sumstats)")
-    sim_p.add_argument("-H", "--heritability", type=float, default=0.2,
-                       help="Heritability (default: 0.2)")
-    sim_p.add_argument("--component_variance", type=lambda s: [float(x) for x in s.split(',')],
-                       default=[1.0],
-                       help="Component variance (default: [1.0])")
-    sim_p.add_argument("--component_weight", type=lambda s: [float(x) for x in s.split(',')],
-                       default=[1.0],
-                       help="Component weight (default: [1.0])")
-    sim_p.add_argument("--alpha_param", type=float, default=-0.5,
-                       help="Alpha parameter (default: -0.5)")
-    sim_p.add_argument("--annotation_dependent_polygenicity", action="store_true",
-                       help="Annotation dependent polygenicity")
-    sim_p.add_argument("--random_seed", type=int, default=None,
-                    help="Random seed (default: None)")
-    sim_p.add_argument("--annotation_columns", type=lambda s: s.split(','),
-                       default=None,
-                       help="Annotation columns")
-    sim_p.add_argument("-a", "--annotations", type=str, default=None,
-                       help="Directory containing annotation files ending in .annot")
-    sim_p.set_defaults(func=_simulate)
+    _add_simulate_parser(subp)
+
+    # GraphREML command
+    _add_reml_parser(subp)
 
     # Parse arguments
     parsed_args, additional_args = argp.parse_known_args(args)
@@ -422,6 +672,32 @@ def _main(args):
                     parsed_args.num_samples = int(additional_args[i+1])
                 elif additional_args[i] in ['-a', '--annotations']:
                     parsed_args.annotations = additional_args[i+1]
+    elif parsed_args.cmd == "reml":
+        # Add additional arguments to the parsed arguments
+        for i in range(0, len(additional_args), 2):
+            if i+1 < len(additional_args):
+                if additional_args[i] in ['--populations']:
+                    parsed_args.populations = additional_args[i+1].split(',')
+                elif additional_args[i] in ['--chromosomes']:
+                    parsed_args.chromosomes = [int(x) for x in additional_args[i+1].split(',')]
+                elif additional_args[i] in ['--sample-size']:
+                    parsed_args.sample_size = float(additional_args[i+1])
+                elif additional_args[i] in ['--intercept']:
+                    parsed_args.intercept = float(additional_args[i+1])
+                elif additional_args[i] in ['--match-by-position']:
+                    parsed_args.match_by_position = True
+                elif additional_args[i] in ['--num-iterations']:
+                    parsed_args.num_iterations = int(additional_args[i+1])
+                elif additional_args[i] in ['--convergence-tol']:
+                    parsed_args.convergence_tol = float(additional_args[i+1])
+                elif additional_args[i] in ['--run-serial']:
+                    parsed_args.run_serial = True
+                elif additional_args[i] in ['--num-processes']:
+                    parsed_args.num_processes = int(additional_args[i+1])
+                elif additional_args[i] in ['--verbose']:
+                    parsed_args.verbose = True
+                elif additional_args[i] in ['--num-jackknife-blocks']:
+                    parsed_args.num_jackknife_blocks = int(additional_args[i+1])
 
     # Pull passed arguments/options as a string for printing
     cmd_str = _construct_cmd_string(parsed_args, argp)
@@ -467,7 +743,7 @@ def _main(args):
         )
     elif parsed_args.cmd == "simulate":
         return _simulate(
-            parsed_args.sumstats, 
+            parsed_args.sumstats_out, 
             parsed_args.metadata, 
             parsed_args.heritability, 
             parsed_args.component_variance, 
@@ -484,6 +760,14 @@ def _main(args):
             parsed_args.num_samples,
             parsed_args.annotations
         )
+    elif parsed_args.cmd == "reml":
+        if parsed_args.sumstats:
+            parsed_args.sumstats = _detect_sumstats_type(parsed_args.sumstats)
+        elif parsed_args.vcf:
+            parsed_args.sumstats = _detect_sumstats_type(parsed_args.vcf)
+        else:
+            raise ValueError("Either --sumstats or --vcf must be provided")
+        return _reml(parsed_args)
 
 def main():
     """Entry point for the graphld command line interface."""

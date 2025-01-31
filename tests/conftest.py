@@ -73,7 +73,7 @@ def create_annotations():
         annotations = {
             'SNP': [],
             'CHR': [],
-            'POS': [],
+            'BP': [],
             'A2': [],
             'A1': [],
             'base': []
@@ -84,7 +84,7 @@ def create_annotations():
             chromosome = int(row['chrom'])
             annotations['CHR'].extend([chromosome] * len(snplist))
             annotations['SNP'].extend(snplist['site_ids'].to_list())
-            annotations['POS'].extend(snplist['position'].to_list())
+            annotations['BP'].extend(snplist['position'].to_list())
             annotations['A2'].extend(snplist['anc_alleles'].to_list())
             annotations['A1'].extend(snplist['deriv_alleles'].to_list())
             annotations['base'].extend([1] * len(snplist))
@@ -109,6 +109,7 @@ def create_sumstats():
             'A1': [],
             'A2': [],
             'Z': [],
+            'N': [],  
         }
         for row in metadata.iter_rows(named=True):
             snplist_path = os.path.join(os.path.dirname(ldgm_metadata_path), row['snplistName'])
@@ -124,6 +125,9 @@ def create_sumstats():
             # Generate random Z-scores and beta values for testing
             np.random.seed(42)
             sumstats['Z'].extend(np.random.normal(0, 1, len(snplist)))
+            
+            # Add sample size
+            sumstats['N'].extend([1000] * len(snplist))  
 
         return pl.DataFrame(sumstats)
     

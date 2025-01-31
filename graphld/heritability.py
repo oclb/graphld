@@ -85,7 +85,7 @@ class MethodOptions:
     trust_region_rho_ub: float = .99
     trust_region_scalar: float = 5
     max_trust_iterations: int = 5
-    reset_trust_region: bool = True
+    reset_trust_region: bool = False
     num_jackknife_blocks: int = 100
 
 def _surrogate_marker(ldgm: PrecisionOperator, missing_index: int, candidates: pl.DataFrame) -> int:

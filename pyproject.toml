@@ -19,7 +19,7 @@ classifiers = [
     "Intended Audience :: Science/Research",
 ]
 dependencies = [
-    "numpy>=2.2.0",
+    "numpy",
     "polars>=1.17.1",
     "scipy>=1.14.1",
     "scikit-sparse>=0.4.12",

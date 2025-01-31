@@ -56,7 +56,7 @@ The Makefile also contains a `download_all` target to download additional data a
 
 ### Heritability Estimation
 
-graphREML is a heritability estimator that leverages LDGM precision matrices to combine the statistical advantages of REML with the computational advantages of summary statistics-based methods like S-LDSC.
+reml is a heritability estimator that leverages LDGM precision matrices to combine the statistical advantages of REML with the computational advantages of summary statistics-based methods like S-LDSC.
 
 ```python
 from graphld.heritability import ModelOptions, MethodOptions, run_graphREML
@@ -270,29 +270,46 @@ Additional optional fields are supported and described in the GWAS-VCF specifica
 
 ## Command Line Interface (CLI)
 
-The CLI has commands for `blup`, `clump`, and `simulate`. It supports the following common options:
+The CLI has commands for `blup`, `clump`, `simulate`, and `reml`. It supports the following common options:
 - `-h` or `--help`
-- `-c` or `--chromosome`
-- `-p` or `--population`: If unspecified, all populations found with the metadata file are used
 - `-v` or `--verbose`
 - `-q` or `--quiet`
-- `-n` or `--num_samples`: Sample size for simulation or BLUP
-- `--metadata`: Custom path to LDGM metadata file, if different from default
-- `--num_processes`: Number of parallel processes
-- `--run_in_serial`: Turn off parallel processing
+- `-c` or `--chromosome`
+- `-p` or `--population`: Options are 'EUR', 'EAS', 'SAS', 'AFR', 'AMR'; Defaults to 'EUR'
+- `-n` or `--num_samples`: GWAS sample size
+- `--metadata`: Custom path to LDGM metadata file, if different from default (data/ldgms/metadata.csv)
+- `--num_processes`: Number of parallel processes (default: number of CPUs detected)
+- `--run_in_serial`: Turn off parallel processing for debugging
 
 Subcommands have the following additional options:
 
-`graphld blup`:
+`graphld blup SUMSTATS OUT`:
+- `SUMSTATS`: Path to summary statistics file
+- `OUT`: Output file path
 - `-H` or `--heritability`: BLUP requires a heritability estimate
 
-`graphld clump`:
+`graphld clump SUMSTATS OUT`:
+- `SUMSTATS`: Path to summary statistics file
+- `OUT`: Output file path
 - `--min_chisq`: Minimum $\chi^2$ threshold for clumping
 - `--max_rsq`: Maximum $r^2$ threshold for clumping 
 
-`graphld simulate`:
+`graphld simulate SUMSTATS_OUT`:
+- `SUMSTATS_OUT`: Path to output summary statistics file
 - `-H` or `--heritability`: Heritability of simulated trait
 - `--component_variance`: Relative effect-size variance of each mixture component; scaled to match desired heritability
 - `--component_weight`: Weight of each mixture component; should sum to $\leq 1$
 - `--alpha_param`: Alpha parameter controlling frequency-dependent architecture; between -1 and 0; default $-0.5$
 - `--random_seed`
+
+`graphld reml SUMSTATS OUT`:
+- `SUMSTATS`: Path to summary statistics file 
+  - Supported formats (detected from file extension): LDSC (.sumstats) or GWAS-VCF (.vcf)
+- `OUT`: Output prefix for results files
+- `--annot`: Path to annotation directory containing LDSC-format annotation files
+- `--name`: Optional name for the analysis
+- `--intercept`: Optional intercept value (default: 1.0)
+- `--num_iterations`: Maximum number of iterations for optimization (default: 50)
+- `--convergence_tol`: Convergence tolerance for optimization (default: 0.001)
+- `--num_jackknife_blocks`: Number of jackknife blocks for standard error estimation (default: 100)
+- `--match_by_rsid`: Match variants by RSID instead of position (default: False)
