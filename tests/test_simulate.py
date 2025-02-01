@@ -94,7 +94,7 @@ def test_annotation_dependent_polygenicity(metadata_path, create_annotations):
     # Create annotations with a binary feature
     annotations = create_annotations(metadata_path, populations="EUR")
     annotations = annotations.with_columns([
-        (pl.col('POS') % 2 == 0).alias('binary_feature')  # Binary feature
+        (pl.col('BP') % 2 == 0).alias('binary_feature')  # Binary feature
     ])
 
     sim_result = sim.simulate(
@@ -105,7 +105,7 @@ def test_annotation_dependent_polygenicity(metadata_path, create_annotations):
 
     # Check that binary feature affects probability of being causal
     beta = sim_result['beta'].to_numpy()
-    pos = annotations['POS'].to_numpy()
+    pos = annotations['BP'].to_numpy()
     is_even = pos % 2 == 0
 
     causal_even = (beta[is_even] != 0).mean()

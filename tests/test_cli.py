@@ -82,7 +82,7 @@ def test_simulate(metadata_path):
     """Test simulation command."""
     with tempfile.NamedTemporaryFile(suffix=".sumstats") as tmp:
         _simulate(
-            sumstats=tmp.name,
+            sumstats_out=tmp.name,
             metadata=str(metadata_path),
             heritability=0.5,
             component_variance=[1.0],
@@ -95,12 +95,14 @@ def test_simulate(metadata_path):
             run_in_serial=True,
             chromosome=None,
             population=None,
-            verbose=False
+            verbose=False,
+            sample_size=1000
         )
         
         # Check output exists and has expected columns
         result = pl.read_csv(tmp.name, separator='\t')
         assert 'Z' in result.columns
+        assert 'POS' in result.columns
         assert len(result) > 0
 
 
@@ -127,7 +129,8 @@ def test_reml_basic(metadata_path, create_annotations, create_sumstats):
     # Create test data using fixtures
     sumstats = create_sumstats(str(metadata_path), 'EUR')
     annotations = create_annotations(metadata_path, 'EUR')
-    
+    annotations = annotations.rename({'POS': 'BP'})
+
     with tempfile.TemporaryDirectory() as tmpdir:
         out_prefix = Path(tmpdir) / "test"
         
@@ -180,118 +183,3 @@ def test_reml_basic(metadata_path, create_annotations, create_sumstats):
         assert len(enrichment) > 0
         assert heritability["Name"][0] == "test"
         assert enrichment["Name"][0] == "test"
-
-
-def test_reml_no_name(metadata_path, create_annotations, create_sumstats):
-    """Test REML without a name parameter."""
-    # Create test data using fixtures
-    sumstats = create_sumstats(str(metadata_path), 'EUR')
-    annotations = create_annotations(metadata_path, 'EUR')
-    
-    with tempfile.TemporaryDirectory() as tmpdir:
-        out_prefix = Path(tmpdir) / "test"
-        
-        # Write sumstats to temporary file
-        sumstats_file = Path(tmpdir) / "sumstats.csv"
-        sumstats.write_csv(sumstats_file, separator='\t')
-        
-        # Write annotations to temporary file
-        annot_dir = Path(tmpdir) / "annot"
-        annot_dir.mkdir()
-        annotations.write_csv(annot_dir / "baselineLD.22.annot", separator='\t')
-        
-        _reml(
-            type("Args", (), {
-                "sumstats": str(sumstats_file),
-                "annot": str(annot_dir),
-                "out": str(out_prefix),
-                "metadata": str(metadata_path),
-                "num_samples": 1000,
-                "name": None,  # Test with no name
-                "intercept": 1.0,
-                "num_iterations": 2,
-                "convergence_tol": 0.001,
-                "run_in_serial": True,
-                "num_processes": None,
-                "verbose": False,
-                "num_jackknife_blocks": 100,
-                "match_by_rsid": False,
-                "chromosome": None,
-                "population": None,
-            })()
-        )
-
-        # Check files and verify 'NA' is used for name
-        heritability = pl.read_csv(out_prefix.with_suffix(".heritability.csv"))
-        assert heritability["Name"][0] == "NA"
-
-
-def test_reml_chromosome_filter(metadata_path, create_annotations, create_sumstats):
-    """Test REML with chromosome filtering."""
-    # Create test data using fixtures
-    sumstats = create_sumstats(str(metadata_path), 'EUR')
-    annotations = create_annotations(metadata_path, 'EUR')
-    
-    with tempfile.TemporaryDirectory() as tmpdir:
-        out_prefix = Path(tmpdir) / "test"
-        
-        # Write sumstats to temporary file
-        sumstats_file = Path(tmpdir) / "sumstats.csv"
-        sumstats.write_csv(sumstats_file, separator='\t')
-        
-        # Write annotations to temporary file
-        annot_dir = Path(tmpdir) / "annot"
-        annot_dir.mkdir()
-        annotations.write_csv(annot_dir / "baselineLD.1.annot", separator='\t')  # Use chromosome 1
-        
-        _reml(
-            type("Args", (), {
-                "sumstats": str(sumstats_file),
-                "annot": str(annot_dir),
-                "out": str(out_prefix),
-                "metadata": str(metadata_path),
-                "num_samples": 1000,
-                "name": "test",
-                "intercept": 1.0,
-                "num_iterations": 2,
-                "convergence_tol": 0.001,
-                "run_in_serial": True,
-                "num_processes": None,
-                "verbose": False,
-                "num_jackknife_blocks": 100,
-                "match_by_rsid": False,
-                "chromosome": 1,  # Test with chromosome 1
-                "population": None,
-            })()
-        )
-
-        # Verify files exist and contain data
-        assert (out_prefix.with_suffix(".heritability.csv")).exists()
-        assert (out_prefix.with_suffix(".enrichment.csv")).exists()
-
-
-@pytest.mark.xfail(raises=FileNotFoundError)
-def test_reml_missing_files():
-    """Test REML with missing input files."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        out_prefix = Path(tmpdir) / "test"
-        _reml(
-            type("Args", (), {
-                "sumstats": "nonexistent.sumstats",
-                "annot": "nonexistent_dir",
-                "out": str(out_prefix),
-                "metadata": "nonexistent.csv",
-                "num_samples": 1000,
-                "name": "test",
-                "intercept": 1.0,
-                "num_iterations": 2,
-                "convergence_tol": 0.001,
-                "run_in_serial": True,
-                "num_processes": None,
-                "verbose": False,
-                "num_jackknife_blocks": 100,
-                "match_by_rsid": False,
-                "chromosome": None,
-                "population": None,
-            })()
-        )

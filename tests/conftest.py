@@ -73,7 +73,7 @@ def create_annotations():
         annotations = {
             'SNP': [],
             'CHR': [],
-            'BP': [],
+            'POS': [],
             'A2': [],
             'A1': [],
             'base': []
@@ -84,7 +84,7 @@ def create_annotations():
             chromosome = int(row['chrom'])
             annotations['CHR'].extend([chromosome] * len(snplist))
             annotations['SNP'].extend(snplist['site_ids'].to_list())
-            annotations['BP'].extend(snplist['position'].to_list())
+            annotations['POS'].extend(snplist['position'].to_list())
             annotations['A2'].extend(snplist['anc_alleles'].to_list())
             annotations['A1'].extend(snplist['deriv_alleles'].to_list())
             annotations['base'].extend([1] * len(snplist))
