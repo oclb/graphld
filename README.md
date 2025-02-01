@@ -1,17 +1,14 @@
 # GraphLD
 
-This repository provides a Python package for working with [linkage disequilibrium graphical models](https://github.com/awohns/ldgm) (LDGMs) via a convenient interface, the `PrecisionOperator`. It is intended for computationally efficient analyses of GWAS summary statistics.
-For more information about LDGMs, see our [paper](https://pubmed.ncbi.nlm.nih.gov/37640881/):
-> Pouria Salehi Nowbandegani, Anthony Wilder Wohns, Jenna L. Ballard, Eric S. Lander, Alex Bloemendal, Benjamin M. Neale, and Luke J. O’Connor (2023) _Extremely sparse models of linkage disequilibrium in ancestrally diverse association studies_. Nat Genet. DOI: 10.1038/s41588-023-01487-8
+This repository provides an implementation of the graphREML method described in:
+> Hui Li, Tushar Kamath, Rahul Mazumder, Xihong Lin, & Luke J. O'Connor (2024). _Improved heritability partitioning and enrichment analyses using summary statistics with graphREML_. medRxiv, 2024-11. DOI: [10.1101/2024.11.04.24316716](https://doi.org/10.1101/2024.11.04.24316716)
 
-Some of the functions are translated from MATLAB functions contained in the [LDGM repository](https://github.com/awohns/ldgm/tree/main/MATLAB) and the [graphREML repository](https://github.com/huilisabrina/graphREML). 
-
-Giulio Genovese has implemented a LDGM-VCF file format specification and a bcftools plugin written in C with some of the same functionality, available [here](https://github.com/freeseek/score).
-
-All three APIs (in MATLAB, Python, and C) rely under the hood on [SuiteSparse](https://github.com/DrTimothyAldenDavis/SuiteSparse), so they should have similar performance. 
+and a Python API for working with [linkage disequilibrium graphical models](https://github.com/awohns/ldgm) (LDGMs), described in:
+> Pouria Salehi Nowbandegani, Anthony Wilder Wohns, Jenna L. Ballard, Eric S. Lander, Alex Bloemendal, Benjamin M. Neale, and Luke J. O’Connor (2023) _Extremely sparse models of linkage disequilibrium in ancestrally diverse association studies_. Nat Genet. DOI: [10.1038/s41588-023-01487-8](https://pubmed.ncbi.nlm.nih.gov/37640881/)
 
 ## Table of Contents
 - [Installation](#installation)
+- [Command Line Interface (CLI)](#command-line-interface-cli)
 - [Usage](#usage)
   - [Heritability Estimation](#heritability-estimation)
   - [Matrix Operations](#matrix-operations)
@@ -20,7 +17,7 @@ All three APIs (in MATLAB, Python, and C) rely under the hood on [SuiteSparse](h
   - [Simulation](#simulation)
 - [Multiprocessing Framework](#multiprocessing-framework)
 - [File Formats](#file-formats)
-- [Command Line Interface (CLI)](#command-line-interface-cli)
+- [See also](#see-also)
 
 ## Installation
 
@@ -79,11 +76,21 @@ cd data && make download
 
 The Makefile also contains a `download_all` target to download additional data and a `download_eur` target to download European-ancestry LDGMs only.
 
+## Command Line Interface (CLI)
+
+The CLI has commands for `blup`, `clump`, `simulate`, and `reml`. After installing with `uv`, run (for example) `uv run graphld reml -h`. To run graphREML:
+
+```bash
+uv run graphld reml \
+    /path/to/sumstats/file.sumstats \
+    output_files_prefix \
+    --annot /directory/containing/annot/files/ \
+```
+The summary statistics can be in VCF (`.vcf`) or  LDSC (`.sumstats`) format. The annotation files should be in LDSC (`.annot`) format. There will be three output files containing tables with point estimates and standard errors for the annotation-specific heritabilities, heritability enrichments, and model parameters. If you specify the same output file prefix for multiple traits, the estimates for each trait will be printed on a line of the same file.
+
 ## Usage
 
 ### Heritability Estimation
-
-reml is a heritability estimator that leverages LDGM precision matrices to combine the statistical advantages of REML with the computational advantages of summary statistics-based methods like S-LDSC.
 
 ```python
 from graphld.heritability import ModelOptions, MethodOptions, run_graphREML
@@ -132,8 +139,6 @@ For a complete example, see [scripts/run_graphreml_height.py](scripts/run_graphr
 `PrecisionOperator` subclasses the SciPy [LinearOperator](https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.linalg.LinearOperator.html) interface. It represents an LDGM precision matrix or its [Schur complement](https://en.wikipedia.org/wiki/Schur_complement). If one would
 like to compute `correlation_matrix[indices, indices] @ vector`, one can use `ldgm[indices].solve(vector)`. To compute `inv(correlation_matrix[indices, indices]) @ vector`, use `ldgm[indices] @ vector`. See Section 5 of the supplementary material of [our paper](https://pubmed.ncbi.nlm.nih.gov/37640881/).
 
-Example usage:
-
 ```python
 import graphld as gld
 import numpy as np
@@ -152,9 +157,7 @@ assert np.allclose(correlation_times_vector, vector)
 
 ### LD Clumping
 
-Given a set of GWAS summary statistics, LD clumping identifies independent index variants by iteratively selecting the variant with the highest $\chi^2$ statistic and pruning all variants in high LD with it. We provdie a fast implementation using multiprocessing.
-
-Example usage:
+LD clumping identifies independent index variants by iteratively selecting the variant with the highest $\chi^2$ statistic and pruning all variants in high LD with it.
 
 ```python
 clumped = gld.LDClumper.clump(
@@ -165,11 +168,11 @@ clumped = gld.LDClumper.clump(
 
 ### Likelihood Functions
 
-The package provides functions for computing the likelihood of GWAS summary statistics under a Gaussian model:
+The likelihood of GWAS summary statistics under an infinitesimal model is:
 
 $$\beta \sim N(0, D)$$
 $$z|\beta \sim N(n^{1/2}R\beta, R)$$
-where $\beta$ is the effect-size vector in s.d-per-s.d. units, $D$ is a diagonal matrix of per-variant heritabilities, $z$ is the GWAS summary statistic vector, $R$ is the LD correlation matrix, and $n$ is the sample size. The likelihood functions operate on  precision-premultiplied GWAS summary statistics: 
+where $\beta$ is the effect-size vector in s.d-per-s.d. units, $D$ is a diagonal matrix of per-variant heritabilities, $z$ is the GWAS summary statistic vector, $R$ is the LD correlation matrix, and $n$ is the sample size. Our likelihood functions operate on  precision-premultiplied GWAS summary statistics: 
 $$pz = n^{-1/2} R^{-1}z \sim N(0, M), M = D + n^{-1}R^{-1}.$$ 
 
 The following functions are available:
@@ -180,10 +183,9 @@ The following functions are available:
 For background, see our [graphREML preprint](https://www.medrxiv.org/content/10.1101/2024.11.04.24316716v1):
 >Hui Li, Tushar Kamath, Rahul Mazumder, Xihong Lin, & Luke J. O’Connor (2024). _Improved heritability partitioning and enrichment analyses using summary statistics with graphREML_. medRxiv, 2024-11.
 
-
 ### Simulation
 
-A parallelized simulation function is provided. It samples GWAS summary statistics from their asymptotic sampling distribution with effect sizes drawn from a flexible mixture distribution. It provides support for annotation-dependent and frequency-dependent architectures. Unlike the [MATLAB implementation](https://github.com/awohns/ldgm/blob/main/MATLAB/simulateSumstats.m), it does not support multiple ancestry groups.
+A parallelized simulation function is provided which samples GWAS summary statistics from their asymptotic sampling distribution. Effect sizes are drawn from a flexible mixture distribution, which supports annotation-dependent and frequency-dependent architectures. Unlike the [MATLAB implementation](https://github.com/awohns/ldgm/blob/main/MATLAB/simulateSumstats.m), it does not support multiple ancestry groups.
 
 ```python
 import graphld as gld
@@ -206,14 +208,13 @@ sim = gld.Simulate(
 # Simulate summary statistics for a list of LD blocks
 sumstats = sim.simulate([ldgm])  # Returns list of DataFrames with Z-scores
 ```
-The simulator is parallelized across LD blocks. On a fast 16-core laptop, a whole-genome simulation takes about 20 seconds.
 
 ### Best Linear Unbiased Prediction (BLUP)
 BLUP effect sizes can be computed using the following formula:
 $$
 E(\beta) = \sqrt{n} D (nD + R^{-1})^{-1} R^{-1}z
 $$
-where we approximate $R^{-1}$ with the LDGM precision matrix. This is implemented in `graphld.blup`. It is parallelized across LD blocks; on a fast 16-core laptop, it runs in about 15 seconds.
+where we approximate $R^{-1}$ with the LDGM precision matrix. A parallelized implementation is provided in `graphld.BLUP`.
 
 ## Multiprocessing Framework
 
@@ -269,22 +270,19 @@ Tab-separated file containing one edge per line with columns:
 2. Target variant index (0-based)
 3. Precision matrix entry
 
-### Snplist File (.snplist)
+### SNP list File (.snplist)
 
 Tab-separated file with columns:
-1. Variant ID (e.g., rs number; NA for some variants)
-2. Chromosome
-3. Position
-4. Reference allele
-5. Alternative allele
-
-It is recommended that you do not use the `variant ID` column for merging and instead use chromosome/position/ref/alt, as some variants lack RSIDs. 
+1. `index`: corresponds to the index in the edgelist file. Multiple variants can have the same index.
+2. `anc_alleles`: Inferred ancestral alleles
+3. `EUR`, `EAS`, `AMR`, `SAS`, `AFR`: Derived allele frequencies in each 1000 Genomes superpopulation (optional)
+4. `site_ids`: RSID for each variant
+5. `position`: position in GRCh38 coordinates
+6. `swap` (optional)
+It is recommended that you do not use the `variant ID` column for merging and instead use chromosome/position/ref/alt, as some variants lack RSIDs. The file contains some variants which are not SNPs.
 
 ### LDSC Format Summary Statistics (.sumstats)
-The [LDSC summary statistics file format](https://github.com/bulik/ldsc/wiki/Summary-Statistics-File-Format) is upported via the `read_ldsc_sumstats` function. This function:
-- Automatically computes Z-scores from Beta/se if not provided
-- Automatically restricts to LDGM SNPs and adds chromosome numbers and positions in GRCh38 coordinates
-
+See [LDSC summary statistics file format](https://github.com/bulik/ldsc/wiki/Summary-Statistics-File-Format). Read with `read_ldsc_sumstats`.
 
 ### GWAS-VCF (.vcf)
 The [GWAS-VCF specification](https://github.com/MRCIEU/gwasvcf) is supported via the `read_gwas_vcf` function. It is a VCF file with the following mandatory FORMAT fields::
@@ -293,50 +291,17 @@ The [GWAS-VCF specification](https://github.com/MRCIEU/gwasvcf) is supported via
 - `SE`: Standard error of effect size
 - `LP`: -log10 p-value
 
-Additional optional fields are supported and described in the GWAS-VCF specification.
 
-## Command Line Interface (CLI)
+### LDSC Format Annotations (.annot)
+You can download BaselineLD model annotation files with GRCh38 coordinates from the Price lab Google Cloud bucket: https://console.cloud.google.com/storage/browser/broad-alkesgroup-public-requester-pays/LDSCORE/GRCh38
 
-The CLI has commands for `blup`, `clump`, `simulate`, and `reml`. It supports the following common options:
-- `-h` or `--help`
-- `-v` or `--verbose`
-- `-q` or `--quiet`
-- `-c` or `--chromosome`
-- `-p` or `--population`: Options are 'EUR', 'EAS', 'SAS', 'AFR', 'AMR'; Defaults to 'EUR'
-- `-n` or `--num_samples`: GWAS sample size
-- `--metadata`: Custom path to LDGM metadata file, if different from default (data/ldgms/metadata.csv)
-- `--num_processes`: Number of parallel processes (default: number of CPUs detected)
-- `--run_in_serial`: Turn off parallel processing for debugging
+Read annotation files with `load_annotations`.
 
-Subcommands have the following additional options:
+## See Also
 
-`graphld blup SUMSTATS OUT`:
-- `SUMSTATS`: Path to summary statistics file
-- `OUT`: Output file path
-- `-H` or `--heritability`: BLUP requires a heritability estimate
+- Main LDGM repository, including a MATLAB API: [https://github.com/awohns/ldgm](https://github.com/awohns/ldgm)
+- Original graphREML repository, with a MATLAB implementation: [https://github.com/huilisabrina/graphREML](https://github.com/huilisabrina/graphREML) (we recommend using the Python implementation, which is much faster)
+- LD score regression repository: [https://github.com/bulik/ldsc](https://github.com/bulik/ldsc)
+- Giulio Genovese has implemented a LDGM-VCF file format specification and a bcftools plugin written in C with partially overlapping features, available [here](https://github.com/freeseek/score).
+- All of these rely heavily on sparse matrix operations implemented in [SuiteSparse](https://github.com/DrTimothyAldenDavis/SuiteSparse).
 
-`graphld clump SUMSTATS OUT`:
-- `SUMSTATS`: Path to summary statistics file
-- `OUT`: Output file path
-- `--min_chisq`: Minimum $\chi^2$ threshold for clumping
-- `--max_rsq`: Maximum $r^2$ threshold for clumping 
-
-`graphld simulate SUMSTATS_OUT`:
-- `SUMSTATS_OUT`: Path to output summary statistics file
-- `-H` or `--heritability`: Heritability of simulated trait
-- `--component_variance`: Relative effect-size variance of each mixture component; scaled to match desired heritability
-- `--component_weight`: Weight of each mixture component; should sum to $\leq 1$
-- `--alpha_param`: Alpha parameter controlling frequency-dependent architecture; between -1 and 0; default $-0.5$
-- `--random_seed`
-
-`graphld reml SUMSTATS OUT`:
-- `SUMSTATS`: Path to summary statistics file 
-  - Supported formats (detected from file extension): LDSC (.sumstats) or GWAS-VCF (.vcf)
-- `OUT`: Output prefix for results files
-- `--annot`: Path to annotation directory containing LDSC-format annotation files
-- `--name`: Optional name for the analysis
-- `--intercept`: Optional intercept value (default: 1.0)
-- `--num_iterations`: Maximum number of iterations for optimization (default: 50)
-- `--convergence_tol`: Convergence tolerance for optimization (default: 0.001)
-- `--num_jackknife_blocks`: Number of jackknife blocks for standard error estimation (default: 100)
-- `--match_by_rsid`: Match variants by RSID instead of position (default: False)

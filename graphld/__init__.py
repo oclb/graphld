@@ -1,6 +1,8 @@
 """GraphLD package for LD-aware genomic analysis."""
 
-from graphld.io import load_ldgm, read_ldgm_metadata, merge_snplists
+from graphld.io import load_ldgm, read_ldgm_metadata, merge_snplists, load_annotations
+from graphld.vcf_io import read_gwas_vcf
+from graphld.ldsc_io import read_ldsc_sumstats
 from graphld.precision import PrecisionOperator
 from graphld.simulate import Simulate
 from graphld.multiprocessing import SharedData, ParallelProcessor, WorkerManager
@@ -12,6 +14,9 @@ __all__ = [
     'load_ldgm',
     'read_ldgm_metadata',
     'merge_snplists',
+    'load_annotations',
+    'read_gwas_vcf',
+    'read_ldsc_sumstats',
     'PrecisionOperator',
     'Simulate',
     'SharedData',

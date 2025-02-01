@@ -68,6 +68,7 @@ MANIFEST
 
 # Luke's stuff
 MATLAB/*
+old/*
 ai.txt
 
 # Large data files
