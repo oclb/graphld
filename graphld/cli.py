@@ -424,7 +424,7 @@ def _add_blup_parser(subparsers):
     
     # Add BLUP-specific arguments
     parser.add_argument(
-        '--heritability',
+        "-H", '--heritability',
         type=float,
         required=True,
         help='Heritability parameter (between 0 and 1)',
@@ -522,7 +522,7 @@ def _add_simulate_parser(subparsers):
         help="Annotation columns"
     )
     parser.add_argument(
-        "-a", "--annotations", 
+        "-a", "--annot", 
         type=str, 
         default=None,
         help="Directory containing annotation files ending in .annot"
@@ -543,7 +543,7 @@ def _add_reml_parser(subparsers):
 
     # Required arguments
     parser.add_argument(
-        '--annot',
+        "-a", '--annot',
         help='Path to annotation directory',
         required=True,
     )
@@ -565,9 +565,9 @@ def _add_reml_parser(subparsers):
     )
     parser.add_argument(
         '--num_iterations',
-        help='Number of iterations',
+        help='Maximum number of iterations',
         type=int,
-        default=10,
+        default=50,
     )
     parser.add_argument(
         '--convergence_tol',
@@ -579,7 +579,7 @@ def _add_reml_parser(subparsers):
         '--num_jackknife_blocks',
         help='Number of jackknife blocks',
         type=int,
-        default=200,
+        default=100,
     )
     parser.add_argument(
         '--match-by-rsid',
@@ -695,7 +695,7 @@ def _main(args):
                     parsed_args.quiet = True
                 elif additional_args[i] in ['-n', '--num_samples']:
                     parsed_args.num_samples = int(additional_args[i+1])
-                elif additional_args[i] in ['-a', '--annotations']:
+                elif additional_args[i] in ['-a', '--annot']:
                     parsed_args.annotations = additional_args[i+1]
     elif parsed_args.cmd == "reml":
         # Add additional arguments to the parsed arguments
