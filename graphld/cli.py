@@ -5,6 +5,8 @@ import sys
 from importlib import metadata
 from typing import Optional, List, Dict, Union
 from pathlib import Path
+import time
+import numpy as np
 
 import graphld as gld
 from graphld.vcf_io import read_gwas_vcf
@@ -43,7 +45,8 @@ def _blup(
     run_in_serial: bool,
     chromosome: Optional[int],
     population: Optional[str],
-    verbose: bool
+    verbose: bool,
+    quiet: bool
 ) -> None:
     """Run BLUP (Best Linear Unbiased Prediction) command.
     
@@ -58,6 +61,7 @@ def _blup(
         chromosome: Optional chromosome to filter analysis
         population: Optional population to filter analysis
         verbose: Whether to print verbose output
+        quiet: Whether to suppress all output except errors
     
     Raises:
         ValueError: If input file format is invalid or required columns are missing
@@ -120,7 +124,8 @@ def _clump(
     run_in_serial: bool,
     chromosome: Optional[int],
     population: Optional[str],
-    verbose: bool
+    verbose: bool,
+    quiet: bool
 ) -> None:
     """Run LD clumping command to identify independent variants.
     
@@ -136,6 +141,7 @@ def _clump(
         chromosome: Optional chromosome to filter analysis
         population: Optional population to filter analysis
         verbose: Whether to print verbose output
+        quiet: Whether to suppress all output except errors
     
     Raises:
         ValueError: If input file format is invalid
@@ -192,6 +198,7 @@ def _simulate(
     chromosome: Optional[int] = None,
     population: Optional[str] = None,
     verbose: bool = False,
+    quiet: bool = False,
     sample_size: int = 1000,
     annotations: Optional[str] = None
 ) -> None:
@@ -212,6 +219,7 @@ def _simulate(
         chromosome: Optional chromosome to filter analysis
         population: Optional population to filter analysis
         verbose: Whether to print verbose output
+        quiet: Whether to suppress all output except errors
         sample_size: Number of samples to simulate (default: 1000)
         annotations: Path to annotation file for simulation
     
@@ -276,10 +284,15 @@ def _detect_sumstats_type(sumstats_path: str):
 
 def _reml(args):
     """Run GraphREML command."""
-    print('Loading summary statistics from', args.sumstats)
+    start_time = time.time()
+    
+    if not args.quiet:
+        if args.verbose:
+            print('Loading summary statistics from', args.sumstats)
     sumstats = _detect_sumstats_type(args.sumstats)
     
-    print('Loading annotations from', args.annot)
+    if args.verbose:
+        print('Loading annotations from', args.annot)
     annotations = load_annotations(args.annot, chromosome=args.chromosome)
     num_snps_annot = len(annotations)
 
@@ -289,7 +302,7 @@ def _reml(args):
     
     # Create model and method options
     model_options = ModelOptions(
-        sample_size=args.num_samples,
+        sample_size=args.num_samples or 1,
         intercept=args.intercept,
         annotation_columns=annotation_columns,
         link_fn_denominator=num_snps_annot,
@@ -306,7 +319,10 @@ def _reml(args):
     )
     
     # Run GraphREML
-    print('Running GraphREML...')
+    if not args.quiet:
+        print('Running GraphREML...')
+
+    
     results = run_graphREML(
         model_options=model_options,
         method_options=method_options,
@@ -316,6 +332,18 @@ def _reml(args):
         populations=[args.population] if args.population else None,
         chromosomes=[args.chromosome] if args.chromosome else None,
     )
+    
+    runtime = time.time() - start_time
+    if not args.quiet:
+        if args.verbose:
+            print(f"Time to run GraphREML: {runtime:.3f}s")
+            print(f"Estimated heritability: {results['heritability']}")
+            print(f"SE of estimated heritability: {results['heritability_se']}")
+            print(f"Estimated enrichment: {results['enrichment']}")
+            print(f"SE of estimated enrichment: {results['enrichment_se']}")
+            print(f"Likelihood changes: {np.diff(np.array(results['likelihood_history']))}")
+        else:
+            print(f"Finished GraphREML analysis in {runtime:.3f}s")
     
     # Prepare output files
     heritability_file = args.out + '.heritability.csv'
@@ -340,7 +368,6 @@ def _reml(args):
                 row.extend([str(val), str(se)])
             f.write(','.join(row) + '\n')
     
-    # Write heritability and enrichment results
     write_results(heritability_file, 
                  results['heritability'], 
                  results.get('heritability_se', [0]*len(results['heritability'])))
@@ -349,11 +376,9 @@ def _reml(args):
                  results['enrichment'], 
                  results.get('enrichment_se', [0]*len(results['enrichment'])))
     
-    # Only write parameters if they exist
-    if 'parameters' in results:
-        write_results(parameters_file, 
-                     results['parameters'], 
-                     results.get('parameter_se', [0]*len(results['parameters'])))
+    write_results(parameters_file, 
+                    results['params'], 
+                    results.get('param_se', [0]*len(results['params'])))
 
 def _add_common_arguments(parser):
     """Add arguments that are common to all subcommands."""
@@ -725,7 +750,8 @@ def _main(args):
             parsed_args.run_in_serial, 
             parsed_args.chromosome, 
             parsed_args.population, 
-            parsed_args.verbose
+            parsed_args.verbose,
+            parsed_args.quiet
         )
     elif parsed_args.cmd == "clump":
         return _clump(
@@ -739,7 +765,8 @@ def _main(args):
             parsed_args.run_in_serial, 
             parsed_args.chromosome, 
             parsed_args.population, 
-            parsed_args.verbose
+            parsed_args.verbose,
+            parsed_args.quiet
         )
     elif parsed_args.cmd == "simulate":
         return _simulate(
@@ -757,16 +784,11 @@ def _main(args):
             parsed_args.chromosome, 
             parsed_args.population, 
             parsed_args.verbose,
+            parsed_args.quiet,
             parsed_args.num_samples,
             parsed_args.annotations
         )
     elif parsed_args.cmd == "reml":
-        if parsed_args.sumstats:
-            parsed_args.sumstats = _detect_sumstats_type(parsed_args.sumstats)
-        elif parsed_args.vcf:
-            parsed_args.sumstats = _detect_sumstats_type(parsed_args.vcf)
-        else:
-            raise ValueError("Either --sumstats or --vcf must be provided")
         return _reml(parsed_args)
 
 def main():

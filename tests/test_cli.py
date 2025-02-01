@@ -47,7 +47,8 @@ def test_blup(metadata_path, sumstats_path):
             run_in_serial=True,
             chromosome=None,
             population=None,
-            verbose=False
+            verbose=False,
+            quiet=True
         )
         
         # Check output exists and has expected columns
@@ -70,7 +71,8 @@ def test_clump(metadata_path, sumstats_path):
             run_in_serial=True,
             chromosome=None,
             population=None,
-            verbose=False
+            verbose=False,
+            quiet=True
         )
         
         # Check output exists and has expected columns
@@ -120,7 +122,8 @@ def test_invalid_sumstats_format():
                 run_in_serial=True,
                 chromosome=None,
                 population=None,
-                verbose=False
+                verbose=False,
+                quiet=True
             )
 
 
@@ -157,6 +160,7 @@ def test_reml_basic(metadata_path, create_annotations, create_sumstats):
                 "run_in_serial": True,
                 "num_processes": None,
                 "verbose": False,
+                "quiet": True,
                 "num_jackknife_blocks": 100,
                 "match_by_rsid": False,
                 "chromosome": None,

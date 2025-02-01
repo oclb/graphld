@@ -214,8 +214,9 @@ class GraphREML(ParallelProcessor):
     def _initialize_block_zscores(ldgm: PrecisionOperator, 
                                 annot_df: pl.DataFrame,
                                 annotation_columns: List[str],
-                                match_by_position: bool
-                                ) -> Tuple[np.ndarray, np.ndarray]:
+                                match_by_position: bool,
+                                verbose: bool = False
+                                ):
         """Initialize Z-scores for a block by merging variants and computing Pz.
         
         Args:
@@ -240,10 +241,11 @@ class GraphREML(ParallelProcessor):
             add_cols=annotation_columns,
             modify_in_place=True
         )
-        print(f"Number of variants in sumstats before merging: {len(annot_df)}")
-        print(f"Number of variants after merging: {len(ldgm.variant_info)}")
-        if len(ldgm.variant_info) == 0:
-            print("No variants left after merging annotations and sumstats")
+        if verbose:
+            print(f"Number of variants in sumstats before merging: {len(annot_df)}")
+            print(f"Number of variants after merging: {len(ldgm.variant_info)}")
+            if len(ldgm.variant_info) == 0:
+                print("No variants left after merging annotations and sumstats")
 
         variant_info = ldgm.variant_info.with_row_index(name="vi_row_nr")
         variant_info_nonmissing = variant_info.filter(pl.col('Z').is_not_null()).with_row_index(name="surrogate_nr")
@@ -261,7 +263,8 @@ class GraphREML(ParallelProcessor):
             pl.Series('annot_indices', annot_indices)
         ]).drop('vi_row_nr')
 
-        print(f"Number of missing rows: {len(variant_info_missing)}")
+        if verbose:
+            print(f"Number of missing rows: {len(variant_info_missing)}")
         
         # Keep only first occurrence of each index for Z-scores
         first_index_mask = variant_info.select(pl.col('index').is_first_distinct()).to_numpy().flatten()
@@ -361,7 +364,8 @@ class GraphREML(ParallelProcessor):
             ldgm, Pz = cls._initialize_block_zscores(ldgm, 
                                                     sumstats, 
                                                     model_options.annotation_columns,
-                                                    method_options.match_by_position)
+                                                    method_options.match_by_position,
+                                                    method_options.verbose)
             
             # Work in effect-size as opposed to Z score units
             Pz /= np.sqrt(model_options.sample_size)

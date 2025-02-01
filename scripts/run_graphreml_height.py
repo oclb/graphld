@@ -94,8 +94,9 @@ def main():
         sumstats = read_gwas_vcf(VCF_PATH)
     else:
         sumstats = read_ldsc_sumstats(SUMSTATS_PATH)
-    print(len(sumstats))
-    print(f"Time to read sumstats: {time.time() - t:.3f}s")
+    if VERBOSE:
+        print(len(sumstats))
+        print(f"Time to read sumstats: {time.time() - t:.3f}s")
 
     if ADD_MISSINGNESS:
         sumstats = sumstats.with_row_index('index_name')
@@ -103,7 +104,8 @@ def main():
 
     t = time.time()
     annotations = load_annotations(ANNOT_PATH, CHROMOSOME)
-    print(f"Time to load annotations: {time.time() - t:.3f}s")
+    if VERBOSE:
+        print(f"Time to load annotations: {time.time() - t:.3f}s")
 
     # Create model with one parameter per annotation
     excluded_cols = {'SNP', 'CM', 'BP', 'CHR', 'POS', 'A1', 'A2'}
@@ -132,8 +134,9 @@ def main():
         reset_trust_region = RESET_TRUST_REGION,
     )
 
-    print(f"\nRunning GraphREML with {len(annotation_columns)} annotations")
-    print(f"Number of variants: {len(sumstats):,}")
+    if VERBOSE:
+        print(f"\nRunning GraphREML with {len(annotation_columns)} annotations")
+        print(f"Number of variants: {len(sumstats):,}")
 
     # Run GraphREML
     start_time = time.time()
@@ -147,13 +150,13 @@ def main():
         chromosomes=CHROMOSOME,
     )
     runtime = time.time() - start_time
-    print(f"Time to run GraphREML: {runtime:.3f}s")
-    print(f"Estimated heritability: {results['heritability']}")
-    print(f"SE of estimated heritability: {results['heritability_se']}")
-
-    print(f"Estimated enrichment: {results['enrichment']}")
-    print(f"SE of estimated enrichment: {results['enrichment_se']}")
-    print(f"Likelihood changes: {np.diff(np.array(results['likelihood_history']))}")
+    if VERBOSE:
+        print(f"Time to run GraphREML: {runtime:.3f}s")
+        print(f"Estimated heritability: {results['heritability']}")
+        print(f"SE of estimated heritability: {results['heritability_se']}")
+        print(f"Estimated enrichment: {results['enrichment']}")
+        print(f"SE of estimated enrichment: {results['enrichment_se']}")
+        print(f"Likelihood changes: {np.diff(np.array(results['likelihood_history']))}")
 
     # Log results
     log_results(results['heritability'], results['enrichment'], results['likelihood_history'], runtime)
