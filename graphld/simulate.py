@@ -277,9 +277,9 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
         noise_reshaped = np.zeros((num_variants, 1))
 
         # Fill in values for successfully merged variants
-        beta_reshaped[sumstat_indices, 0] = beta
-        alpha_reshaped[sumstat_indices, 0] = alpha
-        noise_reshaped[sumstat_indices, 0] = noise
+        beta_reshaped[sumstat_indices, 0] = beta.flatten()
+        alpha_reshaped[sumstat_indices, 0] = alpha.flatten()
+        noise_reshaped[sumstat_indices, 0] = noise.flatten()
         
         # Update the shared memory arrays
         block_slice = slice(variant_offset, variant_offset + num_variants)

@@ -106,7 +106,7 @@ class PrecisionOperator(LinearOperator):
     def times_scalar(self, multiplier: float) -> None:
         """Multiply the precision matrix by a scalar in place."""
         self._matrix *= multiplier
-        self.del_solver()
+        self.del_factor()
 
     def update_matrix(self, update: np.ndarray) -> None:
         """Update the precision matrix by adding values to its diagonal.
@@ -123,8 +123,8 @@ class PrecisionOperator(LinearOperator):
             msg = f"Update vector length {len(update)} does not match matrix shape {self.shape}"
             raise ValueError(msg)
 
-        if np.allclose(update, 0):
-            return
+        # if np.allclose(update, 0):
+        #     return
 
         for idx, entry in zip(self.diagonal_indices, update, strict=False):
             self._matrix.data[idx] += entry
@@ -284,6 +284,7 @@ class PrecisionOperator(LinearOperator):
         return self._matvec(x.T).T if x.ndim > 1 else self._matvec(x)
 
     def copy(self):
+        """Create a shallow copy of the current LDGM instance."""
         return PrecisionOperator(self._matrix, self.variant_info, self._which_indices, self._solver,
                                self._cholesky_is_up_to_date)
 
@@ -306,6 +307,15 @@ class PrecisionOperator(LinearOperator):
 
 
     def set_which_indices(self, key: Union[list, slice, np.ndarray]) -> None:
+        """Sets the _which_indices class attribute.
+
+        Args:
+            key: Index, slice, or tuple of indices/slices to access. Can be:
+                - List of indices
+                - Array of indices
+                - Boolean mask array
+                - Slice object
+        """
         # Convert key to indices array
         if isinstance(key, slice):
             indices = np.arange(self._matrix.shape[0])[key]
@@ -480,12 +490,6 @@ class PrecisionOperator(LinearOperator):
 
         else:
             raise NotImplementedError
-
-        # # If indices are specified, return only those elements
-        # if self._which_indices is not None:
-        #     diag_estimate = diag_estimate[self._which_indices]
-        #     if initialization is not None:
-        #         y = y[self._which_indices]
 
         return (diag_estimate, y) if initialization is not None else diag_estimate
 

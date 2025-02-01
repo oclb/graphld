@@ -109,6 +109,7 @@ def create_sumstats():
             'A1': [],
             'A2': [],
             'Z': [],
+            'N': [],  
         }
         for row in metadata.iter_rows(named=True):
             snplist_path = os.path.join(os.path.dirname(ldgm_metadata_path), row['snplistName'])
@@ -124,6 +125,9 @@ def create_sumstats():
             # Generate random Z-scores and beta values for testing
             np.random.seed(42)
             sumstats['Z'].extend(np.random.normal(0, 1, len(snplist)))
+            
+            # Add sample size
+            sumstats['N'].extend([1000] * len(snplist))  
 
         return pl.DataFrame(sumstats)
     

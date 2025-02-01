@@ -89,8 +89,8 @@ class BLUP(ParallelProcessor):
         # Store results for variants that were successfully merged
         beta_reshaped = np.zeros((num_variants,1))
         # Get indices of variants that were actually merged
-        beta_reshaped[sumstat_indices, 0] = beta
-        
+        beta_reshaped[sumstat_indices, 0] = beta.flatten()  
+
         # Update the shared memory array
         block_slice = slice(variant_offset, variant_offset + num_variants)
         shared_data['beta', block_slice] = beta_reshaped

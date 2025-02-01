@@ -19,15 +19,15 @@ def test_read_ldsc_sumstats_with_beta_se():
     assert isinstance(df, pl.DataFrame)
     
     # Check required columns
-    required_cols = {'SNP', 'N', 'Z', 'A1', 'A2', 'CHR', 'POS'}
+    required_cols = {'SNP', 'N', 'Z', 'REF', 'ALT', 'CHR', 'POS'}
     assert required_cols.issubset(set(df.columns)), f"Missing columns: {required_cols - set(df.columns)}"
     
     # Check data types
     assert df.schema['SNP'] == pl.Utf8
     assert df.schema['N'] == pl.Int64
     assert df.schema['Z'] == pl.Float64
-    assert df.schema['A1'] == pl.Utf8
-    assert df.schema['A2'] == pl.Utf8
+    assert df.schema['REF'] == pl.Utf8
+    assert df.schema['ALT'] == pl.Utf8
     assert df.schema['CHR'] == pl.Int64
     assert df.schema['POS'] == pl.Int64
     
