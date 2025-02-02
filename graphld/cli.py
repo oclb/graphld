@@ -15,15 +15,6 @@ import polars as pl
 from .io import load_annotations
 from .heritability import ModelOptions, MethodOptions, run_graphREML
 
-title = """
-██████╗ ██████╗  █████╗ ██████╗ ██╗  ██╗██╗     ██████╗ 
-██╔════╝ ██╔══██╗██╔══██╗██╔══██╗██║  ██║██║     ██╔══██╗
-██║  ███╗██████╔╝███████║██████╔╝███████║██║     ██║  ██║
-██║   ██║██╔══██╗██╔══██║██╔═══╝ ██╔══██║██║     ██║  ██║
-╚██████╔╝██║  ██║██║  ██║██║     ██║  ██║███████╗██████╔╝
- ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝╚══════╝╚═════╝ 
-"""
-
 def _construct_cmd_string(args, parser):
     """Reconstruct the command line string."""
     cmd_str = "graphld"
@@ -729,10 +720,12 @@ def _main(args):
 
     # Setup version string
     version = f"v{metadata.version('graphld')}"
-    buff_size = (87 + 22 + 4 - len(version)) // 2
-    version = (" " * buff_size) + version + (" " * buff_size)
-    title_and_ver = f"{title}{os.linesep}{version}"
-    masthead = title_and_ver + os.linesep
+    masthead = f"""
+    **********************************************************************
+    * GraphLD {version}
+    **********************************************************************
+
+    """
 
     if not parsed_args.quiet:
         sys.stdout.write(masthead)
