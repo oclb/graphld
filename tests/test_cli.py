@@ -133,6 +133,10 @@ def test_reml_basic(metadata_path, create_annotations, create_sumstats):
     sumstats = create_sumstats(str(metadata_path), 'EUR')
     annotations = create_annotations(metadata_path, 'EUR')
     annotations = annotations.rename({'POS': 'BP'})
+    
+    # Ensure CHR is Int64 in both DataFrames
+    sumstats = sumstats.with_columns(pl.col('CHR').cast(pl.Int64))
+    annotations = annotations.with_columns(pl.col('CHR').cast(pl.Int64))
 
     with tempfile.TemporaryDirectory() as tmpdir:
         out_prefix = Path(tmpdir) / "test"
@@ -149,7 +153,7 @@ def test_reml_basic(metadata_path, create_annotations, create_sumstats):
         _reml(
             type("Args", (), {
                 "sumstats": str(sumstats_file),
-                "annot": str(annot_dir),
+                "annot_dir": str(annot_dir),
                 "out": str(out_prefix),
                 "metadata": str(metadata_path),
                 "num_samples": 1000,
@@ -163,8 +167,11 @@ def test_reml_basic(metadata_path, create_annotations, create_sumstats):
                 "quiet": True,
                 "num_jackknife_blocks": 100,
                 "match_by_rsid": False,
+                "reset_trust_region": False,
                 "chromosome": None,
                 "population": None,
+                "xtrace_num_samples": 100,
+                "max_chisq_threshold": None,
             })()
         )
 

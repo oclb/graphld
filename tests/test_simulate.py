@@ -134,8 +134,8 @@ def test_heritability_scaling(metadata_path, create_annotations):
 
         # Compute realized heritability
         beta = result['beta'].to_numpy()
-        alpha = result['alpha'].to_numpy()
-        realized_h2 = np.dot(beta, alpha)
+        beta_marginal = result['beta_marginal'].to_numpy()
+        realized_h2 = np.dot(beta, beta_marginal)
         
         np.testing.assert_allclose(realized_h2, h2, rtol=1e-2)
 
@@ -181,8 +181,8 @@ def test_reproducibility(metadata_path, create_annotations):
         result2['beta'].to_numpy()
     )
     np.testing.assert_array_almost_equal(
-        result1['alpha'].to_numpy(),
-        result2['alpha'].to_numpy()
+        result1['beta_marginal'].to_numpy(),
+        result2['beta_marginal'].to_numpy()
     )
     np.testing.assert_array_almost_equal(
         result1['Z'].to_numpy(),

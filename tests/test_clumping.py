@@ -26,8 +26,8 @@ def test_clumping(create_sumstats):
     
     # Test default options (match by position, Z column)
     clumped = LDClumper.clump(
-        metadata_path,
         sumstats,
+        ldgm_metadata_path=metadata_path,
         rsq_threshold=rsq_threshold,
         chisq_threshold=chisq_threshold,
         populations="EUR",
@@ -50,8 +50,8 @@ def test_clumping(create_sumstats):
 
     # Test matching by variant ID
     clumped_by_id = LDClumper.clump(
-        metadata_path,
         sumstats,
+        ldgm_metadata_path=metadata_path,
         rsq_threshold=rsq_threshold,
         chisq_threshold=chisq_threshold,
         populations="EUR",
@@ -68,8 +68,8 @@ def test_clumping(create_sumstats):
 
     # Test alternative Z score column
     clumped_alt_z = LDClumper.clump(
-        metadata_path,
         sumstats,
+        ldgm_metadata_path=metadata_path,
         rsq_threshold=rsq_threshold,
         chisq_threshold=chisq_threshold,
         populations="EUR",

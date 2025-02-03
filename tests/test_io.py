@@ -16,7 +16,8 @@ from graphld.io import (
     create_ldgm_metadata,
     read_ldgm_metadata,
     partition_variants,
-    load_annotations
+    load_annotations,
+    read_bed
 )
 
 
@@ -465,3 +466,85 @@ def test_load_annotations(test_data_dir):
     )
     assert len(all_chrom_annotations) > 0
     assert 'SNP' in all_chrom_annotations.columns
+
+
+def test_load_annotations_with_bed(test_data_dir):
+    """Test loading annotations with BED file integration."""
+    
+    # Load annotations with BED files
+    annotations = load_annotations(
+        annot_path=str(test_data_dir),
+        chromosome=22,
+        add_positions=True,
+        positions_file='data/rsid_position.csv'
+    )
+
+    # Verify BED annotations were added
+    assert 'test_regions' in annotations.columns
+    assert annotations['test_regions'].dtype == pl.Int64
+    
+    # Count variants in regions
+    in_regions = annotations.filter(pl.col('test_regions') == 1)
+    assert len(in_regions) > 0  # Should have some variants in regions
+    
+    # Verify region annotations are correct
+    for row in in_regions.iter_rows(named=True):
+        assert row['CHR'] == 22
+        # Position should be within one of our test regions
+        pos = row['POS']
+        assert (
+            (16050075 <= pos < 16050115) or  # region1
+            (16050200 <= pos < 16050300) or  # region2
+            (17000000 <= pos < 17100000)     # region3
+        )
+    
+    # Test excluding BED files
+    annotations_no_bed = load_annotations(
+        annot_path=str(test_data_dir),
+        chromosome=22,
+        add_positions=True,
+        positions_file='data/rsid_position.csv',
+        exclude_bed=True
+    )
+    assert 'test_regions' not in annotations_no_bed.columns
+
+
+def test_read_bed(tmp_path):
+    """Test reading BED format files."""
+    # Create a test BED file with different numbers of fields
+    bed_content = """
+# This is a comment
+browser position chr7:127471196-127495720
+track name="test track" description="test description"
+chr1    0    100    feature1    960    +    0    100    255,0,0
+chr2    50    150    feature2    500    -
+chr3    1000    2000
+"""
+    bed_file = tmp_path / "test.bed"
+    bed_file.write_text(bed_content)
+
+    # Test reading with default parameters
+    df = read_bed(str(bed_file))
+    assert len(df) == 3
+    assert df.shape[1] >= 3  # Should have at least the required fields
+    assert list(df.columns[:3]) == ['chrom', 'chromStart', 'chromEnd']
+    assert df['chrom'].to_list() == ['chr1', 'chr2', 'chr3']
+    assert df['chromStart'].to_list() == [0, 50, 1000]
+    assert df['chromEnd'].to_list() == [100, 150, 2000]
+
+    # Test 1-based coordinates
+    df_1based = read_bed(str(bed_file), zero_based=False)
+    assert df_1based['chromStart'].to_list() == [1, 51, 1001]  # Start positions should be +1
+    assert df_1based['chromEnd'].to_list() == [100, 150, 2000]  # End positions unchanged
+
+    # Test with min_fields > 3
+    with pytest.raises(ValueError, match="BED line has 3 fields"):
+        read_bed(str(bed_file), min_fields=6)
+
+    # Test with invalid min_fields
+    with pytest.raises(ValueError, match="BED format requires at least 3 fields"):
+        read_bed(str(bed_file), min_fields=2)
+
+    # Test with invalid max_fields
+    with pytest.raises(ValueError, match="BED format has at most 12 fields"):
+        read_bed(str(bed_file), max_fields=13)
