@@ -2,10 +2,10 @@
 import argparse
 import os
 import sys
+import time
 from importlib import metadata
 from typing import Optional, List, Dict, Union
 from pathlib import Path
-import time
 import numpy as np
 
 import graphld as gld
@@ -58,6 +58,11 @@ def _blup(
         ValueError: If input file format is invalid or required columns are missing
         FileNotFoundError: If input files don't exist
     """
+    if not quiet:
+        sys.stdout.write("Running BLUP...\n")
+        sys.stdout.flush()
+    start_time = time.time()
+
     # Validate input files exist
     if not os.path.exists(sumstats):
         raise FileNotFoundError(f"Summary statistics file not found: {sumstats}")
@@ -98,11 +103,16 @@ def _blup(
         match_by_position=match_by_position,
         chromosomes=chromosome,
         populations=population,
-        verbose=verbose
+        verbose=verbose,
     )
     
     # Write output
     blup.write_csv(out, separator='\t')
+
+    end_time = time.time()
+    if not quiet:
+        sys.stdout.write(f"Completed in {end_time - start_time:.2f} s\n")
+        sys.stdout.flush()
 
 def _clump(
     sumstats: str,
@@ -138,6 +148,11 @@ def _clump(
         ValueError: If input file format is invalid
         FileNotFoundError: If input files don't exist
     """
+    if not quiet:
+        sys.stdout.write("Starting clumping...\n")
+        sys.stdout.flush()
+    start_time = time.time()
+
     # Validate input files exist
     if not os.path.exists(sumstats):
         raise FileNotFoundError(f"Summary statistics file not found: {sumstats}")
@@ -173,6 +188,11 @@ def _clump(
     
     # Write output
     clumped.write_csv(out, separator='\t')
+
+    end_time = time.time()
+    if not quiet:
+        sys.stdout.write(f"Completed in {end_time - start_time:.2f} s\n")
+        sys.stdout.flush()
 
 def _simulate(
     sumstats_out: str,
@@ -218,6 +238,11 @@ def _simulate(
         ValueError: If parameters are invalid
         FileNotFoundError: If required files don't exist
     """
+    if not quiet:
+        sys.stdout.write("Running simulate...\n")
+        sys.stdout.flush()
+    start_time = time.time()
+
     # Validate input files and parameters
     if not os.path.exists(metadata):
         raise FileNotFoundError(f"Metadata file not found: {metadata}")
@@ -260,6 +285,11 @@ def _simulate(
     # Write output
     sim_result.write_csv(sumstats_out, separator='\t')
 
+    end_time = time.time()
+    if not quiet:
+        sys.stdout.write(f"Completed in {end_time - start_time:.2f} s\n")
+        sys.stdout.flush()
+
 def _detect_sumstats_type(sumstats_path: str):
     """Detect summary statistics file type based on file extension."""
     from graphld.ldsc_io import read_ldsc_sumstats
@@ -273,8 +303,75 @@ def _detect_sumstats_type(sumstats_path: str):
     else:
         return read_ldsc_sumstats(sumstats_path)
 
+def write_results(filename: str, values: list, std_errors: list, p_values: list, header_prefix=''):
+    """Write results to a CSV file.
+    
+    Args:
+        filename: Output file path
+        values: List of values
+        std_errors: List of standard errors
+        p_values: List of p-values
+        header_prefix: Prefix for column headers
+    """
+    with open(filename, 'w') as f:
+        headers = []
+        for col in ['', '_SE', '_pval']:
+            headers.extend([f'{header_prefix}{col}'])
+        f.write(','.join(headers) + '\n')
+        
+        for val, se, pval in zip(values, std_errors, p_values):
+            row = [str(val), str(se), str(pval)]
+            f.write(','.join(row) + '\n')
+
+def write_tall_results(filename: str, model_options: ModelOptions, results: dict):
+    """Write results in tall format to a CSV file.
+    
+    Args:
+        filename: Output file path
+        model_options: Model options containing annotation names
+        results: Dictionary containing results from GraphREML
+    """
+    # Check if file exists
+    if os.path.exists(filename):
+        raise FileExistsError(f"Output file {filename} already exists")
+        
+    # Create DataFrame with all metrics
+    rows = []
+    for i, name in enumerate(model_options.annotation_columns):
+        row = {
+            'name': name,
+            'enrichment': results['enrichment'][i],
+            'enrichment_SE': results['enrichment_se'][i],
+            'enrichment_pval': results['enrichment_p'][i],
+            'heritability': results['heritability'][i],
+            'heritability_SE': results['heritability_se'][i],
+            'heritability_pval': results['heritability_p'][i],
+            'parameter': results['parameters'][i],
+            'parameter_SE': results['parameters_se'][i],
+            'parameter_pval': results['parameters_p'][i]
+        }
+        rows.append(row)
+    
+    # Write to CSV
+    with open(filename, 'w') as f:
+        headers = ['name', 
+                  'enrichment', 'enrichment_SE', 'enrichment_pval',
+                  'heritability', 'heritability_SE', 'heritability_pval',
+                  'parameter', 'parameter_SE', 'parameter_pval']
+        f.write(','.join(headers) + '\n')
+        
+        for row in rows:
+            values = [str(row[h]) for h in headers]
+            f.write(','.join(values) + '\n')
+
 def _reml(args):
     """Run GraphREML command."""
+    # Check for existing output files
+    if args.tall_output:
+        tall_output = args.out + '.tall.csv'
+        if os.path.exists(tall_output):
+            raise FileExistsError(f"Output file {tall_output} already exists")
+    
     start_time = time.time()
     
     if not args.quiet:
@@ -283,8 +380,8 @@ def _reml(args):
     sumstats = _detect_sumstats_type(args.sumstats)
     
     if args.verbose:
-        print('Loading annotations from', args.annot)
-    annotations = load_annotations(args.annot, chromosome=args.chromosome)
+        print('Loading annotations from', args.annot_dir)
+    annotations = load_annotations(args.annot_dir, chromosome=args.chromosome, add_positions=False)
     num_snps_annot = len(annotations)
 
     # Get annotation columns
@@ -300,19 +397,21 @@ def _reml(args):
     )
     
     method_options = MethodOptions(
-        match_by_position=not args.match_by_rsid,  # Note: inverted since we changed default
+        match_by_position=not args.match_by_rsid,
         num_iterations=args.num_iterations,
         convergence_tol=args.convergence_tol,
         run_serial=args.run_in_serial,
         num_processes=args.num_processes,
         verbose=args.verbose,
         num_jackknife_blocks=args.num_jackknife_blocks,
+        reset_trust_region=args.reset_trust_region,
+        gradient_num_samples=args.xtrace_num_samples,
+        max_chisq_threshold=args.max_chisq_threshold,
     )
     
     # Run GraphREML
     if not args.quiet:
         print('Running GraphREML...')
-
     
     results = run_graphREML(
         model_options=model_options,
@@ -326,60 +425,43 @@ def _reml(args):
     
     runtime = time.time() - start_time
     if not args.quiet:
-        if args.verbose:
-            print(f"Time to run GraphREML: {runtime:.3f}s")
-            print(f"Estimated heritability: {results['heritability']}")
-            print(f"SE of estimated heritability: {results['heritability_se']}")
-            print(f"Estimated enrichment: {results['enrichment']}")
-            print(f"SE of estimated enrichment: {results['enrichment_se']}")
-            print(f"Likelihood changes: {np.diff(np.array(results['likelihood_history']))}")
-        else:
-            print(f"Finished GraphREML analysis in {runtime:.3f}s")
+        print(f"Time to run GraphREML: {runtime:.3f}s")
+    if args.verbose:
+        print(f"Likelihood changes: {np.diff(np.array(results['likelihood_history']))}")
     
     # Prepare output files
+    if args.tall_output:
+        write_tall_results(tall_output, model_options, results)
+        return results
+    
     heritability_file = args.out + '.heritability.csv'
-    enrichment_file = args.out + '.enrichment.csv'
-    parameters_file = args.out + '.parameters.csv'
-    
-    # Function to write results
-    def write_results(filename, values, std_errors, header_prefix=''):
-        file_exists = Path(filename).exists()
-        mode = 'a' if file_exists else 'w'
-        with open(filename, mode) as f:
-            if not file_exists:
-                # Write header
-                headers = ['Name', 'File']
-                for col in annotation_columns:
-                    headers.extend([f'{header_prefix}{col}', f'SE_{header_prefix}{col}'])
-                f.write(','.join(headers) + '\n')
-            
-            # Write data
-            row = [args.name or 'NA', args.sumstats]
-            for val, se in zip(values, std_errors):
-                row.extend([str(val), str(se)])
-            f.write(','.join(row) + '\n')
-    
     write_results(heritability_file, 
-                 results['heritability'], 
-                 results.get('heritability_se', [0]*len(results['heritability'])))
+                    results['heritability'], 
+                    results['heritability_se'],
+                    results['heritability_p'])
     
+    enrichment_file = args.out + '.enrichment.csv'
     write_results(enrichment_file, 
-                 results['enrichment'], 
-                 results.get('enrichment_se', [0]*len(results['enrichment'])))
+                    results['enrichment'], 
+                    results['enrichment_se'],
+                    results['enrichment_p'])
     
+    parameters_file = args.out + '.parameters.csv'    
     write_results(parameters_file, 
-                    results['params'], 
-                    results.get('param_se', [0]*len(results['params'])))
+                    results['parameters'], 
+                    results['parameters_se'],
+                    results['parameters_p'])
+    
 
 def _add_common_arguments(parser):
     """Add arguments that are common to all subcommands."""
-    parser.add_argument("-n", "--num_samples", type=int,
+    parser.add_argument("-n", "--num-samples", type=int,
                       help="Sample size (default: inferred from sumstats)")
     parser.add_argument("--metadata", type=str, default="data/ldgms/metadata.csv",
                       help="Path to LDGM metadata file")
-    parser.add_argument("--num_processes", type=int,
+    parser.add_argument("--num-processes", type=int,
                       help="Number of processes (default: None)")
-    parser.add_argument("--run_in_serial", action="store_true",
+    parser.add_argument("--run-in-serial", action="store_true",
                       help="Run in serial mode")
     parser.add_argument("-c", "--chromosome", type=int, default=None,
                       help="Chromosome to filter analysis")
@@ -439,13 +521,13 @@ def _add_clump_parser(subparsers):
     
     # Add clump-specific arguments
     parser.add_argument(
-        '--min_chisq',
+        '--min-chisq',
         type=float,
-        default=0,
+        default=30,
         help='Minimum chi-squared value for variant inclusion',
     )
     parser.add_argument(
-        '--max_rsq',
+        '--max-rsq',
         type=float,
         default=0.1,
         help='Maximum R-squared threshold for LD pruning',
@@ -478,42 +560,42 @@ def _add_simulate_parser(subparsers):
         help="Heritability (default: 0.2)"
     )
     parser.add_argument(
-        "--component_variance", 
+        "--component-variance", 
         type=lambda s: [float(x) for x in s.split(',')],
         default=[1.0],
         help="Component variance (default: [1.0])"
     )
     parser.add_argument(
-        "--component_weight", 
+        "--component-weight", 
         type=lambda s: [float(x) for x in s.split(',')],
         default=[1.0],
         help="Component weight (default: [1.0])"
     )
     parser.add_argument(
-        "--alpha_param", 
+        "--alpha-param", 
         type=float, 
         default=-0.5,
         help="Alpha parameter (default: -0.5)"
     )
     parser.add_argument(
-        "--annotation_dependent_polygenicity", 
+        "--annotation-dependent-polygenicity", 
         action="store_true",
         help="Annotation dependent polygenicity"
     )
     parser.add_argument(
-        "--random_seed", 
+        "--random-seed", 
         type=int, 
         default=None,
         help="Random seed (default: None)"
     )
     parser.add_argument(
-        "--annotation_columns", 
+        "--annotation-columns", 
         type=lambda s: s.split(','),
         default=None,
         help="Annotation columns"
     )
     parser.add_argument(
-        "-a", "--annot", 
+        "-a", "--annot-dir", 
         type=str, 
         default=None,
         help="Directory containing annotation files ending in .annot"
@@ -534,8 +616,8 @@ def _add_reml_parser(subparsers):
 
     # Required arguments
     parser.add_argument(
-        "-a", '--annot',
-        help='Path to annotation directory',
+        "-a", '--annot-dir',
+        help='Path to annotation directory. Must contain per-chromosome .annot files, can also contain .bed files',
         required=True,
     )
 
@@ -555,19 +637,19 @@ def _add_reml_parser(subparsers):
         default=1.0,
     )
     parser.add_argument(
-        '--num_iterations',
+        '--num-iterations',
         help='Maximum number of iterations',
         type=int,
         default=50,
     )
     parser.add_argument(
-        '--convergence_tol',
+        '--convergence-tol',
         help='Convergence tolerance',
         type=float,
-        default=1e-4,
+        default=1e-2,
     )
     parser.add_argument(
-        '--num_jackknife_blocks',
+        '--num-jackknife-blocks',
         help='Number of jackknife blocks',
         type=int,
         default=100,
@@ -575,6 +657,30 @@ def _add_reml_parser(subparsers):
     parser.add_argument(
         '--match-by-rsid',
         help='Match variants by RSID instead of position',
+        action='store_true',
+        default=False,
+    )
+    parser.add_argument(
+        '--reset-trust-region',
+        help='Reset trust region size to initial value at every iteration',
+        action='store_true',
+        default=False,
+    )
+    parser.add_argument(
+        '--xtrace-num-samples',
+        help='Number of samples for gradient estimation',
+        type=int,
+        default=100,
+    )
+    parser.add_argument(
+        '--max-chisq-threshold',
+        help='Maximum allowed chi^2 value in a block. Blocks with chi^2 > threshold are excluded.',
+        type=float,
+        default=None,
+    )
+    parser.add_argument(
+        '--tall-output',
+        help='Write results in tall format (one file with all metrics)',
         action='store_true',
         default=False,
     )
@@ -612,13 +718,13 @@ def _main(args):
         # Add additional arguments to the parsed arguments
         for i in range(0, len(additional_args), 2):
             if i+1 < len(additional_args):
-                if additional_args[i] in ['-n', '--num_samples']:
+                if additional_args[i] in ['-n', '--num-samples']:
                     parsed_args.num_samples = int(additional_args[i+1])
                 elif additional_args[i] in ['--metadata']:
                     parsed_args.metadata = additional_args[i+1]
-                elif additional_args[i] in ['--num_processes']:
+                elif additional_args[i] in ['--num-processes']:
                     parsed_args.num_processes = int(additional_args[i+1])
-                elif additional_args[i] in ['--run_in_serial']:
+                elif additional_args[i] in ['--run-in-serial']:
                     parsed_args.run_in_serial = True
                 elif additional_args[i] in ['-c', '--chromosome']:
                     parsed_args.chromosome = int(additional_args[i+1])
@@ -634,21 +740,21 @@ def _main(args):
         # Add additional arguments to the parsed arguments
         for i in range(0, len(additional_args), 2):
             if i+1 < len(additional_args):
-                if additional_args[i] in ['-n', '--num_samples']:
+                if additional_args[i] in ['-n', '--num-samples']:
                     parsed_args.num_samples = int(additional_args[i+1])
                 elif additional_args[i] in ['--metadata']:
                     parsed_args.metadata = additional_args[i+1]
-                elif additional_args[i] in ['--num_processes']:
+                elif additional_args[i] in ['--num-processes']:
                     parsed_args.num_processes = int(additional_args[i+1])
-                elif additional_args[i] in ['--run_in_serial']:
+                elif additional_args[i] in ['--run-in-serial']:
                     parsed_args.run_in_serial = True
                 elif additional_args[i] in ['-c', '--chromosome']:
                     parsed_args.chromosome = int(additional_args[i+1])
                 elif additional_args[i] in ['-p', '--population']:
                     parsed_args.population = additional_args[i+1]
-                elif additional_args[i] in ['-m', '--min_chisq']:
+                elif additional_args[i] in ['-m', '--min-chisq']:
                     parsed_args.min_chisq = float(additional_args[i+1])
-                elif additional_args[i] in ['-r', '--max_rsq']:
+                elif additional_args[i] in ['-r', '--max-rsq']:
                     parsed_args.max_rsq = float(additional_args[i+1])
                 elif additional_args[i] in ['-v', '--verbose']:
                     parsed_args.verbose = True
@@ -658,9 +764,9 @@ def _main(args):
         # Add additional arguments to the parsed arguments
         for i in range(0, len(additional_args), 2):
             if i+1 < len(additional_args):
-                if additional_args[i] in ['--num_processes']:
+                if additional_args[i] in ['--num-processes']:
                     parsed_args.num_processes = int(additional_args[i+1])
-                elif additional_args[i] in ['--run_in_serial']:
+                elif additional_args[i] in ['--run-in-serial']:
                     parsed_args.run_in_serial = True
                 elif additional_args[i] in ['-c', '--chromosome']:
                     parsed_args.chromosome = int(additional_args[i+1])
@@ -668,26 +774,26 @@ def _main(args):
                     parsed_args.population = additional_args[i+1]
                 elif additional_args[i] in ['-H', '--heritability']:
                     parsed_args.heritability = float(additional_args[i+1])
-                elif additional_args[i] in ['--component_variance']:
+                elif additional_args[i] in ['--component-variance']:
                     parsed_args.component_variance = [float(x) for x in additional_args[i+1].split(',')]
-                elif additional_args[i] in ['--component_weight']:
+                elif additional_args[i] in ['--component-weight']:
                     parsed_args.component_weight = [float(x) for x in additional_args[i+1].split(',')]
-                elif additional_args[i] in ['--alpha_param']:
+                elif additional_args[i] in ['--alpha-param']:
                     parsed_args.alpha_param = float(additional_args[i+1])
-                elif additional_args[i] in ['--annotation_dependent_polygenicity']:
+                elif additional_args[i] in ['--annotation-dependent-polygenicity']:
                     parsed_args.annotation_dependent_polygenicity = True
-                elif additional_args[i] in ['--random_seed']:
+                elif additional_args[i] in ['--random-seed']:
                     parsed_args.random_seed = int(additional_args[i+1])
-                elif additional_args[i] in ['--annotation_columns']:
+                elif additional_args[i] in ['--annotation-columns']:
                     parsed_args.annotation_columns = additional_args[i+1].split(',')
                 elif additional_args[i] in ['-v', '--verbose']:
                     parsed_args.verbose = True
                 elif additional_args[i] in ['-q', '--quiet']:
                     parsed_args.quiet = True
-                elif additional_args[i] in ['-n', '--num_samples']:
+                elif additional_args[i] in ['-n', '--num-samples']:
                     parsed_args.num_samples = int(additional_args[i+1])
-                elif additional_args[i] in ['-a', '--annot']:
-                    parsed_args.annotations = additional_args[i+1]
+                elif additional_args[i] in ['-a', '--annot-dir']:
+                    parsed_args.annot_dir = additional_args[i+1]
     elif parsed_args.cmd == "reml":
         # Add additional arguments to the parsed arguments
         for i in range(0, len(additional_args), 2):
@@ -721,9 +827,9 @@ def _main(args):
     # Setup version string
     version = f"v{metadata.version('graphld')}"
     masthead = f"""
-    **********************************************************************
-    * GraphLD {version}
-    **********************************************************************
+    ***********************************************************************
+    ************************** GraphLD {version} **************************
+    ***********************************************************************
 
     """
 
@@ -779,7 +885,7 @@ def _main(args):
             parsed_args.verbose,
             parsed_args.quiet,
             parsed_args.num_samples,
-            parsed_args.annotations
+            parsed_args.annot_dir
         )
     elif parsed_args.cmd == "reml":
         return _reml(parsed_args)
