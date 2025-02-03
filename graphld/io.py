@@ -560,7 +560,8 @@ def load_annotations(annot_path: str,
                     add_alleles: bool = False,
                     add_positions: bool = True,
                     positions_file: str = POSITIONS_FILE,
-                    file_pattern: str = "baselineLD.{chrom}.annot"
+                    file_pattern: str = "baselineLD.{chrom}.annot",
+                    exclude_bed: bool = False
                     ) -> pl.DataFrame:
     """Load annotation data for specified chromosome(s) and merge with LDGMs data.
     
@@ -571,6 +572,7 @@ def load_annotations(annot_path: str,
         but will throw an error if too small because floating-point columns will be
         cast as integers.
         file_pattern: Filename pattern to match, with {chrom} as a placeholder for chromosome number
+        exclude_bed: If True, skip loading .bed files from the annotations directory
     
     Returns:
         DataFrame containing annotations
@@ -583,35 +585,61 @@ def load_annotations(annot_path: str,
 
     # Determine which chromosomes to process
     if chromosome is not None:
-        chrom_range = [chromosome]
+        chromosomes = [chromosome]
     else:
-        chrom_range = range(1, 23)  # Assuming chromosomes 1-22
+        chromosomes = range(1, 23)  # Assuming chromosomes 1-22
     
     # Find matching files
     annotations = []
-    for chrom in chrom_range:
-        # Replace {chrom} in the pattern with the actual chromosome number
-        search_pattern = os.path.join(annot_path, file_pattern.format(chrom=chrom))
-        matching_files = glob.glob(search_pattern)
+    for chromosome in chromosomes:
+        file_pattern = f"*.{chromosome}.annot"
+        matching_files = Path(annot_path).glob(file_pattern)
         
-        if not matching_files:
-            print(f"Warning: No annotation files found for chromosome {chrom} using pattern {search_pattern}")
-            continue
+        # Read all matching files for this chromosome
+        dfs = []
+        seen_columns = set()
         
-        # Read the first matching file for this chromosome
-        df = pl.read_csv(
-            matching_files[0],
-            separator='\t',
-            infer_schema_length=infer_schema_length
-        )
-        annotations.append(df)
+        for file_path in matching_files:
+            df = pl.read_csv(
+                file_path,
+                separator='\t',
+                infer_schema_length=infer_schema_length
+            )
+        
+            # Find and remove any duplicate columns seen in previous files
+            duplicate_cols = set(df.columns).intersection(seen_columns)
+            df = df.drop(list(duplicate_cols))
+            seen_columns.update(df.columns)
+            dfs.append(df)
+        
+        # Horizontally concatenate all dataframes for this chromosome
+        if dfs:
+            combined_df = pl.concat(dfs, how="horizontal")
+            annotations.append(combined_df)
     
     # Check if any files were found
     if not annotations:
         raise ValueError(f"No annotation files found in {annot_path} matching pattern {file_pattern}")
     
-    # Concatenate all dataframes
-    annotations = pl.concat(annotations) if len(annotations) > 1 else annotations[0]
+    # Concatenate all chromosome dataframes vertically
+    annotations = pl.concat(annotations, how="vertical")
+
+    # Convert binary columns to boolean to save memory
+    numeric_types = (pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.Float32, pl.Float64)
+    binary_cols = []
+    for col in annotations.columns:
+        # Skip non-numeric columns
+        if not isinstance(annotations[col].dtype, numeric_types):
+            continue
+        # Check if column only contains 0, 1 and null values
+        unique_vals = set(annotations[col].unique().drop_nulls())
+        if unique_vals.issubset({0, 1}):
+            binary_cols.append(col)
+    
+    # Convert binary columns to boolean
+    if binary_cols:
+        bool_exprs = [pl.col(col).cast(pl.Boolean) for col in binary_cols]
+        annotations = annotations.with_columns(bool_exprs)
 
     if add_positions or add_alleles:
         snplist_data = pl.read_csv(
@@ -649,4 +677,148 @@ def load_annotations(annot_path: str,
     if not add_positions:
         annotations = annotations.rename({'BP': 'POS'})
 
+    bed_files = glob.glob(os.path.join(annot_path, "*.bed"))
+    if exclude_bed or not bed_files:
+        return annotations
+
+    # Process BED files if they exist
+    
+    # Create a list to store new annotation columns
+    bed_annotations = []
+    for bed_file in bed_files:
+        # Get the name for this annotation from the filename
+        bed_name = os.path.splitext(os.path.basename(bed_file))[0]
+        
+        # Read the BED file
+        bed_df = read_bed(bed_file)
+        
+        # Convert chromosome names to match our format (e.g., "chr1" -> 1)
+        bed_df = bed_df.with_columns([
+            pl.col("chrom").str.replace("chr", "").cast(pl.Int64).alias("chrom")
+        ])
+        
+        # For each chromosome, create a boolean mask for variants within regions
+        mask = pl.Series(name=bed_name, values=[0] * len(annotations))
+        
+        # Group BED regions by chromosome for efficiency
+        for chrom_group in bed_df.group_by("chrom"):
+            chrom = chrom_group[0]
+            regions = chrom_group[1]
+            
+            # Get variants for this chromosome
+            chrom_mask = (annotations["CHR"] == chrom)
+            chrom_pos = annotations.filter(chrom_mask)["POS"]
+            
+            # For each region in this chromosome
+            for region in regions.iter_rows():
+                start = region[1]  # chromStart
+                end = region[2]    # chromEnd
+                
+                # Update mask for variants in this region
+                region_mask = (chrom_pos >= start) & (chrom_pos < end)
+                mask = mask.set(chrom_mask & region_mask, 1)
+        
+        bed_annotations.append(mask)
+    
+    # Add all BED annotations to the main DataFrame
+    annotations = annotations.with_columns(bed_annotations)
+
     return annotations
+
+
+def read_bed(bed_file: str,
+             min_fields: int = 3,
+             max_fields: int = 12,
+             zero_based: bool = True) -> pl.DataFrame:
+    """Read a UCSC BED format file.
+    
+    The BED format has 3 required fields and 9 optional fields:
+    Required:
+        1. chrom - Chromosome name
+        2. chromStart - Start position (0-based)
+        3. chromEnd - End position (not included in feature)
+    Optional:
+        4. name - Name of BED line
+        5. score - Score from 0-1000
+        6. strand - Strand: "+" or "-" or "."
+        7. thickStart - Starting position at which feature is drawn thickly
+        8. thickEnd - Ending position at which feature is drawn thickly
+        9. itemRgb - RGB value (e.g., "255,0,0")
+        10. blockCount - Number of blocks (e.g., exons)
+        11. blockSizes - Comma-separated list of block sizes
+        12. blockStarts - Comma-separated list of block starts relative to chromStart
+
+    Args:
+        bed_file: Path to BED format file
+        min_fields: Minimum number of fields required (default: 3)
+        max_fields: Maximum number of fields to read (default: 12)
+        zero_based: If True (default), keeps positions 0-based. If False, adds 1 to start positions.
+
+    Returns:
+        Polars DataFrame containing the BED data with appropriate column names and types.
+        
+    Raises:
+        ValueError: If min_fields < 3 or max_fields > 12 or if file has inconsistent number of fields
+    """
+    if min_fields < 3:
+        raise ValueError("BED format requires at least 3 fields")
+    if max_fields > 12:
+        raise ValueError("BED format has at most 12 fields")
+    if min_fields > max_fields:
+        raise ValueError("min_fields cannot be greater than max_fields")
+
+    # Define all possible BED columns with their types
+    bed_columns = [
+        ('chrom', pl.Utf8),
+        ('chromStart', pl.Int64),
+        ('chromEnd', pl.Int64),
+        ('name', pl.Utf8),
+        ('score', pl.Int64),
+        ('strand', pl.Utf8),
+        ('thickStart', pl.Int64),
+        ('thickEnd', pl.Int64),
+        ('itemRgb', pl.Utf8),
+        ('blockCount', pl.Int64),
+        ('blockSizes', pl.Utf8),
+        ('blockStarts', pl.Utf8)
+    ]
+
+    # Read and parse the file
+    data = []
+    with open(bed_file) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith(('browser', 'track', '#')):
+                continue
+            # Split on tabs or spaces and filter out empty strings
+            fields = [f for f in line.split() if f]
+            if not (min_fields <= len(fields) <= max_fields):
+                raise ValueError(
+                    f"BED line has {len(fields)} fields, expected between {min_fields} and {max_fields}: {line}"
+                )
+            # Pad with None if we have fewer than max_fields
+            fields.extend([None] * (max_fields - len(fields)))
+            data.append(fields[:max_fields])
+
+    # Create schema for required fields
+    schema = {name: dtype for name, dtype in bed_columns[:max_fields]}
+
+    # Create DataFrame
+    df = pl.from_records(
+        data,
+        schema=schema,
+        orient="row"
+    )
+
+    # Convert 0-based to 1-based coordinates if requested
+    if not zero_based:
+        df = df.with_columns([
+            pl.col('chromStart') + 1
+        ])
+        # Also convert thick positions if present
+        if 'thickStart' in df.columns:
+            df = df.with_columns([
+                pl.col('thickStart') + 1
+            ])
+
+    return df
