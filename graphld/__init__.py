@@ -4,27 +4,27 @@ from graphld.io import load_ldgm, read_ldgm_metadata, merge_snplists, load_annot
 from graphld.vcf_io import read_gwas_vcf
 from graphld.ldsc_io import read_ldsc_sumstats
 from graphld.precision import PrecisionOperator
-from graphld.simulate import Simulate
+from graphld.simulate import run_simulate, Simulate
 from graphld.multiprocessing import SharedData, ParallelProcessor, WorkerManager
 from graphld.likelihood import gaussian_likelihood, gaussian_likelihood_gradient, gaussian_likelihood_hessian
-from graphld.blup import BLUP
-from graphld.clumping import LDClumper
+from graphld.blup import run_blup, BLUP
+from graphld.clumping import run_clump, LDClumper
 
 __all__ = [
     'load_ldgm',
     'read_ldgm_metadata',
-    'merge_snplists',
     'load_annotations',
     'read_gwas_vcf',
     'read_ldsc_sumstats',
+    'merge_snplists',
     'PrecisionOperator',
-    'Simulate',
     'SharedData',
     'ParallelProcessor',
     'WorkerManager',
     'gaussian_likelihood',
     'gaussian_likelihood_gradient',
     'gaussian_likelihood_hessian',
-    'BLUP',
-    'LDClumper',
+    'run_blup',
+    'run_clump',
+    'run_simulate',
 ]
