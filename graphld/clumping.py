@@ -4,7 +4,6 @@ from typing import Any, Union, List, Optional
 import polars as pl
 import numpy as np
 from multiprocessing import Value
-from time import time
 
 from .multiprocessing import ParallelProcessor, WorkerManager, SerialManager, SharedData
 from .precision import PrecisionOperator
@@ -169,10 +168,10 @@ class LDClumper(ParallelProcessor):
 
     @classmethod
     def clump(cls,
-            ldgm_metadata_path: str,
             sumstats: pl.DataFrame,
-            rsq_threshold: float,
-            chisq_threshold: float,
+            ldgm_metadata_path: str = 'data/ldgms/ldgm_metadata.csv',
+            rsq_threshold: float = 0.1,
+            chisq_threshold: float = 30.0,
             populations: Optional[Union[str, List[str]]] = None,
             chromosomes: Optional[Union[int, List[int]]] = None,
             run_in_serial: bool = False,
@@ -185,10 +184,10 @@ class LDClumper(ParallelProcessor):
         """Perform LD clumping on summary statistics.
         
         Args:
-            ldgm_metadata_path: Path to metadata CSV file
             sumstats: Summary statistics DataFrame containing Z scores
-            rsq_threshold: r² threshold for clumping
-            chisq_threshold: χ² threshold for significance
+            ldgm_metadata_path: Path to metadata CSV file (default 'data/ldgms/ldgm_metadata.csv')
+            rsq_threshold: r² threshold for clumping (default 0.1)
+            chisq_threshold: χ² threshold for significance (default 30.0)
             populations: Optional population name(s)
             chromosomes: Optional chromosome(s)
             num_processes: Optional number of processes
@@ -201,7 +200,6 @@ class LDClumper(ParallelProcessor):
             DataFrame with additional column 'is_index' indicating index variants
         """
 
-        start = time()
         run_fn = cls.run_serial if run_in_serial else cls.run
         result = run_fn(ldgm_metadata_path=ldgm_metadata_path,
                 populations=populations,
@@ -209,12 +207,32 @@ class LDClumper(ParallelProcessor):
                 num_processes=num_processes,
                 worker_params=(rsq_threshold, chisq_threshold, z_col, match_by_position, variant_id_col),
                 sumstats=sumstats)
-        runtime = time() - start
 
         if verbose:
-            print(f"Time to perform LD clumping: {runtime:.1f}s")
             print(f"Number of variants in summary statistics: {len(result)}")
             nonzero_count = (result['is_index']).sum()
             print(f"Number of index variants: {nonzero_count}")
         
         return result
+
+
+def run_clump(*args, **kwargs):
+    """
+    Perform LD-based clumping on summary statistics.
+
+    Args:
+        ldgm_metadata_path (str): Path to LDGM metadata file
+        sumstats (pl.DataFrame): Summary statistics DataFrame
+        min_chisq (float, optional): Minimum chi-squared threshold. Defaults to 5.0.
+        max_rsq (float, optional): Maximum R-squared threshold. Defaults to 0.1.
+        num_processes (Optional[int], optional): Number of processes for parallel computation. Defaults to None.
+        run_in_serial (bool, optional): Whether to run in serial mode. Defaults to False.
+        chromosome (Optional[int], optional): Chromosome to filter. Defaults to None.
+        population (Optional[str], optional): Population to filter. Defaults to None.
+        verbose (bool, optional): Whether to print verbose output. Defaults to False.
+        quiet (bool, optional): Whether to suppress all output except errors. Defaults to False.
+
+    Returns:
+        pl.DataFrame: DataFrame with clumped summary statistics and index variant information
+    """
+    return LDClumper.clump(*args, **kwargs)

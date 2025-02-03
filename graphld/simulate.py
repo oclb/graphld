@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 from multiprocessing import Process, Value, Array, cpu_count
 import os
-from time import time
 import traceback
 from itertools import zip_longest
 
@@ -321,13 +320,14 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
         return result.with_columns([
             pl.Series('Z', noise + np.sqrt(spec.sample_size) * alpha),
             pl.Series('beta', beta),
-            pl.Series('alpha', alpha),
+            pl.Series('beta_marginal', alpha),
+            pl.Series('N', np.full(len(result), spec.sample_size)),
         ])
 
     def simulate(
             self,
-            ldgm_metadata_path: str,
-            populations: Optional[Union[str, List[str]]] = None,
+            ldgm_metadata_path: str = 'data/ldgms/ldgm_metadata.csv',
+            populations: Optional[Union[str, List[str]]] = 'EUR',
             chromosomes: Optional[Union[int, List[int]]] = None,
             run_in_serial: bool = False,
             num_processes: Optional[int] = None,
@@ -346,7 +346,6 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
         Returns:
             Simulated genetic data DataFrame
         """
-        start = time()
         run_fn = self.run_serial if run_in_serial else self.run
         result = run_fn(
             ldgm_metadata_path=ldgm_metadata_path,
@@ -358,12 +357,75 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
             ldgm_metadata_path_duplicate=ldgm_metadata_path, # So that it is passed to prepare_block_data
             num_processes=num_processes,
         )
-        runtime = time() - start
 
         if verbose:
-            print(f"Time to simulate summary statistics: {runtime:.1f}s")
             print(f"Number of variants in summary statistics: {len(result)}")
             nonzero_count = (result['beta'] != 0).sum()
             print(f"Number of variants with nonzero beta: {nonzero_count}")
         
         return result
+
+def run_simulate(
+    sample_size: int,
+    heritability: float = 0.5,
+    component_variance: Optional[Union[np.ndarray, List[float]]] = None,
+    component_weight: Optional[Union[np.ndarray, List[float]]] = None,
+    alpha_param: float = -1,
+    annotation_dependent_polygenicity: bool = False,
+    link_fn: Callable[[np.ndarray], np.ndarray] = _default_link_fn,
+    random_seed: Optional[int] = None,
+    annotation_columns: Optional[List[str]] = None,
+    ldgm_metadata_path: str = 'data/ldgms/ldgm_metadata.csv',
+    populations: Optional[Union[str, List[str]]] = 'EUR',
+    chromosomes: Optional[Union[int, List[int]]] = None,
+    run_in_serial: bool = False,
+    num_processes: Optional[int] = None,
+    annotations: Optional[pl.DataFrame] = None,
+    verbose: bool = False,
+) -> pl.DataFrame:
+    """Run GWAS summary statistics simulation with specified parameters.
+
+    Args:
+        sample_size: Sample size for the population
+        heritability: Total heritability (h2) for the trait
+        component_variance: Per-allele effect size variance for each mixture component
+        component_weight: Mixture weight for each component (must sum to ≤ 1)
+        alpha_param: Alpha parameter for allele frequency-dependent architecture
+        annotation_dependent_polygenicity: If True, use annotations to modify proportion
+            of causal variants instead of effect size magnitude
+        link_fn: Function mapping annotation vector to relative per-variant heritability.
+            Default is softmax: x -> log(1 + exp(sum(x)))
+        random_seed: Random seed for reproducibility
+        annotation_columns: List of column names to use as annotations
+        ldgm_metadata_path: Path to LDGM metadata file
+        populations: Population(s) to filter
+        chromosomes: Chromosome(s) to filter
+        run_in_serial: Whether to run in serial mode
+        num_processes: Number of processes for parallel execution
+        annotations: Optional variant annotations DataFrame
+        verbose: Whether to print progress information
+
+    Returns:
+        DataFrame containing simulated summary statistics
+    """
+    sim = Simulate(
+        sample_size=sample_size,
+        heritability=heritability,
+        component_variance=component_variance,
+        component_weight=component_weight,
+        alpha_param=alpha_param,
+        annotation_dependent_polygenicity=annotation_dependent_polygenicity,
+        link_fn=link_fn,
+        random_seed=random_seed,
+        annotation_columns=annotation_columns,
+    )
+    
+    return sim.simulate(
+        ldgm_metadata_path=ldgm_metadata_path,
+        populations=populations,
+        chromosomes=chromosomes,
+        run_in_serial=run_in_serial,
+        num_processes=num_processes,
+        annotations=annotations,
+        verbose=verbose,
+    )

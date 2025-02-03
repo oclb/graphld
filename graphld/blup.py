@@ -1,6 +1,5 @@
 from typing import Any, Dict, List, Optional, Union
 from multiprocessing import Value
-from time import time
 import numpy as np
 import polars as pl
 from .io import partition_variants
@@ -140,7 +139,6 @@ class BLUP(ParallelProcessor):
         Returns:
             Array of BLUP effect sizes, same length as sumstats
         """ 
-        start = time()
         run_fn = cls.run_serial if run_in_serial else cls.run
         result = run_fn(
             ldgm_metadata_path=ldgm_metadata_path,
@@ -150,12 +148,31 @@ class BLUP(ParallelProcessor):
             worker_params=(sigmasq, sample_size, match_by_position),
             sumstats=sumstats
         )
-        runtime = time() - start
         
         if verbose:
-            print(f"Time to compute BLUP: {runtime:.1f}s")
             print(f"Number of variants in summary statistics: {len(result)}")
             nonzero_count = (result['weight'] != 0).sum()
             print(f"Number of variants with nonzero weights: {nonzero_count}")
         
         return result
+
+def run_blup(*args, **kwargs):
+    """
+    Compute Best Linear Unbiased Prediction (BLUP) weights.
+
+    Args:
+        ldgm_metadata_path (str): Path to LDGM metadata file
+        sumstats (pl.DataFrame): Summary statistics DataFrame
+        heritability (float): Heritability parameter (between 0 and 1)
+        num_samples (Optional[int], optional): Number of samples. Defaults to None.
+        num_processes (Optional[int], optional): Number of processes for parallel computation. Defaults to None.
+        run_in_serial (bool, optional): Whether to run in serial mode. Defaults to False.
+        chromosome (Optional[int], optional): Chromosome to filter. Defaults to None.
+        population (Optional[str], optional): Population to filter. Defaults to None.
+        verbose (bool, optional): Whether to print verbose output. Defaults to False.
+        quiet (bool, optional): Whether to suppress all output except errors. Defaults to False.
+
+    Returns:
+        pl.DataFrame: DataFrame with BLUP weights and associated statistics
+    """
+    return BLUP.compute_blup(*args, **kwargs)
