@@ -41,7 +41,7 @@ class ModelOptions:
     annotation_columns: Optional[List[str]] = None
     params: Optional[np.ndarray] = None
     sample_size: float = 1.0
-    intercept: float = 1.0
+    intercept: float = 1.0 # TODO
     link_fn_denominator: float = 6e6
 
     def __post_init__(self):
@@ -388,7 +388,7 @@ class GraphREML(ParallelProcessor):
             
             # Work in effect-size as opposed to Z score units
             Pz /= np.sqrt(model_options.sample_size)
-            ldgm.times_scalar(1.0 / model_options.sample_size)
+            ldgm.times_scalar(model_options.intercept / model_options.sample_size)
             block_data['Pz'] = Pz
 
             # ldgm is modified in place and re-used in subsequent iterations
@@ -583,12 +583,12 @@ class GraphREML(ParallelProcessor):
         point_estimate = np.mean(jackknife_estimates)
         
         # Check if all estimates are identical (within numerical precision)
-        if np.allclose(jackknife_estimates, jackknife_estimates[0]):
-            return point_estimate, 0.0, 1.0
+        if np.allclose(jackknife_estimates, point_estimate, rtol=1e-24, atol=0):
+            return 1.0
             
         standard_error = np.sqrt((n_blocks - 1) * np.var(jackknife_estimates, ddof=1))
         p_value = 2 * (1 - sps.norm.cdf(np.abs(point_estimate / standard_error)))
-        return point_estimate, standard_error, p_value
+        return p_value
 
     @classmethod
     def supervise(cls, manager: WorkerManager, shared_data: SharedData, block_data: list, **kwargs):
@@ -607,6 +607,7 @@ class GraphREML(ParallelProcessor):
         model: ModelOptions = kwargs.get('model')
         trust_region_lambda = method.trust_region_size
         log_likelihood_history = []
+        trust_region_history = []
         
         def _trust_region_step(gradient: np.ndarray, hessian: np.ndarray, trust_region_lambda: float) -> np.ndarray:
             """Compute trust region step by solving (H + λD)x = -g.
@@ -672,15 +673,18 @@ class GraphREML(ParallelProcessor):
                         print("Warning: Maximum trust region iterations reached")
                                         
             log_likelihood_history.append(new_likelihood)
-
+            trust_region_history.append(trust_region_lambda)
+            
             if verbose:
                 print(f"Trust region lambda: {trust_region_lambda}")
                 if len(log_likelihood_history) >= 2:
                     print(f"Change in likelihood: {log_likelihood_history[-1] - log_likelihood_history[-2]}")
             
             # Check convergence
+            converged = False
             if len(log_likelihood_history) >= 3:
                 if abs(log_likelihood_history[-1] - log_likelihood_history[-3]) < (2 * method.convergence_tol):
+                    converged = True
                     break
 
         # After optimization
@@ -723,15 +727,17 @@ class GraphREML(ParallelProcessor):
 
         # Two-tailed p-values using jackknife estimates
         annotation_heritability_p = np.array([
-            cls._wald_pvalue(jackknife_h2[:, i])[2] for i in range(jackknife_h2.shape[1])
+            cls._wald_pvalue(jackknife_h2[:, i]) for i in range(jackknife_h2.shape[1])
         ])
         # Use differences for p-values
         annotation_enrichment_p = np.array([
-            cls._wald_pvalue(jackknife_enrichment_diff[:, i])[2] for i in range(jackknife_enrichment_diff.shape[1])
+            cls._wald_pvalue(jackknife_enrichment_diff[:, i]) for i in range(jackknife_enrichment_diff.shape[1])
         ])
         params_p = np.array([
-            cls._wald_pvalue(jackknife_params[:, i])[2] for i in range(jackknife_params.shape[1])
+            cls._wald_pvalue(jackknife_params[:, i]) for i in range(jackknife_params.shape[1])
         ])
+
+        likelihood_changes = [a - b for a, b in zip(log_likelihood_history[1:], log_likelihood_history[:-1])]
         
         if verbose:
             num_annotations = len(annotation_heritability)
@@ -753,6 +759,13 @@ class GraphREML(ParallelProcessor):
             'jackknife_h2': jackknife_h2,
             'jackknife_params': jackknife_params,
             'jackknife_enrichment': jackknife_enrichment_quotient,
+            'log': {
+                'converged': converged,
+                'num_iterations': rep + 1,  # Add 1 since rep is 0-based
+                'likelihood_changes': likelihood_changes,
+                'final_likelihood': log_likelihood_history[-1],
+                'trust_region_lambdas': trust_region_history,
+            }
         }
 
 def run_graphREML(model_options: ModelOptions,
@@ -790,7 +803,7 @@ def run_graphREML(model_options: ModelOptions,
     if not method_options.match_by_position:
         raise NotImplementedError
         # TODO correctly handle !match_by_position; currently CHR and POS become CHR_right, POS_right
-    
+
     join_cols = ['CHR', 'POS'] if method_options.match_by_position else ['SNP']
     merge_how = 'right' if method_options.use_surrogate_markers else 'inner'
     merged_data = summary_stats.join(
@@ -798,7 +811,7 @@ def run_graphREML(model_options: ModelOptions,
         on=join_cols,
         how=merge_how
     )
-    
+
     run_fn = GraphREML.run_serial if method_options.run_serial else GraphREML.run
     return run_fn(
         ldgm_metadata_path,
