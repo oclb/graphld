@@ -633,7 +633,7 @@ def load_annotations(annot_path: str,
             continue
         # Check if column only contains 0, 1 and null values
         unique_vals = set(annotations[col].unique().drop_nulls())
-        if unique_vals.issubset({0, 1}):
+        if unique_vals == {0, 1}:
             binary_cols.append(col)
     
     # Convert binary columns to boolean
