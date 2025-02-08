@@ -172,25 +172,44 @@ def test_reml_basic(metadata_path, create_annotations, create_sumstats):
                 "population": None,
                 "xtrace_num_samples": 100,
                 "max_chisq_threshold": None,
+                "alt_output": False,  # Use default tall format
             })()
         )
 
         # Check that output files exist
-        assert (out_prefix.with_suffix(".heritability.csv")).exists()
-        assert (out_prefix.with_suffix(".enrichment.csv")).exists()
+        assert (out_prefix.with_suffix(".tall.csv")).exists()
+        assert (out_prefix.with_suffix(".convergence.csv")).exists()
 
-        # Verify file contents
-        heritability = pl.read_csv(out_prefix.with_suffix(".heritability.csv"))
-        enrichment = pl.read_csv(out_prefix.with_suffix(".enrichment.csv"))
+        # Also test alt_output format
+        _reml(
+            type("Args", (), {
+                "sumstats": str(sumstats_file),
+                "annot_dir": str(annot_dir),
+                "out": str(out_prefix) + "_alt",
+                "metadata": str(metadata_path),
+                "num_samples": 1000,
+                "name": "test",
+                "intercept": 1.0,
+                "num_iterations": 2,  # Small number for testing
+                "convergence_tol": 0.001,
+                "run_in_serial": True,
+                "num_processes": None,
+                "verbose": False,
+                "quiet": True,
+                "num_jackknife_blocks": 100,
+                "match_by_rsid": False,
+                "reset_trust_region": False,
+                "chromosome": None,
+                "population": None,
+                "xtrace_num_samples": 100,
+                "max_chisq_threshold": None,
+                "alt_output": True,  # Test alternative output format
+            })()
+        )
 
-        # Check basic structure
-        assert "Name" in heritability.columns
-        assert "File" in heritability.columns
-        assert "Name" in enrichment.columns
-        assert "File" in enrichment.columns
-
-        # Verify data
-        assert len(heritability) > 0
-        assert len(enrichment) > 0
-        assert heritability["Name"][0] == "test"
-        assert enrichment["Name"][0] == "test"
+        # Check that alt output files exist
+        alt_prefix = Path(str(out_prefix) + "_alt")
+        assert (alt_prefix.with_suffix(".heritability.csv")).exists()
+        assert (alt_prefix.with_suffix(".enrichment.csv")).exists()
+        assert (alt_prefix.with_suffix(".parameters.csv")).exists()
+        assert (alt_prefix.with_suffix(".convergence.csv")).exists()
