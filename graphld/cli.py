@@ -364,11 +364,36 @@ def write_tall_results(filename: str, model_options: ModelOptions, results: dict
             values = [str(row[h]) for h in headers]
             f.write(','.join(values) + '\n')
 
+def write_convergence_results(filename: str, results: dict):
+    """Write convergence results to a CSV file.
+    
+    Args:
+        filename: Output file path
+        results: Dictionary containing results from GraphREML
+    """
+    log = results['log']
+    
+    # Write to CSV
+    with open(filename, 'w') as f:
+        # Write header
+        headers = ['converged', 'num_iterations', 'final_likelihood']
+        f.write(','.join(headers) + '\n')
+        
+        # Write convergence info
+        values = [str(log['converged']), str(log['num_iterations']), str(log['final_likelihood'])]
+        f.write(','.join(values) + '\n')
+        
+        # Write iteration-by-iteration info
+        f.write('\n')  # Empty line for readability
+        f.write('iteration,likelihood_change,trust_region_lambda\n')
+        for i, (change, trust_lambda) in enumerate(zip(log['likelihood_changes'], log['trust_region_lambdas'])):
+            f.write(f"{i+1},{change},{trust_lambda}\n")
+
 def _reml(args):
     """Run GraphREML command."""
     # Check for existing output files
-    if args.tall_output:
-        tall_output = args.out + '.tall.csv'
+    tall_output = args.out + '.tall.csv'
+    if not args.alt_output:
         if os.path.exists(tall_output):
             raise FileExistsError(f"Output file {tall_output} already exists")
     
@@ -430,33 +455,35 @@ def _reml(args):
         print(f"Likelihood changes: {np.diff(np.array(results['likelihood_history']))}")
     
     # Prepare output files
-    if args.tall_output:
+    convergence_file = args.out + '.convergence.csv'
+    write_convergence_results(convergence_file, results)
+
+    if args.alt_output:
+        heritability_file = args.out + '.heritability.csv'
+        write_results(heritability_file, 
+                        results['heritability'], 
+                        results['heritability_se'],
+                        results['heritability_p'])
+        
+        enrichment_file = args.out + '.enrichment.csv'
+        write_results(enrichment_file, 
+                        results['enrichment'], 
+                        results['enrichment_se'],
+                        results['enrichment_p'])
+        
+        parameters_file = args.out + '.parameters.csv'    
+        write_results(parameters_file, 
+                        results['parameters'], 
+                        results['parameters_se'],
+                        results['parameters_p'])
+    else:
         write_tall_results(tall_output, model_options, results)
-        return results
-    
-    heritability_file = args.out + '.heritability.csv'
-    write_results(heritability_file, 
-                    results['heritability'], 
-                    results['heritability_se'],
-                    results['heritability_p'])
-    
-    enrichment_file = args.out + '.enrichment.csv'
-    write_results(enrichment_file, 
-                    results['enrichment'], 
-                    results['enrichment_se'],
-                    results['enrichment_p'])
-    
-    parameters_file = args.out + '.parameters.csv'    
-    write_results(parameters_file, 
-                    results['parameters'], 
-                    results['parameters_se'],
-                    results['parameters_p'])
     
 
 def _add_common_arguments(parser):
     """Add arguments that are common to all subcommands."""
     parser.add_argument("-n", "--num-samples", type=int,
-                      help="Sample size (default: inferred from sumstats)")
+                      help="Sample size")
     parser.add_argument("--metadata", type=str, default="data/ldgms/metadata.csv",
                       help="Path to LDGM metadata file")
     parser.add_argument("--num-processes", type=int,
@@ -679,8 +706,8 @@ def _add_reml_parser(subparsers):
         default=None,
     )
     parser.add_argument(
-        '--tall-output',
-        help='Write results in tall format (one file with all metrics)',
+        '--alt-output',
+        help='Write results in wide format with separate files for heritability, enrichment, and parameters (default is tall format with all metrics in one file)',
         action='store_true',
         default=False,
     )
