@@ -415,7 +415,7 @@ def _reml(args):
     
     # Create model and method options
     model_options = ModelOptions(
-        sample_size=args.num_samples or 1,
+        sample_size=args.num_samples,
         intercept=args.intercept,
         annotation_columns=annotation_columns,
         link_fn_denominator=num_snps_annot,

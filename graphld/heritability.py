@@ -40,7 +40,7 @@ class ModelOptions:
     """
     annotation_columns: Optional[List[str]] = None
     params: Optional[np.ndarray] = None
-    sample_size: float = 1.0
+    sample_size: Optional[float] = None
     intercept: float = 1.0 
     link_fn_denominator: float = 6e6
 
@@ -521,7 +521,6 @@ class GraphREML(ParallelProcessor):
         num_blocks = len(block_data)
         num_jk = jackknife_params.shape[0]
         num_params = jackknife_params.shape[1]
-        num_samples = model.sample_size
         
         # Get link function
         link_fn, _ = _get_softmax_link_function(model.link_fn_denominator)
@@ -538,9 +537,6 @@ class GraphREML(ParallelProcessor):
             annotations = block_data[block]['sumstats'].select(model.annotation_columns).to_numpy()
             block_annotations.append(annotations)
             
-        # Compute annotation sums for each block
-        total_annot_sums = np.sum([annot.sum(axis=0) for annot in block_annotations], axis=0)
-        
         # Compute heritability and annotation sums for each jackknife estimate
         for jk in range(num_jk):
             # Compute per-SNP heritability using jackknife parameters
@@ -809,6 +805,15 @@ def run_graphREML(model_options: ModelOptions,
         on=join_cols,
         how=merge_how
     )
+
+    # If sample size not provided, try to get it from sumstats
+    if model_options.sample_size is None:
+        if 'N' in merged_data.columns:
+            model_options.sample_size = float(merged_data['N'].mean())
+            if method_options.verbose:
+                print(f"Using sample size N={model_options.sample_size} from sumstats")
+        else:
+            model_options.sample_size = 1
 
     run_fn = GraphREML.run_serial if method_options.run_serial else GraphREML.run
     return run_fn(
