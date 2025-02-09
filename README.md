@@ -10,13 +10,6 @@ and a Python API for computationally efficient linkage disequilibrium (LD) matri
 - [Installation](#installation)
 - [Command Line Interface](#command-line-interface)
 - [API](#api)
-  - [Heritability Estimation](#heritability-estimation)
-  - [Matrix Operations](#matrix-operations)
-  - [LD Clumping](#ld-clumping)
-  - [Likelihood Functions](#likelihood-functions)
-  - [Simulation](#simulation)
-  - [BLUP](#blup)
-  - [Multiprocessing](#multiprocessing)
 - [File Formats](#file-formats)
 - [See also](#see-also)
 
@@ -120,18 +113,7 @@ reml_results: dict = gld.run_graphREML(
 )
 ```
 
-The estimator returns a dictionary containing:
-- `heritability`: Heritability estimates for each annotation
-- `heritability_se`: Standard errors for heritability estimates
-- `heritability_log10pval`: Two-tailed log10 p-values for whether heritability is `0`
-- `enrichment`: Enrichment values (relative to baseline)
-- `enrichment_se`: Standard errors for enrichment values
-- `enrichment_log10pval`: Two-tailed log10 p-values for whether enrichment is `1`
-- `parameters`: Final parameter values
-- `parameters_se`: Standard errors for parameters
-- `parameters_log10pval`: Two-tailed log10 p-values for whether parameters are `0`
-- `likelihood_history`: Optimization history
-- `log`: Dictionary with additional optimization information
+The estimator returns a dictionary containing heritability, enrichment, and coefficient estimates for each annotation, together with standard errors and two-tailed log10 p-values.
 
 ### Matrix Operations
 
@@ -152,7 +134,7 @@ assert np.allclose(correlation_times_vector, vector)
 
 ### LD Clumping
 
-LD clumping identifies independent index variants by iteratively selecting the variant with the highest $\chi^2$ statistic and pruning all variants in high LD with it.
+LD clumping identifies independent index variants by iteratively selecting the variant with the highest $\chi^2$ statistic and pruning all variants in high LD with it. Clumping + thresholding is a popular (though suboptimal) way of computing polygenic scores.
 
 ```python
 sumstats_clumped: pl.DataFrame = gld.run_clump(
@@ -186,7 +168,7 @@ sumstats: pl.DataFrame = gld.run_simulate(
 ```
 
 ### Best Linear Unbiased Prediction (BLUP)
-BLUP effect sizes can be computed using the following formula:
+Under the infinitesimal model, with per-s.d. effect sizes $\beta\sim N(0, D)$, the BLUP effect sizes are:
 $$
 E(\beta) = \sqrt{n} D (nD + R^{-1})^{-1} R^{-1}z
 $$
@@ -199,6 +181,7 @@ sumstats_with_weights: pl.DataFrame = gld.run_blup(
     heritability=0.1
 )
 ```
+This function assumes that heritability is equally distributed among all variants with Z scores provided, i.e., with $D=m^{-1}h^2 I$.
 
 ### Multiprocessing
 
@@ -206,50 +189,15 @@ sumstats_with_weights: pl.DataFrame = gld.run_blup(
 
 ## File Formats
 
-### LDGM Metadata File (.csv)
-
-CSV file containing information about LDGM blocks with columns:
-1. `chrom`: Chromosome number
-2. `chromStart`: Start position of the block
-3. `chromEnd`: End position of the block
-4. `name`: LDGM filename
-5. `snplistName`: Name of the corresponding snplist file
-6. `population`: Population identifier (e.g., EUR, EAS)
-7. `numVariants`: Number of variants in the block
-8. `numIndices`: Number of non-zero indices in the precision matrix
-9. `numEntries`: Number of non-zero entries in the precision matrix
-10. `info`: Additional information (optional)
-
-See `read_ldgm_metadata`.
-
-### Edge list File (.edgelist)
-
-Tab-separated file containing one edge per line with columns:
-1. Source variant index (0-based)
-2. Target variant index (0-based)
-3. Precision matrix entry
-
-### SNP list File (.snplist)
-
-Tab-separated file with columns:
-1. `index`: corresponds to the index in the edgelist file. Multiple variants can have the same index.
-2. `anc_alleles`: Inferred ancestral alleles
-3. `EUR`, `EAS`, `AMR`, `SAS`, `AFR`: Derived allele frequencies in each 1000 Genomes superpopulation (optional)
-4. `site_ids`: RSID for each variant
-5. `position`: position in GRCh38 coordinates
-6. `swap` (optional)
-It is recommended that you do not use the `variant ID` column for merging and instead use chromosome/position/ref/alt, as some variants lack RSIDs. The file contains some variants which are not SNPs.
-
 ### LDSC Format Summary Statistics (.sumstats)
 See [LDSC summary statistics file format](https://github.com/bulik/ldsc/wiki/Summary-Statistics-File-Format). Read with `read_ldsc_sumstats`.
 
-### GWAS-VCF (.vcf)
-The [GWAS-VCF specification](https://github.com/MRCIEU/gwasvcf) is supported via the `read_gwas_vcf` function. It is a VCF file with the following mandatory FORMAT fields::
+### GWAS-VCF Summary Statistics(.vcf)
+The [GWAS-VCF specification](https://github.com/MRCIEU/gwasvcf) is supported via the `read_gwas_vcf` function. It is a VCF file with the following mandatory FORMAT fields:
 
 - `ES`: Effect size estimate
 - `SE`: Standard error of effect size
 - `LP`: -log10 p-value
-
 
 ### LDSC Format Annotations (.annot)
 You can download BaselineLD model annotation files with GRCh38 coordinates from the Price lab Google Cloud bucket: https://console.cloud.google.com/storage/browser/broad-alkesgroup-public-requester-pays/LDSCORE/GRCh38
