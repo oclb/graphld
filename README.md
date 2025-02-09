@@ -41,7 +41,7 @@ uv sync --dev --extra dev # editable with pytest dependencies
 uv run pytest
 ```
 ### Using conda and pip install
-Example codes are based on the O2 cluster in the Harvard Medical School computing system. 
+Although we recommend moving away from `conda`, it does have the advantage that you can `conda install` non-Python dependencies such as SuiteSparse. Example codes are based on the O2 cluster in the Harvard Medical School computing system. 
 
 - Create a conda `env` for `suitesparse` and activate it: you may need to revert or reinstall some Python packages
 ```bash
@@ -79,7 +79,11 @@ The Makefile also contains a `download_all` target to download additional data a
 
 ## Command Line Interface
 
-The CLI has commands for `blup`, `clump`, `simulate`, and `reml`. After installing with `uv`, run (for example) `uv run graphld reml -h`. To run graphREML:
+The CLI has commands for `blup`, `clump`, `simulate`, and `reml`. After installing with `uv`, run (for example) `uv run graphld reml -h`. 
+
+### Heritability Estimation
+
+To run graphREML:
 
 ```bash
 uv run graphld reml \
@@ -87,7 +91,11 @@ uv run graphld reml \
     output_files_prefix \
     --annot-dir /directory/containing/annotation/files/ \
 ```
-The summary statistics can be in VCF (`.vcf`) or  LDSC (`.sumstats`) format. The annotation directory should contain per-chromosome annotation files in LDSC (`.annot`) format. There can be multiple `.annot` files per chromosome, including some in the `thin-annot` format (i.e., without variant IDs). It can additionally contain UCSC `.bed` files, not stratified per-chromosome. By default, there will be three output files containing tables with point estimates and standard errors for the annotation-specific heritabilities, heritability enrichments, and model parameters. This is convenient for analyzing multiple traits, as each trait will be printed on a new line of the same file. You can also use `--tall-output` to print the output on a single file with one line per annotation.
+The summary statistics can be in VCF (`.vcf`) or  LDSC (`.sumstats`) format. The annotation directory should contain per-chromosome annotation files in [LDSC (`.annot`) format](https://github.com/bulik/ldsc/wiki/LD-File-Formats#annot). There can be multiple `.annot` files per chromosome, including some in the [`thin-annot` format]((https://github.com/bulik/ldsc/wiki/LD-Score-Estimation-Tutorial#partitioned-ld-scores)) (i.e., without variant IDs). It can additionally contain UCSC `.bed` files, not stratified per-chromosome; for each `.bed` file, a new binary annotation will be created with a `1` for variants whose GRCh38 coordinates match the `.bed` file.
+
+There will be two output files: `output_files_prefix.tall.csv`, which contains heritability, enrichment, and coefficient estimates for each annotation; and `output_files_prefix.convergence.csv`, which contains information about the optimization process. If you specify the `--alt-output` flag, the `tall.csv` file will be replaced with three files, `.heritability.csv`, `.enrichment.csv`, and `.parameters.csv`, containing heritability, enrichment, and coefficient estimates for each annotation, respectively; these files have one line per model run and three columns per annotation, so that you can store the results of multiple runs or traits in one file. (Use it with `--name` to keep track of which line is which run.)
+
+An important flag is `--intercept`, which specifies the expected inflation in the $\chi^2$ statistics and which cannot be estimated using graphREML. It is recommended to (1) run LD score regression and estimate the intercept and (2) if it is much greater than 1 (e.g., 1.2), specify that value with the `--intercept` flag. Not doing this leads to upward bias in the heritability estimates and downward bias (i.e., toward 1) in the enrichment estimates. For example, UK Biobank height has an intercept of around 1.5, and specifying this value changes the coding variant enrichment estimate from around 7 to around 11.
 
 ## API
 
@@ -104,8 +112,8 @@ default_model_options = gld.ModelOptions()
 default_method_options = gld.MethodOptions()
 
 reml_results: dict = gld.run_graphREML(
-    model_options=model_options,
-    method_options=method_options,
+    model_options=default_model_options,
+    method_options=default_method_options,
     summary_stats=sumstats,
     annotation_data=annotations,
     ldgm_metadata_path="path/to/ldgms/metadata.csv"
@@ -115,13 +123,15 @@ reml_results: dict = gld.run_graphREML(
 The estimator returns a dictionary containing:
 - `heritability`: Heritability estimates for each annotation
 - `heritability_se`: Standard errors for heritability estimates
+- `heritability_log10pval`: Two-tailed log10 p-values for whether heritability is `0`
 - `enrichment`: Enrichment values (relative to baseline)
 - `enrichment_se`: Standard errors for enrichment values
+- `enrichment_log10pval`: Two-tailed log10 p-values for whether enrichment is `1`
+- `parameters`: Final parameter values
+- `parameters_se`: Standard errors for parameters
+- `parameters_log10pval`: Two-tailed log10 p-values for whether parameters are `0`
 - `likelihood_history`: Optimization history
-- `params`: Final parameter values
-- `param_se`: Standard errors for parameters
-
-For a complete example, see [scripts/run_graphreml_height.py](scripts/run_graphreml_height.py).
+- `log`: Dictionary with additional optimization information
 
 ### Matrix Operations
 
