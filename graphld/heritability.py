@@ -41,7 +41,7 @@ class ModelOptions:
     annotation_columns: Optional[List[str]] = None
     params: Optional[np.ndarray] = None
     sample_size: float = 1.0
-    intercept: float = 1.0 # TODO
+    intercept: float = 1.0 
     link_fn_denominator: float = 6e6
 
     def __post_init__(self):
@@ -61,7 +61,7 @@ class MethodOptions:
         match_by_position: Use position/allele instead of RSID
             for merging
         num_iterations: Optimization steps
-        convergence_tol: Convergence tolerance (TODO)
+        convergence_tol: Convergence tolerance 
         run_serial: Run in serial rather than parallel
         num_processes: If None, autodetect
         verbose: Flag for verbose output
@@ -567,28 +567,26 @@ class GraphREML(ParallelProcessor):
         return annot_h2, annot_enrichment
 
     @staticmethod
-    def _wald_pvalue(jackknife_estimates: np.ndarray) -> Tuple[float, float, float]:
-        """Compute Wald test p-value from jackknife estimates.
+    def _wald_log10pvalue(jackknife_estimates: np.ndarray) -> float:
+        """Compute Wald test log10(p-value) from jackknife estimates.
 
         Args:
             jackknife_estimates: Array of jackknife estimates
 
         Returns:
-            Tuple containing:
-            - point_estimate: Mean of jackknife estimates
-            - standard_error: Standard error computed from jackknife formula
-            - p_value: Two-sided p-value from Wald test. Returns 1.0 if all estimates are identical.
+            log10(p-value): Two-sided log10(p-value) from Wald test. Returns 0.0 if all estimates are identical.
         """
         n_blocks = jackknife_estimates.shape[0]
         point_estimate = np.mean(jackknife_estimates)
         
         # Check if all estimates are identical (within numerical precision)
         if np.allclose(jackknife_estimates, point_estimate, rtol=1e-24, atol=0):
-            return 1.0
+            return 0.0
             
         standard_error = np.sqrt((n_blocks - 1) * np.var(jackknife_estimates, ddof=1))
-        p_value = 2 * (1 - sps.norm.cdf(np.abs(point_estimate / standard_error)))
-        return p_value
+        # Calculate two-sided log10(p-value)
+        log10pval = (np.log(2) + sps.norm.logcdf(-np.abs(point_estimate / standard_error))) / np.log(10)
+        return log10pval
 
     @classmethod
     def supervise(cls, manager: WorkerManager, shared_data: SharedData, block_data: list, **kwargs):
@@ -725,16 +723,16 @@ class GraphREML(ParallelProcessor):
         annotation_heritability, annotation_enrichment = cls._annotation_heritability(
             shared_data['variant_h2'], annotations, ref_col)
 
-        # Two-tailed p-values using jackknife estimates
+        # Two-tailed log10(p-values) using jackknife estimates
         annotation_heritability_p = np.array([
-            cls._wald_pvalue(jackknife_h2[:, i]) for i in range(jackknife_h2.shape[1])
+            cls._wald_log10pvalue(jackknife_h2[:, i]) for i in range(jackknife_h2.shape[1])
         ])
-        # Use differences for p-values
+        # Use differences as opposed to quotients for log10(p-values)
         annotation_enrichment_p = np.array([
-            cls._wald_pvalue(jackknife_enrichment_diff[:, i]) for i in range(jackknife_enrichment_diff.shape[1])
+            cls._wald_log10pvalue(jackknife_enrichment_diff[:, i]) for i in range(jackknife_enrichment_diff.shape[1])
         ])
         params_p = np.array([
-            cls._wald_pvalue(jackknife_params[:, i]) for i in range(jackknife_params.shape[1])
+            cls._wald_log10pvalue(jackknife_params[:, i]) for i in range(jackknife_params.shape[1])
         ])
 
         likelihood_changes = [a - b for a, b in zip(log_likelihood_history[1:], log_likelihood_history[:-1])]
@@ -743,25 +741,25 @@ class GraphREML(ParallelProcessor):
             num_annotations = len(annotation_heritability)
             print(f"Heritability: {annotation_heritability[:min(5, num_annotations)]}")
             print(f"Enrichment: {annotation_enrichment[:min(5, num_annotations)]}")
-            print(f"Enrichment p-values: {annotation_enrichment_p[:min(5, num_annotations)]}")
+            print(f"Enrichment -log10(p-values): {-annotation_enrichment_p[:min(5, num_annotations)]}")
 
         return {
             'parameters': shared_data['params'].copy(),
             'parameters_se': params_se,
-            'parameters_p': params_p,
+            'parameters_log10pval': params_p,
             'heritability': annotation_heritability,
             'heritability_se': h2_se,
-            'heritability_p': annotation_heritability_p,
+            'heritability_log10pval': annotation_heritability_p,
             'enrichment': annotation_enrichment,
             'enrichment_se': enrichment_se,
-            'enrichment_p': annotation_enrichment_p,
+            'enrichment_log10pval': annotation_enrichment_p,
             'likelihood_history': log_likelihood_history,
             'jackknife_h2': jackknife_h2,
             'jackknife_params': jackknife_params,
             'jackknife_enrichment': jackknife_enrichment_quotient,
             'log': {
                 'converged': converged,
-                'num_iterations': rep + 1,  # Add 1 since rep is 0-based
+                'num_iterations': rep + 1,  
                 'likelihood_changes': likelihood_changes,
                 'final_likelihood': log_likelihood_history[-1],
                 'trust_region_lambdas': trust_region_history,

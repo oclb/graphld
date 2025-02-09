@@ -342,13 +342,13 @@ def write_tall_results(filename: str, model_options: ModelOptions, results: dict
             'name': name,
             'enrichment': results['enrichment'][i],
             'enrichment_SE': results['enrichment_se'][i],
-            'enrichment_pval': results['enrichment_p'][i],
+            'enrichment_pval': results['enrichment_log10pval'][i],
             'heritability': results['heritability'][i],
             'heritability_SE': results['heritability_se'][i],
-            'heritability_pval': results['heritability_p'][i],
+            'heritability_pval': results['heritability_log10pval'][i],
             'parameter': results['parameters'][i],
             'parameter_SE': results['parameters_se'][i],
-            'parameter_pval': results['parameters_p'][i]
+            'parameter_pval': results['parameters_log10pval'][i]
         }
         rows.append(row)
     
@@ -463,19 +463,19 @@ def _reml(args):
         write_results(heritability_file, 
                         results['heritability'], 
                         results['heritability_se'],
-                        results['heritability_p'])
+                        results['heritability_log10pval'])
         
         enrichment_file = args.out + '.enrichment.csv'
         write_results(enrichment_file, 
                         results['enrichment'], 
                         results['enrichment_se'],
-                        results['enrichment_p'])
+                        results['enrichment_log10pval'])
         
         parameters_file = args.out + '.parameters.csv'    
         write_results(parameters_file, 
                         results['parameters'], 
                         results['parameters_se'],
-                        results['parameters_p'])
+                        results['parameters_log10pval'])
     else:
         write_tall_results(tall_output, model_options, results)
     
