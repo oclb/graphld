@@ -169,9 +169,11 @@ sumstats: pl.DataFrame = gld.run_simulate(
 
 ### Best Linear Unbiased Prediction (BLUP)
 Under the infinitesimal model, with per-s.d. effect sizes $\beta\sim N(0, D)$, the BLUP effect sizes are:
+
 $$
 E(\beta) = \sqrt{n} D (nD + R^{-1})^{-1} R^{-1}z
 $$
+
 where we approximate $R^{-1}$ with the LDGM precision matrix. A parallelized implementation is provided:
 
 ```python
