@@ -77,3 +77,6 @@ select = [
     "I",  # isort
     "B",  # flake8-bugbear
 ]
+
+[tool.uv]
+package = true
