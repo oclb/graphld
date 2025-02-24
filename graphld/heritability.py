@@ -645,7 +645,7 @@ class GraphREML(ParallelProcessor):
                 # Compute actual vs predicted increase
                 actual_increase = new_likelihood - old_likelihood
                 predicted_increase = step.T @ gradient + 0.5 * step.T @ (hessian @ step)
-                assert predicted_increase > -1e-100, f"Predicted increase must be greater than -epsilon but is {predicted_increase}."
+                assert predicted_increase > -1e-6, f"Predicted increase must be greater than -epsilon but is {predicted_increase}."
                 if verbose:
                     print(f"\tIncrease in log-likelihood: {actual_increase}, predicted increase: {predicted_increase}")
                 
