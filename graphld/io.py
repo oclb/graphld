@@ -171,6 +171,7 @@ def merge_snplists(precision_op: PrecisionOperator,
                    table_format: str = '',
                    add_cols: list[str] = None,
                    add_allelic_cols: list[str] = None,
+                   representatives_only: bool = False,
                    modify_in_place: bool = False) -> Tuple[PrecisionOperator, np.ndarray]:
     """Merge a PrecisionOperator instance with summary statistics DataFrame.
     
@@ -297,6 +298,9 @@ def merge_snplists(precision_op: PrecisionOperator,
         pl.col('index').replace_strict(index_map).alias('index')
     )
     
+    if representatives_only:
+        merged = merged.filter(pl.col('is_representative') == 1)
+
     precision_op.variant_info = merged
     sumstat_indices = merged.select('row_nr').to_numpy().flatten().astype(int)
 
