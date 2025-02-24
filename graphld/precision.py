@@ -284,9 +284,11 @@ class PrecisionOperator(LinearOperator):
         return self._matvec(x.T).T if x.ndim > 1 else self._matvec(x)
 
     def copy(self):
-        """Create a shallow copy of the current LDGM instance."""
-        return PrecisionOperator(self._matrix, self.variant_info, self._which_indices, self._solver,
-                               self._cholesky_is_up_to_date)
+        """Copy the current LDGM instance."""
+        which_indices = self._which_indices.copy() if self._which_indices is not None else None
+        solver = self._solver if self._solver is not None else None
+        return PrecisionOperator(self._matrix.copy(), self.variant_info.clone(), 
+                                which_indices, solver, self._cholesky_is_up_to_date)
 
     def __getitem__(self, key: Union[list, slice, np.ndarray]) -> 'PrecisionOperator':
         """Sets the _which_indices class attribute.
@@ -299,14 +301,21 @@ class PrecisionOperator(LinearOperator):
                 - Slice object
 
         Returns:
-            New LDGM instance with updated _which_indices
+            New PrecisionOperator instance that shares the underlying matrix
         """
-        result = self.copy()
+        # Create new instance sharing the same matrix and variant_info
+        result = PrecisionOperator(
+            self._matrix,
+            self.variant_info,
+            self._which_indices,
+            None,
+            False
+        )
         result.set_which_indices(key)
         return result
 
 
-    def set_which_indices(self, key: Union[list, slice, np.ndarray]) -> None:
+    def set_which_indices(self, key: Union[list, slice, np.ndarray, int]) -> None:
         """Sets the _which_indices class attribute.
 
         Args:
@@ -315,22 +324,42 @@ class PrecisionOperator(LinearOperator):
                 - Array of indices
                 - Boolean mask array
                 - Slice object
+                - Integer index
         """
         # Convert key to indices array
         if isinstance(key, slice):
-            indices = np.arange(self._matrix.shape[0])[key]
+            # If we already have _which_indices, slice those instead of the full range
+            if self._which_indices is not None:
+                indices = self._which_indices[key]
+            else:
+                indices = np.arange(self._matrix.shape[0])[key]
         elif isinstance(key, (list, np.ndarray)):
             key = np.asarray(key)  # Convert list to array first
             if key.dtype == bool:
-                indices = np.where(key)[0]  # Convert boolean mask to integer indices
+                # For boolean masks, convert to integer indices
+                if self._which_indices is not None:
+                    # Apply mask to existing indices
+                    indices = self._which_indices[key]
+                else:
+                    indices = np.where(key)[0]
             else:
-                indices = key
+                # For integer indices, index into existing _which_indices if it exists
+                if self._which_indices is not None:
+                    indices = self._which_indices[key]
+                else:
+                    indices = key
+        elif isinstance(key, (int, np.integer)):
+            # For scalar indices, convert to array
+            if self._which_indices is not None:
+                indices = np.array([self._which_indices[key]])
+            else:
+                indices = np.array([key])
         else:
-            raise TypeError("Invalid key type. Use list, slice, or numpy array.")
+            raise TypeError("Invalid key type. Use integer, list, slice, or numpy array.")
         
         self._which_indices = indices
 
-        
+
     def solve(self,
         b: np.ndarray,
         method: str = "direct",

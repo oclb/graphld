@@ -668,3 +668,35 @@ def test_precision_operator_variant_solve():
 
     # Finally, compare with summed result
     assert np.allclose(expected, result)
+
+def test_precision_operator_chained_indexing():
+    """Test that chained indexing operations compose correctly."""
+    # Create a 4x4 precision matrix
+    data = np.array([2.0, -1.0, -1.0, 2.0, -1.0, 2.0, -1.0, 2.0], dtype=np.float32)
+    indices = np.array([0, 1, 0, 1, 1, 2, 2, 3])
+    indptr = np.array([0, 2, 4, 6, 8])
+    matrix = csc_matrix((data, indices, indptr), shape=(4, 4))
+
+    variant_info = pl.DataFrame({
+        'variant_id': ['rs1', 'rs2', 'rs3', 'rs4'],
+        'position': [1, 2, 3, 4],
+        'chromosome': ['1', '1', '1', '1']
+    })
+
+    P = PrecisionOperator(matrix.copy(), variant_info)
+
+    # Test chained slicing
+    P_sub1 = P[1:3]  # Should select indices [1, 2]
+    P_sub2 = P_sub1[1]  # Should select index 2 from original matrix
+    assert P_sub2._which_indices[0] == 2
+
+    # Test chained indexing with lists
+    P_sub3 = P[[0, 2, 3]]  # Select these indices
+    P_sub4 = P_sub3[[1, 2]]  # Should select indices [2, 3] from original matrix
+    np.testing.assert_array_equal(P_sub4._which_indices, [2, 3])
+
+    # Test update through chained indexing
+    P_sub4.update_element(0, 1.0)  # Should update index 2 in original matrix
+    expected = matrix.toarray()
+    expected[2, 2] = 3.0  # Original 2.0 + update 1.0
+    np.testing.assert_array_almost_equal(P.matrix.toarray(), expected)
