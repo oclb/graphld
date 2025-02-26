@@ -461,6 +461,13 @@ class PrecisionOperator(LinearOperator):
         
         return y[self.variant_indices]
         
+    @property
+    def inv(self) -> LinearOperator:
+        """
+        A LinearOperator representing the LD correlation matrix.
+        """
+        solve = lambda x: self.solve(x)
+        return LinearOperator(self.shape, matvec=solve, rmatvec=solve)
 
     def inverse_diagonal(
         self,
