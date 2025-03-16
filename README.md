@@ -54,7 +54,7 @@ conda install scikit-sparse
 ```
 - Install and run graphLD
 ```bash
-cd sparseld && pip install .
+cd graphld && pip install .
 ```
 - Test if it works
 ```bash
