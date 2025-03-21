@@ -37,7 +37,7 @@ def _blup(
     chromosome: Optional[int],
     population: Optional[str],
     verbose: bool,
-    quiet: bool
+    quiet: bool,
 ) -> None:
     """Run BLUP (Best Linear Unbiased Prediction) command.
     
@@ -126,7 +126,7 @@ def _clump(
     chromosome: Optional[int],
     population: Optional[str],
     verbose: bool,
-    quiet: bool
+    quiet: bool,
 ) -> None:
     """Run LD clumping command to identify independent variants.
     
@@ -198,6 +198,7 @@ def _simulate(
     sumstats_out: str,
     metadata: str,
     heritability: float,
+    sample_size: int,
     component_variance: Optional[List[float]] = None,
     component_weight: Optional[List[float]] = None,
     alpha_param: float = -1,
@@ -210,8 +211,7 @@ def _simulate(
     population: Optional[str] = None,
     verbose: bool = False,
     quiet: bool = False,
-    sample_size: int = 1000,
-    annotations: Optional[str] = None
+    annotations: Optional[str] = None,
 ) -> None:
     """Run genetic simulation with configurable parameters.
     
@@ -248,8 +248,10 @@ def _simulate(
         raise FileNotFoundError(f"Metadata file not found: {metadata}")
     if heritability < 0 or heritability > 1:
         raise ValueError(f"Heritability must be between 0 and 1, got {heritability}")
+    if sample_size is None:
+        raise ValueError("Sample size must be specified")
     if sample_size < 1:
-        raise ValueError(f"Sample size must be positive, got {sample_size}")
+        raise ValueError(f"Sample size must be >1, got {sample_size}")
     
     # Load annotations if needed
     annotations_df = None
@@ -268,7 +270,7 @@ def _simulate(
         component_weight=component_weight or [1.0],
         alpha_param=alpha_param,
         annotation_dependent_polygenicity=annotation_dependent_polygenicity,
-        random_seed=random_seed
+        random_seed=random_seed,
     )
     
     # Run simulation
@@ -290,7 +292,7 @@ def _simulate(
         sys.stdout.write(f"Completed in {end_time - start_time:.2f} s\n")
         sys.stdout.flush()
 
-def _detect_sumstats_type(sumstats_path: str):
+def _detect_sumstats_type(sumstats_path: str, maximum_missingness: float = 1):
     """Detect summary statistics file type based on file extension."""
     from graphld.ldsc_io import read_ldsc_sumstats
     from graphld.vcf_io import read_gwas_vcf
@@ -299,9 +301,9 @@ def _detect_sumstats_type(sumstats_path: str):
     ext = os.path.splitext(sumstats_path)[1].lower()
     
     if ext in ['.vcf', '.vcf.gz']:
-        return read_gwas_vcf(sumstats_path)
+        return read_gwas_vcf(sumstats_path, maximum_missingness=maximum_missingness)
     else:
-        return read_ldsc_sumstats(sumstats_path)
+        return read_ldsc_sumstats(sumstats_path, maximum_missingness=maximum_missingness)
 
 def write_results(filename: str, values: list, std_errors: list, p_values: list, header_prefix=''):
     """Write REML results to a CSV file.
@@ -389,6 +391,51 @@ def write_convergence_results(filename: str, results: dict):
         for i, (change, trust_lambda) in enumerate(zip(log['likelihood_changes'], log['trust_region_lambdas'])):
             f.write(f"{i+1},{change},{trust_lambda}\n")
 
+def write_variant_stats(filename: str, results: dict, block_info: dict = None):
+    """Write variant-specific statistics to a CSV file.
+    
+    Args:
+        filename: Output file path
+        results: Dictionary containing results from GraphREML
+        block_info: Optional dictionary mapping variant indices to block indices
+    """
+    # Check if file exists
+    if os.path.exists(filename):
+        raise FileExistsError(f"Output file {filename} already exists")
+    
+    import numpy as np
+    
+    # Determine block information based on non-zero values
+    # Non-zero values in the same contiguous block are likely from the same LDGM block
+    non_zero_mask = (results['variant_h2'] != 0) | (results['variant_gradient'] != 0) | (results['variant_hessian_diag'] != 0)
+    
+    # Use the mask to identify contiguous blocks
+    block_ids = np.zeros(len(results['variant_h2']), dtype=int)
+    current_block = 0
+    in_block = False
+    
+    for i, is_non_zero in enumerate(non_zero_mask):
+        if is_non_zero:
+            if not in_block:
+                # Start a new block
+                current_block += 1
+                in_block = True
+            block_ids[i] = current_block
+        else:
+            in_block = False
+    
+    # Create DataFrame with variant statistics using polars
+    variant_stats = pl.DataFrame({
+        'est': results['variant_h2'],
+        'snpGrad': results['variant_gradient'],
+        'snpHess': results['variant_hessian_diag'],
+        'block': block_ids
+    })
+    
+    # Write to CSV
+    variant_stats.write_csv(filename)
+    print(f"Wrote variant-specific statistics to {filename}")
+
 def _reml(args):
     """Run GraphREML command."""
     # Check for existing output files
@@ -402,7 +449,7 @@ def _reml(args):
     if not args.quiet:
         if args.verbose:
             print('Loading summary statistics from', args.sumstats)
-    sumstats = _detect_sumstats_type(args.sumstats)
+    sumstats = _detect_sumstats_type(args.sumstats, args.maximum_missingness)
     
     if args.verbose:
         print('Loading annotations from', args.annot_dir)
@@ -432,6 +479,7 @@ def _reml(args):
         reset_trust_region=args.reset_trust_region,
         gradient_num_samples=args.xtrace_num_samples,
         max_chisq_threshold=args.max_chisq_threshold,
+        compute_variant_stats=args.variant_stats,
     )
     
     # Run GraphREML
@@ -479,6 +527,9 @@ def _reml(args):
     else:
         write_tall_results(tall_output, model_options, results)
     
+    if args.variant_stats:
+        variant_stats_file = args.out + '.variant_stats.csv'
+        write_variant_stats(variant_stats_file, results)
 
 def _add_common_arguments(parser):
     """Add arguments that are common to all subcommands."""
@@ -506,6 +557,12 @@ def _add_io_arguments(parser):
     parser.add_argument(
         'out',
         help='Output file path',
+    )
+    parser.add_argument(
+        '--maximum-missingness',
+        type=float,
+        default=0.1,
+        help='Maximum fraction of missing samples allowed (default: 0.1)',
     )
 
 def _add_blup_parser(subparsers):
@@ -711,6 +768,12 @@ def _add_reml_parser(subparsers):
         action='store_true',
         default=False,
     )
+    parser.add_argument(
+        '--variant-stats',
+        help='Compute and output variant-specific statistics (gradient and Hessian)',
+        action='store_true',
+        default=False,
+    )
 
     parser.set_defaults(func=_reml)
 
@@ -769,7 +832,7 @@ def _main(args):
             parsed_args.chromosome, 
             parsed_args.population, 
             parsed_args.verbose,
-            parsed_args.quiet
+            parsed_args.quiet,
         )
     elif parsed_args.cmd == "clump":
         return _clump(
@@ -784,13 +847,14 @@ def _main(args):
             parsed_args.chromosome, 
             parsed_args.population, 
             parsed_args.verbose,
-            parsed_args.quiet
+            parsed_args.quiet,
         )
     elif parsed_args.cmd == "simulate":
         return _simulate(
             parsed_args.sumstats_out, 
             parsed_args.metadata, 
             parsed_args.heritability, 
+            parsed_args.num_samples,
             parsed_args.component_variance, 
             parsed_args.component_weight, 
             parsed_args.alpha_param, 
@@ -803,8 +867,7 @@ def _main(args):
             parsed_args.population, 
             parsed_args.verbose,
             parsed_args.quiet,
-            parsed_args.num_samples,
-            parsed_args.annot_dir
+            parsed_args.annot_dir,
         )
     elif parsed_args.cmd == "reml":
         return _reml(parsed_args)
