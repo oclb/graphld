@@ -26,7 +26,8 @@ def test_run_graphREML(metadata_path, create_annotations, create_sumstats):
         method_options=method,
         summary_stats=sumstats,
         annotation_data=annotations,
-        ldgm_metadata_path=metadata_path
+        ldgm_metadata_path=metadata_path,
+        populations='EUR',
     )
 
     assert result is not None
@@ -90,7 +91,51 @@ def test_max_z_squared_threshold(metadata_path, create_annotations, create_sumst
         method_options=method,
         summary_stats=sumstats,
         annotation_data=annotations,
-        ldgm_metadata_path=metadata_path
+        ldgm_metadata_path=metadata_path,
+        populations='EUR',
     )
 
     assert result is not None
+
+
+def test_variant_specific_statistics(metadata_path, create_annotations, create_sumstats):
+    """Test computation of variant-specific gradient and Hessian diagonal."""
+    sumstats = create_sumstats(str(metadata_path), 'EUR')
+    annotations = create_annotations(metadata_path, 'EUR')
+
+    # Run GraphREML with variant-specific statistics computation enabled
+    model = ModelOptions(
+        params=np.zeros((1,1)),
+        sample_size=1000,
+    )
+    method = MethodOptions(
+        match_by_position=True,
+        num_iterations=1,  # Only need one iteration for this test
+        verbose=True,
+        run_serial=True,  # Run in serial mode for debugging
+        compute_variant_stats=True  # Enable computation of variant-specific statistics
+    )
+    result = run_graphREML(
+        model_options=model,
+        method_options=method,
+        summary_stats=sumstats,
+        annotation_data=annotations,
+        ldgm_metadata_path=metadata_path,
+        populations='EUR'
+    )
+
+    # Verify that variant-specific statistics were computed
+    assert result is not None
+    assert 'variant_gradient' in result
+    assert 'variant_hessian_diag' in result
+    
+    # Check that values are finite (not NaN or Inf)
+    assert np.all(np.isfinite(result['variant_gradient']))
+    assert np.all(np.isfinite(result['variant_hessian_diag']))
+    
+    # Check that gradient and Hessian have the same shape
+    assert result['variant_gradient'].shape == result['variant_hessian_diag'].shape
+    
+    # Verify that gradient and Hessian are reasonable (just check they're not all zeros)
+    assert not np.allclose(result['variant_gradient'], 0)
+    assert not np.allclose(result['variant_hessian_diag'], 0)

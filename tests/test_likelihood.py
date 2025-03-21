@@ -211,6 +211,55 @@ def test_gaussian_likelihood_hessian():
     np.testing.assert_allclose(hess, matlab_hess, rtol=5e-3)
 
 
+def test_gaussian_likelihood_hessian_diagonal():
+    """Test that the diagonal of the Hessian matches the diagonal computed directly."""
+    # Create a simple positive definite matrix
+    data = np.array([2.0, -1.0, -1.0, 2.0], dtype=np.float32)
+    indices = np.array([0, 1, 0, 1])
+    indptr = np.array([0, 2, 4])
+    matrix = csc_matrix((data, indices, indptr), shape=(2, 2))
+
+    # Create variant info
+    variant_info = pl.DataFrame({
+        'variant_id': ['rs1', 'rs2'],
+        'position': [1, 2],
+        'chromosome': ['1', '1'],
+        'index': [0, 1]
+    })
+
+    # Create test data
+    z = np.array([0.1, 0.1], dtype=np.float32)
+
+    # Create precision operator with some diagonal terms
+    sigmasq = np.array([1.0, 1.0], dtype=np.float32)
+    nn = 10.0
+
+    # Create M = nn*sigmasq + P
+    M = PrecisionOperator(matrix.copy() / nn, variant_info)  # Use P directly
+    M.update_matrix(sigmasq)  # M = nn*sigmasq + P
+
+    # Compute pz = P @ z
+    pz = matrix @ z / np.sqrt(nn)
+
+    # Compute Hessian diagonal directly (without del_M_del_a)
+    hess_diag = gaussian_likelihood_hessian(pz, M, del_M_del_a=None, 
+                                           diagonal_method='exact')
+    
+    # Create del_sigma_del_a matrix - each column is gradient of sigmasq w.r.t a parameter
+    # For testing, use identity matrix (each parameter affects one sigmasq element)
+    del_sigma_del_a = np.eye(len(sigmasq), dtype=np.float32)
+    
+    # Compute full Hessian
+    hess = gaussian_likelihood_hessian(pz, M, del_M_del_a=del_sigma_del_a)
+
+    # Calculate the expected diagonal
+    expected_diag = hess.diagonal()
+    
+    print(f"Hessian diagonal: {hess_diag}")
+    print(f"Expected: {expected_diag}")
+    np.testing.assert_allclose(hess_diag, expected_diag, rtol=1e-5)
+
+
 def test_gaussian_likelihood_gradient_methods():
     """Test that different diagonal estimation methods give similar gradients."""
     # Create a smaller test matrix for more reliable estimation

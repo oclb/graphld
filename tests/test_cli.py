@@ -169,10 +169,12 @@ def test_reml_basic(metadata_path, create_annotations, create_sumstats):
                 "match_by_rsid": False,
                 "reset_trust_region": False,
                 "chromosome": None,
-                "population": None,
                 "xtrace_num_samples": 100,
                 "max_chisq_threshold": None,
                 "alt_output": False,  # Use default tall format
+                "maximum_missingness": 1.0,
+                "variant_stats": True,
+                "population": 'EUR',
             })()
         )
 
@@ -200,10 +202,12 @@ def test_reml_basic(metadata_path, create_annotations, create_sumstats):
                 "match_by_rsid": False,
                 "reset_trust_region": False,
                 "chromosome": None,
-                "population": None,
+                "population": "EUR",
                 "xtrace_num_samples": 100,
                 "max_chisq_threshold": None,
                 "alt_output": True,  # Test alternative output format
+                "maximum_missingness": 1.0,
+                "variant_stats": True,
             })()
         )
 
