@@ -93,13 +93,14 @@ def validate_vcf_format_columns(columns: list, verbose: bool = False) -> dict:
     return {col: vcf_format_spec[col] for col in columns}
 
 
-def read_gwas_vcf(file_path: str, num_rows: Optional[int]=None, verbose: bool = False) -> pl.DataFrame:
+def read_gwas_vcf(file_path: str, num_rows: Optional[int]=None, maximum_missingness: float = 0.1, verbose: bool = False) -> pl.DataFrame:
     """
     Reads a GWAS-VCF file using Polars and returns a DataFrame.
 
     Args:
         file_path (str): Path to the VCF file.
         num_rows (Optional[int], optional): Number of rows to read. Defaults to None.
+        maximum_missingness (float, optional): Maximum fraction of missing samples allowed. Defaults to 0.1.
         verbose (bool, optional): Print detailed information about FORMAT columns. Defaults to False.
 
     Returns:
@@ -116,4 +117,9 @@ def read_gwas_vcf(file_path: str, num_rows: Optional[int]=None, verbose: bool = 
     
     df = split_sample_column(df)
     df = process_chromosome_column(df)
+    
+    # Filter based on missingness using NS (number of samples)
+    if 'NS' in df.columns:
+        df = df.filter(pl.col('NS') >= (1 - maximum_missingness) * pl.col('NS').max())
+    
     return df
