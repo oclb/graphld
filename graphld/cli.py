@@ -305,7 +305,7 @@ def _detect_sumstats_type(sumstats_path: str, maximum_missingness: float = 1):
     else:
         return read_ldsc_sumstats(sumstats_path, maximum_missingness=maximum_missingness)
 
-def write_results(filename: str, values: list, std_errors: list, p_values: list, header_prefix=''):
+def write_results(filename: str, values: list, std_errors: list, p_values: list, annot_names: list, name: str):
     """Write REML results to a CSV file.
     
     Args:
@@ -313,17 +313,34 @@ def write_results(filename: str, values: list, std_errors: list, p_values: list,
         values: List of values
         std_errors: List of standard errors
         p_values: List of p-values
-        header_prefix: Prefix for column headers
+        annot_names: List of annotation names, same size as values, std_errors, p_values
+        name: Name for the first column
     """
-    with open(filename, 'w') as f:
-        headers = []
-        for col in ['', '_SE', '_log10pval']:
-            headers.extend([f'{header_prefix}{col}'])
-        f.write(','.join(headers) + '\n')
+    # Check if the file already has a header and its length
+    try:
+        with open(filename, 'r') as f:
+            header = f.readline().strip()
+            has_header = header != ''
+            expected_header_length = 1 + 3 * len(values)
+            msg = f"Header length {len(header.split(','))} does not match expected length {expected_header_length}."
+            if has_header and len(header.split(',')) != expected_header_length:
+                raise ValueError(msg)
+    except FileNotFoundError:
+        has_header = False
+
+    # Open the file in append mode
+    with open(filename, 'a') as f:
+        if not has_header:
+            headers = ['name']
+            for annot in annot_names:
+                headers.extend([f'{annot}', f'{annot}_SE', f'{annot}_log10pval'])
+            f.write(','.join(headers) + '\n')
         
+        # Write all data on one row
+        row = [name]
         for val, se, pval in zip(values, std_errors, p_values):
-            row = [str(val), str(se), str(pval)]
-            f.write(','.join(row) + '\n')
+            row.extend([str(val), str(se), str(pval)])
+        f.write(','.join(row) + '\n')
 
 def write_tall_results(filename: str, model_options: ModelOptions, results: dict):
     """Write REML results in tall format to a CSV file.
@@ -391,51 +408,6 @@ def write_convergence_results(filename: str, results: dict):
         for i, (change, trust_lambda) in enumerate(zip(log['likelihood_changes'], log['trust_region_lambdas'])):
             f.write(f"{i+1},{change},{trust_lambda}\n")
 
-def write_variant_stats(filename: str, results: dict, block_info: dict = None):
-    """Write variant-specific statistics to a CSV file.
-    
-    Args:
-        filename: Output file path
-        results: Dictionary containing results from GraphREML
-        block_info: Optional dictionary mapping variant indices to block indices
-    """
-    # Check if file exists
-    if os.path.exists(filename):
-        raise FileExistsError(f"Output file {filename} already exists")
-    
-    import numpy as np
-    
-    # Determine block information based on non-zero values
-    # Non-zero values in the same contiguous block are likely from the same LDGM block
-    non_zero_mask = (results['variant_h2'] != 0) | (results['variant_gradient'] != 0) | (results['variant_hessian_diag'] != 0)
-    
-    # Use the mask to identify contiguous blocks
-    block_ids = np.zeros(len(results['variant_h2']), dtype=int)
-    current_block = 0
-    in_block = False
-    
-    for i, is_non_zero in enumerate(non_zero_mask):
-        if is_non_zero:
-            if not in_block:
-                # Start a new block
-                current_block += 1
-                in_block = True
-            block_ids[i] = current_block
-        else:
-            in_block = False
-    
-    # Create DataFrame with variant statistics using polars
-    variant_stats = pl.DataFrame({
-        'est': results['variant_h2'],
-        'snpGrad': results['variant_gradient'],
-        'snpHess': results['variant_hessian_diag'],
-        'block': block_ids
-    })
-    
-    # Write to CSV
-    variant_stats.write_csv(filename)
-    print(f"Wrote variant-specific statistics to {filename}")
-
 def _reml(args):
     """Run GraphREML command."""
     # Check for existing output files
@@ -457,8 +429,14 @@ def _reml(args):
     num_snps_annot = len(annotations)
 
     # Get annotation columns
-    excluded_cols = {'SNP', 'CM', 'BP', 'CHR', 'POS', 'A1', 'A2'}
-    annotation_columns = [col for col in annotations.columns if col not in excluded_cols]
+    if args.annotation_columns:
+        annotation_columns = args.annotation_columns
+        for col in annotation_columns:
+            if col not in annotations.columns:
+                raise ValueError(f"Column {col} not found in annotations")
+    else:
+        excluded_cols = {'SNP', 'CM', 'BP', 'CHR', 'POS', 'A1', 'A2'}
+        annotation_columns = [col for col in annotations.columns if col not in excluded_cols]
     
     # Create model and method options
     model_options = ModelOptions(
@@ -469,7 +447,7 @@ def _reml(args):
     )
     
     method_options = MethodOptions(
-        match_by_position=not args.match_by_rsid,
+        match_by_position=args.match_by_position,
         num_iterations=args.num_iterations,
         convergence_tol=args.convergence_tol,
         run_serial=args.run_in_serial,
@@ -479,7 +457,8 @@ def _reml(args):
         reset_trust_region=args.reset_trust_region,
         gradient_num_samples=args.xtrace_num_samples,
         max_chisq_threshold=args.max_chisq_threshold,
-        compute_variant_stats=args.variant_stats,
+        score_test_hdf5_file_name=args.score_test_filename,
+        score_test_hdf5_trait_name=args.name or args.sumstats,
     )
     
     # Run GraphREML
@@ -511,26 +490,28 @@ def _reml(args):
         write_results(heritability_file, 
                         results['heritability'], 
                         results['heritability_se'],
-                        results['heritability_log10pval'])
+                        results['heritability_log10pval'],
+                        model_options.annotation_columns,
+                        args.name or args.sumstats)
         
         enrichment_file = args.out + '.enrichment.csv'
         write_results(enrichment_file, 
                         results['enrichment'], 
                         results['enrichment_se'],
-                        results['enrichment_log10pval'])
+                        results['enrichment_log10pval'],
+                        model_options.annotation_columns,
+                        args.name or args.sumstats)
         
         parameters_file = args.out + '.parameters.csv'    
         write_results(parameters_file, 
                         results['parameters'], 
                         results['parameters_se'],
-                        results['parameters_log10pval'])
+                        results['parameters_log10pval'],
+                        model_options.annotation_columns,
+                        args.name or args.sumstats)
     else:
         write_tall_results(tall_output, model_options, results)
     
-    if args.variant_stats:
-        variant_stats_file = args.out + '.variant_stats.csv'
-        write_variant_stats(variant_stats_file, results)
-
 def _add_common_arguments(parser):
     """Add arguments that are common to all subcommands."""
     parser.add_argument("-n", "--num-samples", type=int,
@@ -711,7 +692,7 @@ def _add_reml_parser(subparsers):
     # Optional arguments specific to reml
     parser.add_argument(
         '--name',
-        help='Name for this analysis (will be included in output files)',
+        help='Name for this analysis, used in --alt-output files and in score test .hdf5 files',
         default=None,
     )
     parser.add_argument(
@@ -739,8 +720,8 @@ def _add_reml_parser(subparsers):
         default=100,
     )
     parser.add_argument(
-        '--match-by-rsid',
-        help='Match variants by RSID instead of position',
+        '--match-by-position',
+        help='Match variants by position instead of RSID',
         action='store_true',
         default=False,
     )
@@ -769,10 +750,16 @@ def _add_reml_parser(subparsers):
         default=False,
     )
     parser.add_argument(
-        '--variant-stats',
-        help='Compute and output variant-specific statistics (gradient and Hessian)',
-        action='store_true',
+        '--score-test-filename',
+        help='Name of the hdf5 file that will contain precomputed statistics for the graphREML enrichment score test',
+        type=str,
         default=False,
+    )
+    parser.add_argument(
+        "--annotation-columns", 
+        type=lambda s: s.split(','),
+        default=None,
+        help="Annotation columns"
     )
 
     parser.set_defaults(func=_reml)

@@ -166,15 +166,17 @@ def test_reml_basic(metadata_path, create_annotations, create_sumstats):
                 "verbose": False,
                 "quiet": True,
                 "num_jackknife_blocks": 100,
-                "match_by_rsid": False,
+                "match_by_position": True,
                 "reset_trust_region": False,
                 "chromosome": None,
                 "xtrace_num_samples": 100,
                 "max_chisq_threshold": None,
                 "alt_output": False,  # Use default tall format
                 "maximum_missingness": 1.0,
-                "variant_stats": True,
+                "variant_stats_output": None,
                 "population": 'EUR',
+                "annotation_columns": None,
+                "score_test_filename": None,
             })()
         )
 
@@ -199,7 +201,7 @@ def test_reml_basic(metadata_path, create_annotations, create_sumstats):
                 "verbose": False,
                 "quiet": True,
                 "num_jackknife_blocks": 100,
-                "match_by_rsid": False,
+                "match_by_position": True,
                 "reset_trust_region": False,
                 "chromosome": None,
                 "population": "EUR",
@@ -207,7 +209,9 @@ def test_reml_basic(metadata_path, create_annotations, create_sumstats):
                 "max_chisq_threshold": None,
                 "alt_output": True,  # Test alternative output format
                 "maximum_missingness": 1.0,
-                "variant_stats": True,
+                "variant_stats_output": None,
+                "annotation_columns": None,
+                "score_test_filename": None,
             })()
         )
 

@@ -1,9 +1,10 @@
 """
 GraphREML
 """
-from multiprocessing import Value, Array
-from .multiprocessing import ParallelProcessor, WorkerManager, SharedData
-from dataclasses import dataclass, field
+from multiprocessing import Value
+
+from .multiprocessing_template import ParallelProcessor, WorkerManager, SharedData
+from dataclasses import dataclass
 from typing import *
 
 import numpy as np
@@ -13,6 +14,10 @@ import scipy.stats as sps
 from .precision import PrecisionOperator
 from .likelihood import *
 from .io import *
+import h5py
+from filelock import FileLock
+
+CHUNK_SIZE = 1000
 
 FLAGS = {
     'ERROR': -2,
@@ -20,8 +25,13 @@ FLAGS = {
     'FINISHED': 0,
     'COMPUTE_ALL': 1,
     'COMPUTE_LIKELIHOOD_ONLY': 2,
-    'INITIALIZE': 3
+    'INITIALIZE': 3,
+    'WRITE_VARIANT_INFO': 4,
+    'COMPUTE_VARIANT_SCORE': 5,
+    'COMPUTE_VARIANT_HESSIAN': 5,
 }
+
+VARIANT_INFO_COMPRESSION_TYPE = 'lzf'
 
 @dataclass
 class ModelOptions:
@@ -74,9 +84,12 @@ class MethodOptions:
         reset_trust_region: Whether to reset trust region size at each iteration
         num_jackknife_blocks: Number of blocks to use for jackknife estimation
         max_chisq_threshold: Maximum allowed chi^2 value in a block. Blocks with chi^2 > threshold are excluded.
+        score_test_hdf5_file_name: Optional file name to create or append to an hdf5 file with pre-computed
+            derivatives for the score test.
+        score_test_hdf5_trait_name: Name of the trait's subdirectory within the score test HDF5 file.
     """
     gradient_num_samples: int = 100
-    match_by_position: bool = True
+    match_by_position: bool = False
     num_iterations: int = 50
     convergence_tol: float = 0.01
     run_serial: bool = False
@@ -91,6 +104,18 @@ class MethodOptions:
     reset_trust_region: bool = False
     num_jackknife_blocks: int = 100
     max_chisq_threshold: Optional[float] = None
+    score_test_hdf5_file_name: Optional[str] = None
+    score_test_hdf5_trait_name: Optional[str] = None
+
+    def __post_init__(self):
+        if self.score_test_hdf5_file_name is not None:
+            if self.score_test_hdf5_trait_name is None:
+                raise ValueError("score_test_hdf5_trait_name must be specified if score_test_hdf5_file_name is specified.")
+            if not self.use_surrogate_markers:
+                raise ValueError("use_surrogate_markers must be True if score_test_hdf5_file_name is specified.")
+            if self.match_by_position:
+                raise ValueError("match_by_position must be False if score_test_hdf5_file_name is specified.")
+        
 
 def _surrogate_marker(ldgm: PrecisionOperator, missing_index: int, candidates: pl.DataFrame) -> int:
     """Find a surrogate marker for a missing variant.
@@ -118,7 +143,7 @@ def softmax_robust(x: np.ndarray) -> np.ndarray:
     y[mask] = np.log1p(np.exp(x[mask]))
     return y
     
-def _get_softmax_link_function(denominator: int) -> tuple[Callable, Callable]:
+def _get_softmax_link_function(denominator: int) -> tuple[Callable, Callable, Callable]:
     """Create softmax link function and its gradient.
 
     Args:
@@ -131,21 +156,31 @@ def _get_softmax_link_function(denominator: int) -> tuple[Callable, Callable]:
     """
     np.seterr(over='ignore')
 
+    def _link_arg(annot: np.ndarray, theta: np.ndarray) -> np.ndarray:
+        if annot.ndim == 0:
+            return annot * theta
+        return annot @ theta
+
     def _link_fn(annot: np.ndarray, theta: np.ndarray) -> np.ndarray:
         """Softmax link function."""
-        return softmax_robust(annot @ theta) / denominator
+        return softmax_robust(_link_arg(annot, theta)) / denominator
 
     def _link_fn_grad(annot: np.ndarray, theta: np.ndarray) -> np.ndarray:
         """Gradient of softmax link function."""
-        x = annot @ theta
+        x = _link_arg(annot, theta)
         result = annot / denominator / (1 + np.exp(-x))
-        mask = x.flatten() < 0
-        if mask.any():
-            result[mask,:] = (annot[mask,:] * np.exp(x[mask]) / 
-                            (1 + np.exp(x[mask])) / denominator)
+        equivalent_result = annot / denominator * np.exp(x) / (1 + np.exp(x)) 
+        result[x.ravel() < 0, ...] = equivalent_result[x.ravel() < 0, ...]
         return result
 
-    return _link_fn, _link_fn_grad
+    def _link_fn_hess(annot: np.ndarray, theta: np.ndarray) -> np.ndarray:
+        # abs() because exp(x)/(1+exp(x))^2 == 1/(1+exp(x))/(exp(-x)+1) == exp(-x)/(exp(-x)+1)^2
+        x = -np.abs(_link_arg(annot, theta))
+        result = np.exp((x)) * np.square(annot) / np.square(1 + np.exp(x)) / denominator
+        return result
+        
+
+    return _link_fn, _link_fn_grad, _link_fn_hess
 
 
 class GraphREML(ParallelProcessor):
@@ -176,6 +211,9 @@ class GraphREML(ParallelProcessor):
         sumstats: pl.DataFrame = kwargs.get('sumstats')
         method: MethodOptions = kwargs.get('method')
         sumstats_blocks: list[pl.DataFrame] = partition_variants(metadata, sumstats)
+        num_block_variants = sum(len(block) for block in sumstats_blocks)
+        assert num_block_variants <= sumstats.shape[0], f"Too many variants in blocks: {num_block_variants} > {sumstats.shape[0]}"
+        print(f"{sum(len(block) for block in sumstats_blocks)} variants in blocks, {sumstats.shape[0]} initially")
 
         # Filter blocks based on max Z² threshold
         if method.max_chisq_threshold is not None:
@@ -218,7 +256,7 @@ class GraphREML(ParallelProcessor):
 
         result = SharedData({
             'params': num_params,
-            'variant_h2': num_variants,
+            'variant_data': num_variants,
             'likelihood': num_blocks,
             'gradient': num_blocks * num_params,
             'hessian': num_blocks * num_params ** 2,
@@ -319,7 +357,7 @@ class GraphREML(ParallelProcessor):
             - hessian: Hessian matrix
             - per_variant_h2: With current parameters, heritability per variant
         """
-        link_fn, link_fn_grad = _get_softmax_link_function(link_fn_denominator)
+        link_fn, link_fn_grad, _ = _get_softmax_link_function(link_fn_denominator)
 
         # Compute change in diag(M), aggregating variants with same index
         per_variant_h2 = link_fn(annotations, params)
@@ -357,27 +395,206 @@ class GraphREML(ParallelProcessor):
 
         return likelihood, gradient, hessian, per_variant_h2
 
+    @staticmethod
+    def _link_fn_derivatives(
+        annot: np.ndarray, 
+        params: np.ndarray, 
+        link_fn_denominator: float
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Compute 1st and 2nd derivatives of the link function for each variant.
+
+        Args:
+            annot: Annotation matrix
+            params: Model parameters
+            link_fn_denominator: Link function denominator
+
+        Returns:
+            Tuple containing:
+            - del_h2i_del_xi: Derivative of h^2_i with respect to x_i
+            - del2_h2i_del_xi2: Second derivative of h^2_i with respect to x_i
+        """
+        _, link_fn_grad, link_fn_hess = _get_softmax_link_function(link_fn_denominator)
+        x = annot @ params
+        del_h2i_del_xi = link_fn_grad(np.array(1), x)
+        del2_h2i_del_xi2 = link_fn_hess(np.array(1), x)
+        return del_h2i_del_xi, del2_h2i_del_xi2
+
+    @staticmethod
+    def _compute_variant_grad(ldgm: PrecisionOperator,
+                                  Pz: np.ndarray,
+                                  del_M_del_x: np.ndarray,
+                                  ) -> np.ndarray:
+        """Compute gradient of log likelihood with respect to the argument of the link function for each variant.
+
+        Args:
+            ldgm: LDGM object
+            Pz: Z-scores premultiplied by precision matrix
+
+        Returns:
+            Array of gradients dlogL / dx_i, where h^2_i = link(x_i)
+        """
+        many_samples = 200
+        grad = gaussian_likelihood_gradient(Pz, ldgm, n_samples=many_samples, del_M_del_a=None)
+        grad = grad[ldgm.variant_indices].ravel() * del_M_del_x.ravel()
+        ldgm.del_factor()  # Free memory used by Cholesky factorization
+        return grad
+
+    @staticmethod
+    def _compute_variant_hessian_diag(ldgm: PrecisionOperator,
+                                      Pz: np.ndarray,
+                                      del_L_del_xi: np.ndarray,
+                                      del_h2i_del_xi: np.ndarray,
+                                      del2_h2i_del_xi2: np.ndarray,
+                                      ) -> np.ndarray:
+        """Compute diagonal of the Hessian matrix with respect to the argument of the link 
+        function for each variant.
+
+        Args:
+            ldgm: LDGM object
+            Pz: Z-scores premultiplied by precision matrix
+
+        Returns:
+            Array containing derivatives d^2logL / dx_i^2, h_i^2 = link(x_i)
+        """
+        many_samples = 200
+
+        # First term of d2L/dx2: d2L/dm2 (dm/dx)2
+        first_term = gaussian_likelihood_hessian(Pz, ldgm, del_M_del_a=None, 
+                        diagonal_method="xdiag", n_samples=many_samples)
+        first_term *= del_h2i_del_xi ** 2
+
+        # Second term of d2L/dx2: dL/dM d2m/dx2 where dL/dM = dL/dx / dm/dx
+        hess_diag = first_term + del_L_del_xi / del_h2i_del_xi * del2_h2i_del_xi2
+
+        ldgm.del_factor()  # Free memory used by Cholesky factorization
+        return hess_diag[ldgm.variant_indices]
+
+    @staticmethod
+    def _append_to_hdf5(dataset, data):
+        """Helper function to append data to an HDF5 dataset.
+        
+        Args:
+            dataset: The HDF5 dataset to append to
+            data: The data to append
+        """
+        current_size = dataset.shape[0]
+        dataset.resize(current_size + len(data), axis=0)
+        if dataset.ndim == 1:
+            dataset[current_size:] = data.ravel()
+        else:
+            dataset[current_size:] = data
+    
+    @classmethod
+    def _write_variant_data(cls, hdf5_filename: str, annotation_names: List[str], variant_data: np.ndarray) -> bool:
+        """Checks if the file already contains a 'variants' group. 
+        If not, creates it and writes variant information to it.
+        
+        Args:
+            hdf5_filename: The name of the HDF5 file to write to.
+            annotation_names: Annotations to write to the 'variants' group.
+            variant_data: Variant data to write to the 'variants' group.
+
+        Returns:
+            bool: True if the 'variants' group was created, False otherwise.
+        """
+        lock = FileLock(hdf5_filename + ".lock")
+        with lock:
+            with h5py.File(hdf5_filename, 'a') as f:
+                if 'variants' in f:
+                    return False
+                
+                f.create_group('traits')
+                variants_group = f.create_group('variants')
+                variants_group.create_dataset('annotations', 
+                                            data=variant_data.select(annotation_names).to_numpy(),
+                                            compression=VARIANT_INFO_COMPRESSION_TYPE,
+                                            chunks=(CHUNK_SIZE, len(annotation_names)),
+                                            )
+                variants_group.create_dataset('POS', 
+                                            data=variant_data.select('POS').to_numpy(),
+                                            compression=VARIANT_INFO_COMPRESSION_TYPE,
+                                            )
+                variants_group.create_dataset('RSID', 
+                                            data=variant_data.select('SNP').to_numpy(),
+                                            compression=VARIANT_INFO_COMPRESSION_TYPE,
+                                            dtype=h5py.special_dtype(vlen=str),
+                                            )
+
+        return True
+
+    @classmethod
+    def _write_trait_stats(
+        cls,
+        method_options: MethodOptions,
+        parameters: np.ndarray,
+        jackknife_parameters: np.ndarray,
+        score: np.ndarray,
+        hessian: np.ndarray,
+        jackknife_blocks: np.ndarray,
+    ) -> None:
+        """Create the 'trait_stats' group and write trait statistics to it.
+        
+        Args:
+            hdf5_filename: The name of the HDF5 file to write to.
+            trait_name: The name of the trait for which statistics are being created.
+            parameters: The parameters of the model fit.
+            jackknife_parameters: The jackknife estimates of the model parameters.
+        """
+        hdf5_filename = method_options.score_test_hdf5_file_name
+        trait_name = method_options.score_test_hdf5_trait_name
+        lock = FileLock(hdf5_filename + ".lock")
+        with lock:
+            with h5py.File(hdf5_filename, 'a') as f:
+                traits_group = f.require_group('traits')
+                if trait_name in traits_group:
+                    raise ValueError(f"The group 'traits/{trait_name}' already exists.")
+                group = traits_group.create_group(trait_name)
+
+                group.create_dataset('gradient',
+                            data=score,
+                            compression=VARIANT_INFO_COMPRESSION_TYPE,
+                            chunks=(CHUNK_SIZE,),
+                            )
+
+                group.create_dataset('hessian',
+                            data=hessian,
+                            compression=VARIANT_INFO_COMPRESSION_TYPE,
+                            chunks=(CHUNK_SIZE,),
+                            )
+
+                group.create_dataset('jackknife_blocks',
+                            data=jackknife_blocks,
+                            compression=VARIANT_INFO_COMPRESSION_TYPE,
+                            chunks=(CHUNK_SIZE,),
+                            )
+
+                group.create_dataset('parameters',
+                            data=parameters,
+                            compression=VARIANT_INFO_COMPRESSION_TYPE,
+                            )
+
+                group.create_dataset('jackknife_parameters',
+                            data=jackknife_parameters,
+                            compression=VARIANT_INFO_COMPRESSION_TYPE,
+                            )
+
     @classmethod
     def process_block(cls, ldgm: PrecisionOperator,
                      flag: Value,
                      shared_data: SharedData,
                      block_offset: int,
                      block_data: Any = None,
-                     worker_params: Tuple[ModelOptions, MethodOptions] = None) -> None:
+                     worker_params: Tuple[ModelOptions, MethodOptions] = None):
         """Computes likelihood, gradient, and hessian for a single block.
         """
         model_options: ModelOptions
         method_options: MethodOptions
         model_options, method_options = worker_params
-        
+            
         sumstats: pl.DataFrame = block_data['sumstats']
         if len(sumstats) == 0:  # Skip blocks that were filtered out
             return
-            
-        variant_offset: int = block_data['variant_offset']
-        block_index: int = block_data['block_index']
-        num_annot = len(model_options.annotation_columns)
-        
+
         Pz: np.ndarray
         if flag.value == FLAGS['INITIALIZE']:
             ldgm, Pz = cls._initialize_block_zscores(ldgm, 
@@ -390,42 +607,65 @@ class GraphREML(ParallelProcessor):
             Pz /= np.sqrt(model_options.sample_size)
             ldgm.times_scalar(model_options.intercept / model_options.sample_size)
             block_data['Pz'] = Pz
-
-            # ldgm is modified in place and re-used in subsequent iterations
+        # ldgm is modified in place and re-used in subsequent iterations
             
         else:
             Pz = block_data['Pz']
-
-        annot: np.ndarray = ldgm.variant_info.select(model_options.annotation_columns).to_numpy()
+        
         annot_indices: np.ndarray = ldgm.variant_info.select('annot_indices').to_numpy().flatten()
         max_index: int = np.max(annot_indices) + 1 if len(annot_indices) > 0 else 0
+        variant_offset: int = block_data['variant_offset']
         block_variants: slice = slice(variant_offset, variant_offset + max_index)
-        old_variant_h2: np.ndarray = shared_data['variant_h2', block_variants][annot_indices]
+        annot: np.ndarray = ldgm.variant_info.select(model_options.annotation_columns).to_numpy()
+        params: np.ndarray = shared_data['params'].reshape(-1,1)
+
+        # Handle variant-specific gradient and Hessian computation
+        if flag.value == FLAGS['COMPUTE_VARIANT_SCORE']:
+            del_h2i_del_xi, _ = cls._link_fn_derivatives(annot, params, model_options.link_fn_denominator)
+            result = cls._compute_variant_grad(ldgm, Pz, del_h2i_del_xi)
+            result_padded = np.zeros(max_index)
+            result_padded[annot_indices] = result
+            shared_data['variant_data', block_variants] = result_padded
+            return
+
+        if flag.value == FLAGS['COMPUTE_VARIANT_HESSIAN']:
+            del_h2i_del_xi, del2_h2i_del_xi2 = cls._link_fn_derivatives(annot, params, model_options.link_fn_denominator)
+            del_L_del_xi = shared_data['variant_data', block_variants][annot_indices].ravel()
+            result = cls._compute_variant_hessian_diag(ldgm, Pz, del_L_del_xi, del_h2i_del_xi, del2_h2i_del_xi2)
+            result_padded = np.zeros(max_index)
+            result_padded[annot_indices] = result.ravel()
+            shared_data['variant_data', block_variants] = result_padded
+            return
+        
+        block_index: int = block_data['block_index']
+        num_annot = len(model_options.annotation_columns)
+            
+        old_variant_h2: np.ndarray = shared_data['variant_data', block_variants][annot_indices]
 
         likelihood_only = (flag.value == FLAGS['COMPUTE_LIKELIHOOD_ONLY'])
         likelihood, gradient, hessian, variant_h2 = cls._compute_block_likelihood(
             ldgm=ldgm,
             Pz=Pz,
             annotations=annot,
-            params=shared_data['params'].reshape(-1,1),
+            params=params,
             link_fn_denominator=model_options.link_fn_denominator,
             old_variant_h2=old_variant_h2,
             num_samples=method_options.gradient_num_samples,
             likelihood_only=likelihood_only
-        )
-
+                )
+                
         shared_data['likelihood', block_index] = likelihood
         variant_h2_padded = np.zeros(max_index)
-        variant_h2_padded[annot_indices] = variant_h2.flatten()
-        shared_data['variant_h2', block_variants] = variant_h2_padded
+        variant_h2_padded[annot_indices] = variant_h2.ravel()
+        shared_data['variant_data', block_variants] = variant_h2_padded
         if likelihood_only:
             return
 
-        gradient_slice = slice(block_index * num_annot,
-                             (block_index + 1) * num_annot)
+        gradient_slice = slice(block_index * num_annot, 
+                            (block_index + 1) * num_annot)
         shared_data['gradient', gradient_slice] = gradient.flatten()
-
-        hessian_slice = slice(block_index * num_annot**2,
+        
+        hessian_slice = slice(block_index * num_annot**2, 
                             (block_index + 1) * num_annot**2)
         shared_data['hessian', hessian_slice] = hessian.flatten()
 
@@ -466,6 +706,17 @@ class GraphREML(ParallelProcessor):
             start_idx = end_idx
         
         return grouped
+
+    @classmethod
+    def _get_groups(cls, num_blocks: int, num_groups: int) -> np.ndarray:
+        """Get group assignment for each block."""
+        sizes = cls._group_blocks(np.ones(num_blocks, dtype=int), num_groups).astype(int)
+        result = np.zeros(num_blocks)
+        idx: int = 0
+        for group, size in enumerate(sizes):
+            result[idx:idx+size] = group
+            idx += size
+        return result
 
     @staticmethod
     def _compute_pseudojackknife(gradient_blocks: np.ndarray, hessian_blocks: np.ndarray, params: np.ndarray) -> np.ndarray:
@@ -523,7 +774,7 @@ class GraphREML(ParallelProcessor):
         num_params = jackknife_params.shape[1]
         
         # Get link function
-        link_fn, _ = _get_softmax_link_function(model.link_fn_denominator)
+        link_fn, _, _ = _get_softmax_link_function(model.link_fn_denominator)
         
         # Initialize output arrays
         jackknife_h2 = np.zeros((num_jk, num_params))
@@ -550,6 +801,12 @@ class GraphREML(ParallelProcessor):
         return jackknife_h2, jackknife_annot_sums
 
     @staticmethod
+    def _project_out(y: np.ndarray, x: np.ndarray):
+        """Projects out x from y in place."""
+        beta = np.linalg.solve(x.T @ x, x.T @ y.reshape(-1,1))
+        y -= (x @ beta).reshape(y.shape)
+    
+    @staticmethod
     def _annotation_heritability(
         variant_h2: np.ndarray, annot: pl.DataFrame, ref_col: int
     ) -> Tuple[np.ndarray, np.ndarray]:
@@ -573,13 +830,13 @@ class GraphREML(ParallelProcessor):
             log10(p-value): Two-sided log10(p-value) from Wald test. Returns 0.0 if all estimates are identical.
         """
         n_blocks = jackknife_estimates.shape[0]
-        point_estimate = np.mean(jackknife_estimates)
+        point_estimate = np.mean(jackknife_estimates, axis=0)
         
         # Check if all estimates are identical (within numerical precision)
         if np.allclose(jackknife_estimates, point_estimate, rtol=1e-24, atol=0):
             return 0.0
             
-        standard_error = np.sqrt((n_blocks - 1) * np.var(jackknife_estimates, ddof=1))
+        standard_error = np.sqrt((n_blocks - 1) * np.var(jackknife_estimates, axis=0, ddof=1))
         # Calculate two-sided log10(p-value)
         log10pval = (np.log(2) + sps.norm.logcdf(-np.abs(point_estimate / standard_error))) / np.log(10)
         return log10pval
@@ -611,6 +868,7 @@ class GraphREML(ParallelProcessor):
             
             return np.linalg.solve(hess_mod, -gradient)
 
+        
         for rep in range(num_iterations):
             if verbose:
                 print(f"\n\tStarting iteration {rep}...")
@@ -682,8 +940,6 @@ class GraphREML(ParallelProcessor):
                     break
 
         # After optimization
-        annotations = pl.concat([dict['sumstats'].select(model.annotation_columns) for dict in block_data if len(dict['sumstats']) > 0])
-        ref_col = 0 # Maybe TODO
         
         # Get block-wise gradients and Hessians for jackknife
         num_blocks = len(block_data)
@@ -695,11 +951,45 @@ class GraphREML(ParallelProcessor):
         jk_hessian_blocks = cls._group_blocks(hessian_blocks, method.num_jackknife_blocks)
         
         # Compute jackknife estimates using the grouped blocks
-        jackknife_params = cls._compute_pseudojackknife(jk_gradient_blocks, jk_hessian_blocks, shared_data['params'])
+        params = shared_data['params'].copy()
+        jackknife_params = cls._compute_pseudojackknife(jk_gradient_blocks, jk_hessian_blocks, params)
         
         # Compute jackknife heritability estimates and standard errors
         jackknife_h2, jackknife_annot_sums = cls._compute_jackknife_heritability(block_data, jackknife_params, model)
-        
+
+        if method.score_test_hdf5_file_name is not None:
+            manager.start_workers(FLAGS['COMPUTE_VARIANT_SCORE'])
+            manager.await_workers()
+            variant_score = shared_data['variant_data'].copy()
+            manager.start_workers(FLAGS['COMPUTE_VARIANT_HESSIAN'])
+            manager.await_workers()
+            variant_hessian = shared_data['variant_data'].copy()
+
+            # Jackknife block to which each variant belongs
+            jackknife_block_assignments = cls._get_groups(num_blocks, method.num_jackknife_blocks)
+            jackknife_variant_assignments = np.zeros_like(variant_score)
+            end = len(jackknife_variant_assignments)
+            for idx in range(num_blocks-1, -1 , -1):
+                start = block_data[idx]['variant_offset']
+                jackknife_variant_assignments[start:end] = jackknife_block_assignments[idx]
+                end = start
+            
+            # Project the annotations out of the score
+            annotations = pl.concat([dict['sumstats'] for dict in block_data if len(dict['sumstats']) > 0])
+            cls._project_out(variant_score, annotations.select(model.annotation_columns).to_numpy())
+            
+            cls._write_variant_data(method.score_test_hdf5_file_name,
+                                    model.annotation_columns,
+                                    annotations,
+                                    )
+
+            cls._write_trait_stats(method, 
+                                    params, 
+                                    jackknife_params,
+                                    variant_score,
+                                    variant_hessian,
+                                    jackknife_variant_assignments)
+
         # Compute standard errors using jackknife formula: SE = sqrt((n-1) * var(estimates))
         n_blocks = jackknife_params.shape[0]
         params_se = np.sqrt((n_blocks - 1) * np.var(jackknife_params, axis=0, ddof=1))
@@ -716,8 +1006,10 @@ class GraphREML(ParallelProcessor):
         jackknife_enrichment_diff = jackknife_h2_normalized - jackknife_h2_normalized[:, [0]]
         
         # Point estimates
+        annotations = pl.concat([dict['sumstats'].select(model.annotation_columns) for dict in block_data if len(dict['sumstats']) > 0])
+        ref_col = 0 # Maybe TODO
         annotation_heritability, annotation_enrichment = cls._annotation_heritability(
-            shared_data['variant_h2'], annotations, ref_col)
+            shared_data['variant_data'], annotations, ref_col)
 
         # Two-tailed log10(p-values) using jackknife estimates
         annotation_heritability_p = np.array([
@@ -740,7 +1032,7 @@ class GraphREML(ParallelProcessor):
             print(f"Enrichment -log10(p-values): {-annotation_enrichment_p[:min(5, num_annotations)]}")
 
         return {
-            'parameters': shared_data['params'].copy(),
+            'parameters': params,
             'parameters_se': params_se,
             'parameters_log10pval': params_p,
             'heritability': annotation_heritability,
@@ -753,6 +1045,7 @@ class GraphREML(ParallelProcessor):
             'jackknife_h2': jackknife_h2,
             'jackknife_params': jackknife_params,
             'jackknife_enrichment': jackknife_enrichment_quotient,
+            'variant_data': shared_data['variant_data'].copy(),
             'log': {
                 'converged': converged,
                 'num_iterations': rep + 1,  
@@ -767,7 +1060,7 @@ def run_graphREML(model_options: ModelOptions,
                   summary_stats: pl.DataFrame,
                   annotation_data: pl.DataFrame,
                   ldgm_metadata_path: str,
-                  populations: Optional[Union[str, List[str]]] = None,
+                  populations: Union[str, List[str]] = None,
                   chromosomes: Optional[Union[int, List[int]]] = None,
                   ):
     """Wrapper function for GraphREML.
@@ -793,18 +1086,45 @@ def run_graphREML(model_options: ModelOptions,
         - standard errors
         - convergence diagnostics
     """
-    # Merge summary stats with annotations
-    if not method_options.match_by_position:
-        raise NotImplementedError
-        # TODO correctly handle !match_by_position; currently CHR and POS become CHR_right, POS_right
+    if populations is None:
+        raise ValueError('Populations must be provided')
 
-    join_cols = ['CHR', 'POS'] if method_options.match_by_position else ['SNP']
+    # Merge summary stats with annotations
     merge_how = 'right' if method_options.use_surrogate_markers else 'inner'
-    merged_data = summary_stats.join(
-        annotation_data,
-        on=join_cols,
-        how=merge_how
-    )
+    if not method_options.match_by_position:
+        join_cols = ['SNP']
+        merged_data = summary_stats.join(
+            annotation_data,
+            on=join_cols,
+            how=merge_how
+        )
+        
+        # Handle column renaming - ensure we have consistent CHR and POS columns
+        if 'CHR_right' in merged_data.columns and 'POS_right' in merged_data.columns:
+            # Drop existing CHR and POS columns if they exist to avoid duplicates
+            merged_data = merged_data.drop('CHR')\
+                .drop('POS')\
+                .rename({
+                'CHR_right': 'CHR',
+                'POS_right': 'POS'
+            })
+                
+    else:
+        join_cols = ['CHR', 'POS']
+        merged_data = summary_stats.join(
+            annotation_data,
+            on=join_cols,
+            how=merge_how
+        )
+    
+    # Deduplicate chr/pos pairs with multiple entries in the summary statistics
+    merged_data = merged_data.unique(subset=join_cols, keep='first')
+    
+    # Print shape of each DataFrame
+    print(f"Summary stats shape: {summary_stats.shape}")
+    print(f"Annotation data shape: {annotation_data.shape}")
+    print(f"Merged data shape: {merged_data.shape}")
+
 
     # If sample size not provided, try to get it from sumstats
     if model_options.sample_size is None:

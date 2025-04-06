@@ -1,6 +1,6 @@
 """Functions for computing likelihoods in the LDGM model."""
 
-from typing import Optional
+from typing import Optional, Union, Tuple
 
 import numpy as np
 
@@ -89,7 +89,9 @@ def gaussian_likelihood_gradient(
 def gaussian_likelihood_hessian(
     pz: np.ndarray,
     M: PrecisionOperator,
-    del_M_del_a: np.ndarray,
+    del_M_del_a: Optional[np.ndarray] = None,
+    diagonal_method: Optional[str]=None,
+    n_samples: int=100,
 ) -> np.ndarray:
     """Computes the average information matrix of the Gaussian log-likelihood.
 
@@ -102,16 +104,27 @@ def gaussian_likelihood_hessian(
     Args:
         pz: Array of precision-premultiplied GWAS effect size estimates
         M: PrecisionOperator. This should be the covariance of pz.
-        del_M_del_a: Matrix of derivatives of M's diagonal elements wrt parameters a
+        del_M_del_a: Matrix of derivatives of M's diagonal elements wrt parameters a.
+            If None, only the diagonal elements are computed.
+        diagonal_method: Method for computing the diagonal of the Hessian.
+            Options: "exact", "hutchinson", "xdiag", None (default)
+        n_samples: Number of probe vectors for Hutchinson's method or xdiag
 
     Returns:
-        Matrix of second derivatives wrt parameters a
+        Matrix of second derivatives wrt parameters a, or array of diagonal elements
+        if del_M_del_a is None
     """
 
     # Compute b = M^(-1) * pz
     b = M.solve(pz)
     if b.ndim == 1:
         b = b.reshape(-1, 1)
+
+    # If del_M_del_a is None, compute only the diagonal of the Hessian
+    if del_M_del_a is None:
+        minv_diag = M.inverse_diagonal(method=diagonal_method, n_samples=n_samples)
+        hess_diag = -0.5 * minv_diag.flatten() * b.flatten()**2
+        return hess_diag
 
     # Compute b_scaled = b .* del_sigma_del_a
     b_scaled = b * del_M_del_a
@@ -123,3 +136,5 @@ def gaussian_likelihood_hessian(
     hess = -0.5 * (b_scaled.T @ minv_b_scaled)
 
     return hess
+
+    
