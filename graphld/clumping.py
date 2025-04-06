@@ -5,7 +5,7 @@ import polars as pl
 import numpy as np
 from multiprocessing import Value
 
-from .multiprocessing import ParallelProcessor, WorkerManager, SerialManager, SharedData
+from .multiprocessing_template import ParallelProcessor, WorkerManager, SerialManager, SharedData
 from .precision import PrecisionOperator
 from .io import partition_variants, merge_snplists
 

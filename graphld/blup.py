@@ -3,7 +3,7 @@ from multiprocessing import Value
 import numpy as np
 import polars as pl
 from .io import partition_variants
-from .multiprocessing import ParallelProcessor, SharedData, WorkerManager
+from .multiprocessing_template import ParallelProcessor, SharedData, WorkerManager
 from .precision import PrecisionOperator
 
 class BLUP(ParallelProcessor):

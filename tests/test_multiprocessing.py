@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 
 from graphld.io import load_ldgm, read_ldgm_metadata
-from graphld.multiprocessing import ParallelProcessor, SharedData, WorkerManager
+from graphld.multiprocessing_template import ParallelProcessor, SharedData, WorkerManager
 
 
 class SolveProcessor(ParallelProcessor):

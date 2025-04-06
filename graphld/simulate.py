@@ -14,7 +14,7 @@ from itertools import zip_longest
 import numpy as np
 import polars as pl
 from .io import read_ldgm_metadata, partition_variants, load_ldgm
-from .multiprocessing import ParallelProcessor, SharedData, WorkerManager
+from .multiprocessing_template import ParallelProcessor, SharedData, WorkerManager
 from .precision import PrecisionOperator
 from .heritability import softmax_robust
 
