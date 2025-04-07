@@ -957,6 +957,8 @@ class GraphREML(ParallelProcessor):
         # Compute jackknife heritability estimates and standard errors
         jackknife_h2, jackknife_annot_sums = cls._compute_jackknife_heritability(block_data, jackknife_params, model)
 
+        variant_h2 = shared_data['variant_data'].copy()
+
         if method.score_test_hdf5_file_name is not None:
             manager.start_workers(FLAGS['COMPUTE_VARIANT_SCORE'])
             manager.await_workers()
@@ -1009,7 +1011,7 @@ class GraphREML(ParallelProcessor):
         annotations = pl.concat([dict['sumstats'].select(model.annotation_columns) for dict in block_data if len(dict['sumstats']) > 0])
         ref_col = 0 # Maybe TODO
         annotation_heritability, annotation_enrichment = cls._annotation_heritability(
-            shared_data['variant_data'], annotations, ref_col)
+            variant_h2, annotations, ref_col)
 
         # Two-tailed log10(p-values) using jackknife estimates
         annotation_heritability_p = np.array([
@@ -1045,7 +1047,7 @@ class GraphREML(ParallelProcessor):
             'jackknife_h2': jackknife_h2,
             'jackknife_params': jackknife_params,
             'jackknife_enrichment': jackknife_enrichment_quotient,
-            'variant_data': shared_data['variant_data'].copy(),
+            'variant_h2': variant_h2,
             'log': {
                 'converged': converged,
                 'num_iterations': rep + 1,  
