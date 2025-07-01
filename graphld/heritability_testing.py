@@ -47,6 +47,7 @@ class ModelOptions:
         link_fn_denominator: Scalar denominator for link function. 
             Recommended to be roughly the number of SNPs. Defaults to 6e6,
             roughly the number of common SNPs in Europeans.
+        binary_annotations_only: If True, only retain binary annotation columns
     """
     annotation_columns: Optional[List[str]] = None
     params: Optional[np.ndarray] = None
@@ -108,6 +109,7 @@ class MethodOptions:
     max_chisq_threshold: Optional[float] = None
     score_test_hdf5_file_name: Optional[str] = None
     score_test_hdf5_trait_name: Optional[str] = None
+    score_test_orthogonalize: bool = False
 
     def __post_init__(self):
         if self.score_test_hdf5_file_name is not None:
@@ -118,7 +120,6 @@ class MethodOptions:
             if self.match_by_position:
                 raise ValueError("match_by_position must be False if score_test_hdf5_file_name is specified.")
         
-      
 def _filter_binary_annotations(annotation_data: pl.DataFrame,
                                annotation_columns: List[str],
                                verbose: bool = False
@@ -154,7 +155,6 @@ def _filter_binary_annotations(annotation_data: pl.DataFrame,
     filtered_annotation_data = annotation_data.drop(cols_to_drop)
 
     return filtered_annotation_data, cols_to_keep
-
 
 def _surrogate_marker(ldgm: PrecisionOperator, missing_index: int, candidates: pl.DataFrame) -> int:
     """Find a surrogate marker for a missing variant.
@@ -194,11 +194,12 @@ def _get_softmax_link_function(denominator: int) -> tuple[Callable, Callable, Ca
         - Gradient of the link function
     """
     np.seterr(over='ignore')
+    assert denominator > 0, "Link function denominator must be positive"
 
     def _link_arg(annot: np.ndarray, theta: np.ndarray) -> np.ndarray:
         if annot.ndim == 0:
             return annot * theta
-
+        
         # Avoid platform-specific divide by zero warning for matmul with zeros matrix
         if not np.any(annot):
             return np.zeros((annot.shape[0], theta.shape[1]))
@@ -222,17 +223,13 @@ def _get_softmax_link_function(denominator: int) -> tuple[Callable, Callable, Ca
         x = -np.abs(_link_arg(annot, theta))
         result = np.exp((x)) * np.square(annot) / np.square(1 + np.exp(x)) / denominator
         return result
-        
 
     return _link_fn, _link_fn_grad, _link_fn_hess
 
 def _project_out(y: np.ndarray, x: np.ndarray):
-    """Projects out x from y in place."""
-    beta = np.linalg.solve(x.T @ x, x.T @ y.reshape(-1,1))
-    y -= (x @ beta).reshape(y.shape)
-    assert np.allclose(x.T @ y, np.zeros(x.shape[1]))
-    print(f"Sum of y: {np.sum(y)}")
-    print(f"Shape of y: {y.shape}")
+        """Projects out x from y in place."""
+        beta = np.linalg.solve(x.T @ x, x.T @ y.reshape(-1,1))
+        y -= (x @ beta).reshape(y.shape)
 
 class GraphREML(ParallelProcessor):
 
@@ -536,14 +533,14 @@ class GraphREML(ParallelProcessor):
             dataset[current_size:] = data
     
     @classmethod
-    def _write_variant_data(cls, hdf5_filename: str, variant_data: pl.DataFrame, annotations: np.ndarray) -> bool:
+    def _write_variant_data(cls, hdf5_filename: str, annotation_names: List[str], variant_data: np.ndarray) -> bool:
         """Checks if the file already contains a 'variants' group. 
         If not, creates it and writes variant information to it.
         
         Args:
             hdf5_filename: The name of the HDF5 file to write to.
+            annotation_names: Annotations to write to the 'variants' group.
             variant_data: Variant data to write to the 'variants' group.
-            annotations: Annotations to write to the 'variants' group.
 
         Returns:
             bool: True if the 'variants' group was created, False otherwise.
@@ -557,9 +554,9 @@ class GraphREML(ParallelProcessor):
                 f.create_group('traits')
                 variants_group = f.create_group('variants')
                 variants_group.create_dataset('annotations', 
-                                            data=annotations,
+                                            data=variant_data.select(annotation_names).to_numpy(),
                                             compression=VARIANT_INFO_COMPRESSION_TYPE,
-                                            chunks=(CHUNK_SIZE, annotations.shape[1]),
+                                            chunks=(CHUNK_SIZE, len(annotation_names)),
                                             )
                 variants_group.create_dataset('POS', 
                                             data=variant_data.select('POS').to_numpy(),
@@ -606,7 +603,6 @@ class GraphREML(ParallelProcessor):
                             compression=VARIANT_INFO_COMPRESSION_TYPE,
                             chunks=(CHUNK_SIZE,),
                             )
-                print(f"Gradient shape: {score.shape}")
 
                 group.create_dataset('hessian',
                             data=hessian,
@@ -733,7 +729,7 @@ class GraphREML(ParallelProcessor):
             Array of shape (..., num_groups, *block_shape) containing summed blocks
         """
         num_blocks = blocks.shape[0]
-        assert num_groups <= num_blocks
+        num_groups = min(num_groups, num_blocks)
         block_size = num_blocks // num_groups
         remainder = num_blocks % num_groups
         
@@ -775,17 +771,6 @@ class GraphREML(ParallelProcessor):
         
         return jackknife_variant_assignments
 
-    @classmethod
-    def _get_groups(cls, num_blocks: int, num_groups: int) -> np.ndarray:
-        """Get group assignment for each block."""
-        sizes = cls._group_blocks(np.ones(num_blocks, dtype=int), num_groups).astype(int)
-        result = np.zeros(num_blocks)
-        idx: int = 0
-        for group, size in enumerate(sizes):
-            result[idx:idx+size] = group
-            idx += size
-        return result
-
     @staticmethod
     def _compute_pseudojackknife(gradient_blocks: np.ndarray, hessian_blocks: np.ndarray, params: np.ndarray) -> np.ndarray:
         """Compute pseudo-jackknife estimates for parameters.
@@ -811,11 +796,18 @@ class GraphREML(ParallelProcessor):
         # Compute jackknife estimate for each block
         for block in range(num_blocks):
             # Remove current block from total gradient and Hessian
-            block_gradient = gradient_blocks[block]  # Shape: (num_params,)
-            block_hessian = hessian_blocks[block]  # Shape: (num_params, num_params)
+            block_gradient = gradient_blocks[block, :]  # Shape: (num_params,)
+            block_hessian = hessian_blocks[block, :, :]  # Shape: (num_params, num_params)
             
             # Compute leave-one-out gradient and Hessian
             loo_gradient = gradient - block_gradient
+
+            # Print shapes of each term
+            print(f"Block: {block}")
+            print(f"hessian shape: {hessian.shape}")
+            print(f"block_hessian shape: {block_hessian.shape}")
+            print(f"num_params: {num_params}")
+
             loo_hessian = hessian - block_hessian + 1e-12 * np.eye(num_params)
             
             # Compute jackknife estimate for this block
@@ -926,12 +918,9 @@ class GraphREML(ParallelProcessor):
             """Compute trust region step by solving (H + λD)x = -g.
             """
             hess_mod = hessian + trust_region_lambda * np.diag(np.diag(hessian))
-            hess_mod -= np.finfo(float).eps * np.eye(len(hessian))
-            step = np.linalg.solve(hess_mod, -gradient)
-            predicted_increase = step.T @ gradient + 0.5 * step.T @ (hess_mod @ step)
-            assert predicted_increase > -1e-6, f"Predicted increase must be greater than -epsilon but is {predicted_increase}."
-
-            return step, predicted_increase
+            hess_mod += np.finfo(float).eps * np.eye(len(hessian))
+            
+            return np.linalg.solve(hess_mod, -gradient)
 
         
         for rep in range(num_iterations):
@@ -957,7 +946,7 @@ class GraphREML(ParallelProcessor):
             # Trust region optimization loop
             for trust_iter in range(method.max_trust_iterations):
                 # Compute proposed step
-                step, predicted_increase = _trust_region_step(gradient, hessian, trust_region_lambda)
+                step = _trust_region_step(gradient, hessian, trust_region_lambda)
                 shared_data['params'] = old_params + step
                 
                 # Evaluate proposed step
@@ -967,6 +956,9 @@ class GraphREML(ParallelProcessor):
                 
                 # Compute actual vs predicted increase
                 actual_increase = new_likelihood - old_likelihood
+                predicted_increase = step.T @ gradient + 0.5 * step.T @ (hessian @ step)
+                assert predicted_increase > -1e-6, f"Predicted increase must be greater than -epsilon but is {predicted_increase}."
+
                 if verbose:
                     print(f"\tIncrease in log-likelihood: {actual_increase}, predicted increase: {predicted_increase}")
                 
@@ -1007,18 +999,8 @@ class GraphREML(ParallelProcessor):
                     break
 
         # After optimization
-
-        # Point estimates
-        variant_h2 = shared_data['variant_data'].copy()
-        annotations = pl.concat([
-            dict['sumstats'].select(model.annotation_columns + ['SNP', 'POS']) 
-            for dict in block_data 
-            if len(dict['sumstats']) > 0
-            ]
-        )
-        ref_col = 0 # Maybe TODO
-        annotation_heritability, annotation_enrichment = cls._annotation_heritability(
-            variant_h2, annotations.select(model.annotation_columns), ref_col)
+        if verbose:
+            print(f"Finished optimization after {rep+1} iterations.")
         
         # Get block-wise gradients and Hessians for jackknife
         num_blocks = len(block_data)
@@ -1026,9 +1008,9 @@ class GraphREML(ParallelProcessor):
         hessian_blocks = shared_data['hessian'].reshape((num_blocks, num_params, num_params))
         
         # Group blocks for jackknife
-        num_jackknife_blocks = min(method.num_jackknife_blocks, num_blocks)
-        jk_gradient_blocks = cls._group_blocks(gradient_blocks, num_jackknife_blocks)
-        jk_hessian_blocks = cls._group_blocks(hessian_blocks, num_jackknife_blocks)
+        method.num_jackknife_blocks = min(method.num_jackknife_blocks, num_blocks)
+        jk_gradient_blocks = cls._group_blocks(gradient_blocks, method.num_jackknife_blocks)
+        jk_hessian_blocks = cls._group_blocks(hessian_blocks, method.num_jackknife_blocks)
         
         # Compute jackknife estimates using the grouped blocks
         params = shared_data['params'].copy()
@@ -1037,35 +1019,7 @@ class GraphREML(ParallelProcessor):
         # Compute jackknife heritability estimates and standard errors
         jackknife_h2, jackknife_annot_sums = cls._compute_jackknife_heritability(block_data, jackknife_params, model)
 
-
-        if method.score_test_hdf5_file_name is not None:
-            manager.start_workers(FLAGS['COMPUTE_VARIANT_SCORE'])
-            manager.await_workers()
-            variant_score = shared_data['variant_data'].copy()
-            manager.start_workers(FLAGS['COMPUTE_VARIANT_HESSIAN'])
-            manager.await_workers()
-            variant_hessian = shared_data['variant_data'].copy()
-
-            # Jackknife block to which each variant belongs
-            block_indptrs = [dict['variant_offset'] for dict in block_data] + [len(variant_score)]
-            jackknife_variant_assignments = cls._get_variant_jackknife_assignments(
-                block_indptrs, num_jackknife_blocks)
-            
-            # Project the annotations out of the score
-            annotations_matrix = annotations.select(model.annotation_columns).to_numpy()
-            _project_out(variant_score, annotations_matrix)
-            
-            cls._write_variant_data(method.score_test_hdf5_file_name,
-                                    annotations.select('SNP', 'POS'),
-                                    annotations_matrix,
-                                    )
-
-            cls._write_trait_stats(method, 
-                                    params, 
-                                    jackknife_params,
-                                    variant_score,
-                                    variant_hessian,
-                                    jackknife_variant_assignments)
+        variant_h2 = shared_data['variant_data'].copy()
 
         # Compute standard errors using jackknife formula: SE = sqrt((n-1) * var(estimates))
         n_blocks = jackknife_params.shape[0]
@@ -1081,6 +1035,12 @@ class GraphREML(ParallelProcessor):
         
         # Compute difference for p-values
         jackknife_enrichment_diff = jackknife_h2_normalized - jackknife_h2_normalized[:, [0]]
+        
+        # Point estimates
+        ref_col = 0 # Maybe TODO
+        annotations = pl.concat([dict['sumstats'] for dict in block_data if len(dict['sumstats']) > 0])
+        annotation_heritability, annotation_enrichment = cls._annotation_heritability(
+            variant_h2, annotations.select(model.annotation_columns), ref_col)
 
         # Two-tailed log10(p-values) using jackknife estimates
         annotation_heritability_p = np.array([
@@ -1094,13 +1054,43 @@ class GraphREML(ParallelProcessor):
             cls._wald_log10pvalue(jackknife_params[:, i]) for i in range(jackknife_params.shape[1])
         ])
 
-        likelihood_changes = [a - b for a, b in zip(log_likelihood_history[1:], log_likelihood_history[:-1])]
+        likelihood_changes = np.diff(log_likelihood_history).tolist()
         
         if verbose:
             num_annotations = len(annotation_heritability)
             print(f"Heritability: {annotation_heritability[:min(5, num_annotations)]}")
             print(f"Enrichment: {annotation_enrichment[:min(5, num_annotations)]}")
             print(f"Enrichment -log10(p-values): {-annotation_enrichment_p[:min(5, num_annotations)]}")
+
+        if method.score_test_hdf5_file_name is not None:
+            manager.start_workers(FLAGS['COMPUTE_VARIANT_SCORE'])
+            manager.await_workers()
+            variant_score = shared_data['variant_data'].copy()
+            manager.start_workers(FLAGS['COMPUTE_VARIANT_HESSIAN'])
+            manager.await_workers()
+            variant_hessian = shared_data['variant_data'].copy()
+
+            # Jackknife block to which each variant belongs
+            block_indptrs = [dict['variant_offset'] for dict in block_data] + [len(variant_score)]
+            variant_jackknife_assignments = cls._get_variant_jackknife_assignments(
+                block_indptrs, method.num_jackknife_blocks)
+            
+            # Project the annotations out of the score
+            annotations_matrix = annotations.select(model.annotation_columns).to_numpy()
+            if method.score_test_orthogonalize:
+                _project_out(variant_score, annotations_matrix)
+            
+            cls._write_variant_data(method.score_test_hdf5_file_name,
+                                    annotations.select('RSID', 'POS').to_numpy(),
+                                    annotations_matrix,
+                                    )
+
+            cls._write_trait_stats(method, 
+                                    params, 
+                                    jackknife_params,
+                                    variant_score,
+                                    variant_hessian,
+                                    variant_jackknife_assignments)
 
         return {
             'parameters': params,
@@ -1125,6 +1115,7 @@ class GraphREML(ParallelProcessor):
                 'trust_region_lambdas': trust_region_history,
             }
         }
+
 
 def run_graphREML(model_options: ModelOptions,
                   method_options: MethodOptions,
@@ -1159,7 +1150,7 @@ def run_graphREML(model_options: ModelOptions,
     """
     if populations is None:
         raise ValueError('Populations must be provided')
-    
+
     if model_options.binary_annotations_only:
         annotation_data, model_options.annotation_columns = _filter_binary_annotations(
             annotation_data,

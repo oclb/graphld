@@ -32,6 +32,7 @@ import statsmodels.api as sm
 from graphld.io import load_annotations, read_ldgm_metadata, partition_variants, load_ldgm, merge_snplists
 from graphld.precision import PrecisionOperator
 
+from .scoreTest import run_score_test_old
 
 def _load_variant_data(hdf5_path: str) -> dict:
     """
@@ -84,8 +85,6 @@ def _get_block_boundaries(blocks: np.ndarray) -> np.ndarray:
     num_blocks = len(np.unique(blocks))
     temp = np.where(np.diff(blocks) != 0)[0]
     if len(temp) != num_blocks - 1:
-        print(np.unique(blocks))
-        print(temp)
         raise ValueError(f"Jackknife block indices in merged dataframe should be contiguous ",
             f"but there were {len(temp)} differences and {num_blocks} unique blocks")
     block_boundaries = np.zeros(num_blocks + 1, dtype=int)
@@ -109,12 +108,17 @@ def _add_random_annotations(random_annotation_params: Optional[str], df_annot: p
             logging.info(f"Added random annotation '{col_name}' with p={p}")
     return df_annot, random_annot_names
 
+def _project_out(y: np.ndarray, x: np.ndarray):
+    """Projects out x from y in place."""
+    beta = np.linalg.solve(x.T @ x, x.T @ y )
+    y -= x @ beta
+
 def run_score_test(
     df_snp: pl.DataFrame, 
     df_annot: pl.DataFrame, 
     params: np.ndarray, 
     jk_params: np.ndarray, 
-    annot_test_list: List[str]
+    annot_test_list: List[str],
 ) -> np.ndarray:
     """
     Run score test for hypothesis testing of new annotation or functional category.
@@ -125,6 +129,8 @@ def run_score_test(
         params: Parameter values from the null model
         jk_params: Jackknife estimates for the null model
         annot_test_list: List of annotations to test.
+        adjust_uncertain_fit: Whether to adjust for uncertainty in the model fit when computing 
+            jackknife derivatives. Recommended to be False for exploratory analyses.
         
     Returns:
         Z score for enrichment of each annotation
@@ -141,16 +147,18 @@ def run_score_test(
     df_annot = df_annot.select(['SNP'] + annot_test_list)
     
     # Merge variant statistics with annotations
-    df_merged = df_snp.join(df_annot, left_on='RSID', right_on='SNP', how='inner')
+    df_merged = df_snp.join(df_annot, left_on='RSID', right_on='SNP', how='inner', maintain_order='left')
     logging.info(f"Columns in merged dataframe: {df_merged.columns}")
     logging.info(f"Number of rows in merged dataframe: {df_merged.shape[0]}")
     block_boundaries = _get_block_boundaries(df_merged['jackknife_blocks'].to_numpy())
     noBlocks = len(block_boundaries) - 1
     logging.info(f"Number of blocks to jackknife from: {noBlocks}")
-    variant_grad = df_merged['gradient'].to_numpy()
-    test_annot = df_merged[annot_test_list].to_numpy()
-    model_annot = df_merged['annotations'].to_numpy()
-    variant_hess = df_merged['hessian'].to_numpy()
+    variant_grad = df_merged['gradient'].to_numpy().astype(np.float64)
+    test_annot = df_merged[annot_test_list].to_numpy().astype(np.float64)
+    model_annot = df_merged['annotations'].to_numpy().astype(np.float64)
+    variant_hess = df_merged['hessian'].to_numpy().astype(np.float64)
+
+    _project_out(test_annot, model_annot)
 
     # Compute single-block derivatives
     U_block = [] # Derivative of the log-likelihood for each test annotation
@@ -168,19 +176,19 @@ def run_score_test(
     J_total = sum(J_block)
 
     # Compute leave-one-out derivatives
-    U_jackknife = np.tile(U_total, (noBlocks, 1))
+    U_jackknife = np.zeros((noBlocks, U_total.shape[1]))
     for i in range(noBlocks):
         block = range(block_boundaries[i], block_boundaries[i+1])
 
         # deduct the score contributed from one LD block
-        U_jackknife[i, :] -= U_block[i].ravel()
-        
+        U_jackknife[i, :] = U_total - U_block[i].ravel()
+
         # correct for the change in parameters when leaving out this block
         Ji = J_total - J_block[i]
         U_jackknife[i, :] += ((jk_params[i,:] - params).reshape(1,-1) @ Ji).ravel()
     
     # Compute jackknife Z scores
-    jack_mean = np.mean(U_jackknife, axis=0)
+    jack_mean = U_total.ravel()
     jack_se = np.std(U_jackknife, axis=0) * np.sqrt(noBlocks-1)
     return jack_mean / jack_se
 
@@ -191,10 +199,11 @@ def main():
     parser.add_argument("variant_stats_hdf5", help="Path to the HDF5 file containing precomputed derivatives.")
     parser.add_argument("output_fp", help="Output file path prefix (e.g., 'results/my_test'). '.txt' and '.log' will be appended.")
     parser.add_argument("-a", "--annotations_dir", required=True, help="Directory containing annotation files to test (e.g., .annot, .bed). Required.")
-    parser.add_argument("--name", help="Specific trait name to process from HDF5 file. If omitted, all traits are processed.")
+    parser.add_argument("-n", "--name", help="Specific trait name to process from HDF5 file. If omitted, all traits are processed.")
     parser.add_argument("--annotations", help="Optional comma-separated list of specific annotation names (columns) to test.")
     parser.add_argument("--add-random", dest="add_random", help="Comma-separated list of probabilities (0-1) to generate random binary annotations for testing (e.g., '0.1,0.01').")
-    parser.add_argument("--stream_stdout", action='store_true', help='Stream log information on console in addition to writing to log file.')
+    parser.add_argument("--stream-stdout", dest="stream_stdout", action='store_true', help='Stream log information on console in addition to writing to log file.')
+    parser.add_argument("--seed", type=int, default=None, help='Seed for generating random annotations.')
     
     args = parser.parse_args()
     
@@ -218,9 +227,10 @@ def main():
         
     # Load annotations from directory
     logging.info(f"Loading annotations from directory: {args.annotations_dir}")
-    df_annot = load_annotations(args.annotations_dir)
+    df_annot = load_annotations(args.annotations_dir, add_positions=False)
     
     # Add random annotations if requested
+    np.random.seed(args.seed)
     df_annot, random_annot_names = _add_random_annotations(args.add_random, df_annot)
 
     # Determine the final list of annotations to test
