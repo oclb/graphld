@@ -20,14 +20,12 @@ classifiers = [
 ]
 dependencies = [
     "numpy",
-    "polars>=1.17.1",
+    "polars>=1.31.0",
     "scipy>=1.13",
     "scikit-sparse>=0.4.12",
-    "jupyter>=1.1.1",
     "h5py>=3.13.0",
-    "statsmodels>=0.14.4",
-    "filelock>=3.12.0",
 ]
+
 
 [project.optional-dependencies]
 dev = [
