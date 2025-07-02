@@ -71,6 +71,10 @@ MATLAB/*
 old/*
 temp/*
 ai.txt
+results/*
+scoretest/*
+figures/*
+scripts/*
 
 # Large data files
 data/ldgms/*.edgelist
