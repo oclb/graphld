@@ -177,6 +177,7 @@ def test_reml_basic(metadata_path, create_annotations, create_sumstats):
                 "population": 'EUR',
                 "annotation_columns": None,
                 "score_test_filename": None,
+                "binary_annotations_only": False,
             })()
         )
 
@@ -212,6 +213,7 @@ def test_reml_basic(metadata_path, create_annotations, create_sumstats):
                 "variant_stats_output": None,
                 "annotation_columns": None,
                 "score_test_filename": None,
+                "binary_annotations_only": False,
             })()
         )
 

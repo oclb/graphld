@@ -10,7 +10,6 @@ import polars as pl
 import os
 import tempfile
 import h5py
-from graphld.scoreTest import _load_variant_data, _load_trait_data
 
 def test_run_graphREML(metadata_path, create_annotations, create_sumstats):
     """Test heritability estimation with simulated data."""
@@ -161,11 +160,11 @@ def test_score_test(metadata_path, create_annotations, create_sumstats):
     variant_stats_path = test_variant_specific_statistics(metadata_path, create_annotations, create_sumstats)
     
     try:
-        # Import the necessary functions from scoreTest
-        from graphld.scoreTest import _load_variant_data, _load_trait_data, run_score_test
+        # Import the necessary functions from score_test
+        from graphld.score_test import _load_variant_data, _load_trait_data, run_score_test
         
         # Load data from files
-        variant_data = _load_variant_data(variant_stats_path, trait_name='test')
+        variant_data = _load_variant_data(variant_stats_path)
         trait_data = _load_trait_data(variant_stats_path, trait_name='test')
         variant_data['gradient'] = trait_data['gradient']
         variant_data['hessian'] = trait_data['hessian']
@@ -174,10 +173,6 @@ def test_score_test(metadata_path, create_annotations, create_sumstats):
         data = _load_trait_data(variant_stats_path, trait_name='test')
         params = data['parameters']
         jackknife_params = data['jackknife_parameters']
-        
-        # Adjust the shapes of params and jackknife_params
-        params = params.flatten()
-        jackknife_params = jackknife_params.T
         
         # Create a simple test annotation dataframe
         annotations = create_annotations(metadata_path, 'EUR')
@@ -190,7 +185,7 @@ def test_score_test(metadata_path, create_annotations, create_sumstats):
         )
         
         # Run the score test with the loaded dataframes
-        result = run_score_test(
+        result: np.ndarray = run_score_test(
             df_snp=df_snp,
             df_annot=annotations,
             params=params,
@@ -200,17 +195,10 @@ def test_score_test(metadata_path, create_annotations, create_sumstats):
         
         # Verify the result
         assert result is not None
-        assert not result.is_empty()
-        assert 'annot' in result.columns
-        assert 'Z_stat' in result.columns
-        assert 'chisq_pval' in result.columns
-        assert test_annot_name in result['annot'].to_list()
         
         # Check the values are reasonable
-        assert np.all(np.isfinite(result['Z_stat'].to_numpy()))
-        assert np.all(np.isfinite(result['chisq_pval'].to_numpy()))
-        assert np.all((result['chisq_pval'].to_numpy() >= 0) & 
-                     (result['chisq_pval'].to_numpy() <= 1))
+        assert np.all(np.isfinite(result))
+        assert np.any(result != 0)
     
     finally:
         # Clean up the variant statistics file
