@@ -19,6 +19,8 @@ Required system dependencies:
 - [SuiteSparse](https://github.com/DrTimothyAldenDavis/SuiteSparse) (for CHOLMOD): On Mac, install with `brew install suitesparse`. SuiteSparse is wrapped in [scikit-sparse](https://scikit-sparse.readthedocs.io/en/latest/).
 - IntelMKL (for Intel chips): The performance of SuiteSparse is significantly improved by using IntelMKL instead of OpenBLAS, which will likely be the default. See Giulio Genovese's documentation [here](https://github.com/freeseek/score?tab=readme-ov-file#intel-mkl).
 
+If you are only using the [heritability enrichment score test](#enrichment-score-test), nothing needs to be installed. Clone the package and run the source file as a standalone script: `uv run graphld/score_test.py --help`.
+
 ### Using uv (recommended)
 
 In the repo directory:
@@ -90,10 +92,9 @@ There will be two output files: `output_files_prefix.tall.csv`, which contains h
 
 An important flag is `--intercept`, which specifies the expected inflation in the $\chi^2$ statistics and which cannot be estimated using graphREML. It is recommended to (1) run LD score regression and estimate the intercept and (2) if it is much greater than 1 (e.g., 1.2), specify that value with the `--intercept` flag. Not doing this leads to upward bias in the heritability estimates and downward bias (i.e., toward 1) in the enrichment estimates. For example, UK Biobank height has an intercept of around 1.5, and specifying this value changes the coding variant enrichment estimate from around 7 to around 11.
 
-
 ### Enrichment Score Test
 
-The enrichment score test is a fast way to test a large number of genomic annotations for heritability enrichment conditional upon some null model. It produces Z statistics, but not point estimates. It requires precomputed derivatives (first and second derivatives of the log-likelihood for each variant). Run graphREML as described above with whatever annotations you wish to include in the null model (i.e., not the ones being tested), and supply the `--score-test-filename` flag to create a file containing pre-computed derivatives. The file also includes all the annotations in the null model, which will make it somewhat large (>1GB). You many put results for multiple traits in the same file, but they must share the same null model. Supply the `--name` parameter to distinguish between traits (otherwise, the sumstats filename will be used).
+The enrichment score test is a fast way to test a large number of genomic annotations for heritability enrichment conditional upon some null model. It produces Z statistics, but not point estimates. It requires precomputed derivatives (first and second derivatives of the log-likelihood for each variant). Run graphREML as described above with whatever annotations you wish to include in the null model (i.e., not the ones being tested), and supply the `--score-test-filename` flag to create a file containing pre-computed derivatives. The file also includes all the annotations in the null model, which will make it somewhat large (>1GB). Data for multiple traits can be added to the same file, but they must share the same annotations.
 
 To perform the score test:
 
@@ -106,8 +107,8 @@ uv run estest \
 
 -   `-a`, `--annotations_dir`: Directory containing the new annotation files (in `.annot` format; see above) that you want to test for enrichment.  Optionally, also specify UCSC `.bed` files (one for the whole genome).
 -   `--annotations`: Optional comma-separated list with a subset of annotation names to be tested.
--   `--trait_name`: Optional name of a single trait to be tested (specified with `--name` in the `graphld reml` run).
-- `--add-random `: Optional comma-separated list of numbers between 0 and 1; for each entry, a random annotation will be created and tested with proportion of variants equal to the number specified. You can use this to validate that the test produces correctly calibrated Z scores; annotations covering less than 0.1% of the genome will sometimes be miscalibrated.
+-   `--trait_name`: Optional name of a single trait to be tested (specified with `--name` in the `graphld reml` run). If unspecified, all traits are tested.
+- `--add-random `: Optional comma-separated list of numbers between 0 and 1; for each entry, a random annotation will be created and tested with proportion of variants equal to the number specified. You can use this to validate that the test produces correctly calibrated Z scores.
 
 ## API
 

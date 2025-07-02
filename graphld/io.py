@@ -6,14 +6,10 @@ from pathlib import Path
 from typing import List, Optional, Union, Tuple
 import numpy as np
 import polars as pl
-from scipy.sparse import csc_matrix
-import os
-
-from .precision import PrecisionOperator
 
 
 def load_ldgm(filepath: str, snplist_path: Optional[str] = None, population: Optional[str] = "EUR",
-              snps_only: bool = False) -> Union[PrecisionOperator, List[PrecisionOperator]]:
+              snps_only: bool = False) -> Union["PrecisionOperator", List["PrecisionOperator"]]:
     """
     Load an LDGM from a single LD block's edgelist and snplist files.
 
@@ -29,6 +25,9 @@ def load_ldgm(filepath: str, snplist_path: Optional[str] = None, population: Opt
         If filepath is a file:
             Single PrecisionOperator instance with loaded precision matrix and variant info
     """
+    from .precision import PrecisionOperator
+    from scipy.sparse import csc_matrix
+
     # Handle directory vs file input
     filepath = Path(filepath)
     if filepath.is_dir():
@@ -82,15 +81,16 @@ def load_ldgm(filepath: str, snplist_path: Optional[str] = None, population: Opt
 
     # Create mask for rows/cols with nonzeros on diagonal
     diag = matrix.diagonal()
-    nonzero_mask = diag != 0
-    n_nonzero = np.sum(nonzero_mask)
+    nonzero_where = np.where(diag != 0)[0]
+    n_nonzero = len(nonzero_where)
+
+    # Load variant info
+    variant_info = pl.read_csv(snplist_file, separator=',')
+    num_rows = variant_info['index'].max() + 1
 
     # Create mapping from old indices to new indices
-    rows = np.full(len(diag), -1)
-    rows[nonzero_mask] = np.arange(n_nonzero)
-
-    # Load and process variant info
-    variant_info = pl.read_csv(snplist_file, separator=',')
+    rows = np.full(num_rows, -1)
+    rows[nonzero_where] = np.arange(n_nonzero)
 
     # If population is specified and exists as a column, rename it to 'af'
     if population and population in variant_info.columns:
@@ -112,7 +112,7 @@ def load_ldgm(filepath: str, snplist_path: Optional[str] = None, population: Opt
     variant_info = variant_info.filter(pl.col('index') >= 0)
 
     # Subset matrix to rows/cols with nonzero diagonal
-    matrix = matrix[nonzero_mask][:, nonzero_mask]
+    matrix = matrix[nonzero_where][:, nonzero_where]
 
     return PrecisionOperator(matrix, variant_info)
 
@@ -161,7 +161,7 @@ def merge_alleles(anc_alleles: pl.Series, deriv_alleles: pl.Series,
     return pl.Series(phase)
 
 
-def merge_snplists(precision_op: PrecisionOperator,
+def merge_snplists(precision_op: "PrecisionOperator",
                    sumstats: pl.DataFrame, *,
                    variant_id_col: str = 'SNP',
                    ref_allele_col: str = 'REF',
@@ -172,7 +172,7 @@ def merge_snplists(precision_op: PrecisionOperator,
                    add_cols: list[str] = None,
                    add_allelic_cols: list[str] = None,
                    representatives_only: bool = False,
-                   modify_in_place: bool = False) -> Tuple[PrecisionOperator, np.ndarray]:
+                   modify_in_place: bool = False) -> Tuple["PrecisionOperator", np.ndarray]:
     """Merge a PrecisionOperator instance with summary statistics DataFrame.
     
     Args:
@@ -234,6 +234,7 @@ def merge_snplists(precision_op: PrecisionOperator,
         sumstats.with_row_index(name="row_nr"),
         left_on=[match_by[0]],
         right_on=[match_by[1]],
+        suffix="_sumstats",
         how='inner'
     )
 
@@ -826,3 +827,17 @@ def read_bed(bed_file: str,
             ])
 
     return df
+
+def read_concat_snplists(ldgm_metadata: pl.DataFrame, parent_dir: Path) -> pl.LazyFrame:
+    """Read and concatenate snplists from LDGM metadata.
+    
+    Args:
+        ldgm_metadata: DataFrame from read_ldgm_metadata containing block info
+    
+    Returns:
+        LazyFrame containing variant information concatenated across blocks.
+    """
+    ldgms = [load_ldgm(parent_dir / Path(row["name"])) for row in ldgm_metadata.iter_rows(named=True)]
+    lazy_frames = [ldgm.variant_info.lazy().with_columns(pl.lit(i).alias('block')) for i, ldgm in enumerate(ldgms)]
+    return pl.concat(lazy_frames)
+    

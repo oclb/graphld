@@ -1,4 +1,13 @@
 #!/usr/bin/python
+# /// script
+# requires-python = ">=3.13"
+# dependencies = [
+#     "h5py",
+#     "numpy",
+#     "polars",
+#     "scipy",
+# ]
+# ///
 
 #-------------------------------------------------------
 # Score test to evaluate the significance of 
@@ -16,23 +25,21 @@
 import os, sys, re
 import logging, time, traceback
 import argparse
-from functools import reduce
-import pickle
 from typing import List, Dict, Tuple, Optional, Union, Any
 from pathlib import Path
-
 import polars as pl
 import numpy as np
 from scipy import stats
-import math
 import h5py
+import importlib.util
 
-import statsmodels.api as sm
-
-from graphld.io import load_annotations, read_ldgm_metadata, partition_variants, load_ldgm, merge_snplists
-from graphld.precision import PrecisionOperator
-
-from .scoreTest import run_score_test_old
+# To import load_annotations without triggering graphld/__init__.py,
+# we load the io.py module directly from its file path.
+io_path = Path(__file__).resolve().parent / "io.py"
+spec = importlib.util.spec_from_file_location("graphld.io", io_path)
+graphld_io = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(graphld_io)
+load_annotations = graphld_io.load_annotations
 
 def _load_variant_data(hdf5_path: str) -> dict:
     """
