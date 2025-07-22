@@ -1,0 +1,5 @@
+browser position chr22:1-51304566
+track name="Test Regions" description="Test regions for annotation loading"
+chr22	16050075	16050115	test_region1	1000	+
+chr22	16050200	16050300	test_region2	500	-
+chr22	17000000	17100000	test_region3	750	+
