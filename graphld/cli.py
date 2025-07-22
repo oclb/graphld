@@ -15,7 +15,6 @@ from graphld.vcf_io import read_gwas_vcf
 
 from .heritability import MethodOptions, ModelOptions, run_graphREML
 from .io import load_annotations
-from .surrogates import get_surrogate_markers
 
 
 def _construct_cmd_string(args, parser):
@@ -880,7 +879,7 @@ def _main(args):
     _add_clump_parser(subp)
 
     # Surrogates command
-    _add_surrogates_parser(subp)
+    # _add_surrogates_parser(subp)
 
     # Genetic simulation command
     _add_simulate_parser(subp)
@@ -938,17 +937,18 @@ def _main(args):
             parsed_args.quiet,
         )
     elif parsed_args.cmd == "surrogates":
-        return _surrogates(
-            sumstats=parsed_args.sumstats,
-            out=parsed_args.out,
-            metadata=parsed_args.metadata,
-            num_processes=parsed_args.num_processes,
-            run_in_serial=parsed_args.run_in_serial,
-            population=parsed_args.population,
-            verbose=parsed_args.verbose,
-            quiet=parsed_args.quiet,
-            chromosome=parsed_args.chromosome,
-        )
+        raise NotImplementedError
+        # return _surrogates(
+        #     sumstats=parsed_args.sumstats,
+        #     out=parsed_args.out,
+        #     metadata=parsed_args.metadata,
+        #     num_processes=parsed_args.num_processes,
+        #     run_in_serial=parsed_args.run_in_serial,
+        #     population=parsed_args.population,
+        #     verbose=parsed_args.verbose,
+        #     quiet=parsed_args.quiet,
+        #     chromosome=parsed_args.chromosome,
+        # )
     elif parsed_args.cmd == "simulate":
         return _simulate(
             parsed_args.sumstats_out,
