@@ -242,19 +242,19 @@ def test_gaussian_likelihood_hessian_diagonal():
     pz = matrix @ z / np.sqrt(nn)
 
     # Compute Hessian diagonal directly (without del_M_del_a)
-    hess_diag = gaussian_likelihood_hessian(pz, M, del_M_del_a=None, 
+    hess_diag = gaussian_likelihood_hessian(pz, M, del_M_del_a=None,
                                            diagonal_method='exact')
-    
+
     # Create del_sigma_del_a matrix - each column is gradient of sigmasq w.r.t a parameter
     # For testing, use identity matrix (each parameter affects one sigmasq element)
     del_sigma_del_a = np.eye(len(sigmasq), dtype=np.float32)
-    
+
     # Compute full Hessian
     hess = gaussian_likelihood_hessian(pz, M, del_M_del_a=del_sigma_del_a)
 
     # Calculate the expected diagonal
     expected_diag = hess.diagonal()
-    
+
     print(f"Hessian diagonal: {hess_diag}")
     print(f"Expected: {expected_diag}")
     np.testing.assert_allclose(hess_diag, expected_diag, rtol=1e-5)

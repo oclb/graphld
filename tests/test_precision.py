@@ -617,7 +617,7 @@ def test_precision_operator_delete_factor():
 
 def test_precision_operator_variant_solve():
     """Test variant_solve functionality of PrecisionOperator.
-    
+
     This test verifies that variant_solve correctly handles cases where multiple variants
     share the same index (perfect LD). The function should:
     1. Sum the input values for variants with the same index
@@ -636,29 +636,29 @@ def test_precision_operator_variant_solve():
         'position': [1, 2, 3],
         'chromosome': ['1', '1', '1']
     })
-    indices = [0, 0, 1]
-    variant_info = variant_info.with_columns(pl.Series('index', indices))  # First two variants share index 0
+    indices = [0, 0, 1]  # First two variants share index 0
+    variant_info = variant_info.with_columns(pl.Series('index', indices))
 
     # Create precision operator
     P = PrecisionOperator(matrix.copy(), variant_info)
 
     # Create input vector with different values for variants sharing index 0
     b = np.array([1.0, 2.0, 3.0], dtype=np.float32)  # Values for the three variants
-    
+
     # Test variant_solve
     result = P.variant_solve(b)
-    
+
     # Expected behavior:
     # 1. Values for index 0 should be summed: 1.0 + 2.0 = 3.0
     # 2. System solved with [3.0, 3.0]
     # 3. Solution for index 0 assigned back to both variants
-    
+
     # Verify result has correct length (number of variants)
     assert len(result) == len(variant_info)
-    
+
     # Verify variants sharing index 0 get the same value
     assert result[0] == result[1]
-    
+
     # Verify the solution satisfies the original system
     # First, sum values for shared indices
     b_summed = np.array([3.0, 3.0], dtype=np.float32)

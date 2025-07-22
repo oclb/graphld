@@ -1,6 +1,7 @@
 """Base class for parallel processing applications."""
 
 
+
 import time
 from abc import ABC, abstractmethod
 from multiprocessing import Array, Process, Value, cpu_count
@@ -36,7 +37,9 @@ class SharedData:
             else:
                 self._data_dict[key] = Array('d', size)
 
-    def __getitem__(self, key: Union[str, Tuple[str, slice]]) -> Union[np.ndarray, float]:
+    def __getitem__(
+        self, key: Union[str, Tuple[str, slice]]
+    ) -> Union[np.ndarray, float]:
         """Get numpy array view or float value.
 
         Args:
@@ -54,7 +57,11 @@ class SharedData:
             return np.frombuffer(data.get_obj(), dtype=np.float64)
         return data.value
 
-    def __setitem__(self, key: Union[str, Tuple[str, slice]], value: Union[np.ndarray, float]):
+    def __setitem__(
+        self,
+        key: Union[str, Tuple[str, slice]],
+        value: Union[np.ndarray, float]
+    ):
         """Set array contents or float value.
 
         Args:
@@ -75,6 +82,7 @@ class SharedData:
             np.copyto(np.frombuffer(data.get_obj(), dtype=np.float64), value)
         else:
             data.value = float(value)
+
 
 class SerialManager:
     """Manager for debugging by running workers in serial."""
@@ -98,7 +106,7 @@ class SerialManager:
         """
         for f in self.flags:
             f.value = flag or 1
-        
+
         offset = 0
         for i in range(len(self.flags)):
             func, args, state = self.functions[i], self.arguments[i], self.states[i]
@@ -124,7 +132,8 @@ class SerialManager:
     def shutdown(self) -> None:
         """Shutdown all worker processes."""
         pass
-    
+
+
 class WorkerManager:
     """Manager for coordinating parallel worker processes.
 
@@ -193,7 +202,9 @@ class ParallelProcessor(ABC):
 
     @classmethod
     @abstractmethod
-    def create_shared_memory(cls, metadata: pl.DataFrame, block_data: list, **kwargs) -> 'SharedData':
+    def create_shared_memory(
+        cls, metadata: pl.DataFrame, block_data: list, **kwargs
+    ) -> 'SharedData':
         """Initialize shared memory and data structures.
 
         Args:
@@ -208,8 +219,8 @@ class ParallelProcessor(ABC):
 
     @classmethod
     @abstractmethod
-    def supervise(cls, manager: Union[WorkerManager, SerialManager], 
-                shared_data: SharedData, 
+    def supervise(cls, manager: Union[WorkerManager, SerialManager],
+                shared_data: SharedData,
                 block_data: list, **kwargs) -> Any:
         """Monitor workers and process results.
 
@@ -249,7 +260,7 @@ class ParallelProcessor(ABC):
     @classmethod
     def prepare_block_data(cls, metadata: pl.DataFrame, **kwargs) -> list:
         """Prepare data specific to each block for processing.
-        
+
         This method should return a list of length equal to the number of blocks,
         where each element contains any block-specific data needed by process_block.
         The base implementation returns None for each block.
@@ -301,7 +312,7 @@ class ParallelProcessor(ABC):
                 # Process all blocks and collect solutions
                 block_offset = offset
                 starting_flag = flag.value
-                for ldgm, data in zip(ldgms, block_data):
+                for ldgm, data in zip(ldgms, block_data, strict=False):
                     cls.process_block(ldgm, flag, shared_data, block_offset, data, worker_params)
                     block_offset += ldgm.shape[0]
                 assert flag.value == starting_flag, "process_block should not change flag"
@@ -335,12 +346,12 @@ class ParallelProcessor(ABC):
         """
         if flag.value <= 0:
             raise ValueError("Serial worker should never be started with flag <= 0")
-        
+
         # Load LDGMs once
         if ldgm is None:
             ldgm = load_ldgm(str(file))
             ldgm.factor()
-        
+
         # Process all blocks and collect solutions
         cls.process_block(ldgm, flag, shared_data, offset, data, worker_params)
 
@@ -388,7 +399,10 @@ class ParallelProcessor(ABC):
         indices_cumsum = np.insert(np.cumsum(indices_array), 0, 0)
         offset_array = indices_cumsum[block_indices]
 
-        block_ranges = [(start, end) for start, end in zip(block_indices[:-1], block_indices[1:], strict=False)]
+        block_ranges = [
+            (start, end)
+            for start, end in zip(block_indices[:-1], block_indices[1:], strict=False)
+        ]
         return block_ranges, list(offset_array)
 
     @classmethod
@@ -412,7 +426,7 @@ class ParallelProcessor(ABC):
         Returns:
             Results of the parallel computation
         """
-        start_time = time.time()
+
 
         # Read metadata first
         metadata = read_ldgm_metadata(
@@ -423,21 +437,24 @@ class ParallelProcessor(ABC):
 
         # Get list of files from metadata
         ldgm_directory = Path(ldgm_metadata_path).parent
-        edgelist_files = [ldgm_directory / block['name'] for block in metadata.iter_rows(named=True)]
+        edgelist_files = [
+            ldgm_directory / block['name']
+            for block in metadata.iter_rows(named=True)
+        ]
         if not edgelist_files:
             raise FileNotFoundError("No edgelist files found in metadata")
 
         if num_processes is None:
             num_processes = min(len(edgelist_files), cpu_count())
-       
+
         # Split files among processes
         process_block_ranges, process_offsets = cls._split_blocks(metadata, num_processes)
         process_files = [edgelist_files[start:end] for start, end in process_block_ranges]
-        
+
         # Data to be sent to each block individually
         block_data = cls.prepare_block_data(metadata, **kwargs)
         process_block_data = [block_data[start:end] for start, end in process_block_ranges]
-        
+
         # Data shared among all blocks
         shared_data = cls.create_shared_memory(metadata, block_data, **kwargs)
 
@@ -448,7 +465,14 @@ class ParallelProcessor(ABC):
         for i in range(num_processes):
             manager.add_process(
                 target=cls.worker,
-                args=(process_files[i], process_block_data[i], manager.flags[i], shared_data, process_offsets[i], worker_params)
+                args=(
+                    process_files[i],
+                    process_block_data[i],
+                    manager.flags[i],
+                    shared_data,
+                    process_offsets[i],
+                    worker_params,
+                )
             )
 
         # Run supervisor process
@@ -490,7 +514,10 @@ class ParallelProcessor(ABC):
 
         # Get list of files from metadata
         ldgm_directory = Path(ldgm_metadata_path).parent
-        edgelist_files = [ldgm_directory / block['name'] for block in metadata.iter_rows(named=True)]
+        edgelist_files = [
+            ldgm_directory / block['name']
+            for block in metadata.iter_rows(named=True)
+        ]
         if not edgelist_files:
             raise FileNotFoundError("No edgelist files found in metadata")
 
@@ -507,7 +534,13 @@ class ParallelProcessor(ABC):
         for i in range(num_blocks):
             manager.add_process(
                 target=cls.serial_worker,
-                args=(edgelist_files[i], block_data[i], manager.flags[i], shared_data, worker_params)
+                args=(
+                    edgelist_files[i],
+                    block_data[i],
+                    manager.flags[i],
+                    shared_data,
+                    worker_params,
+                )
             )
 
         # Run supervisor process

@@ -1,13 +1,14 @@
 """LD clumping implementation using ParallelProcessor framework."""
 
-from typing import Any, Union, List, Optional
-import polars as pl
-import numpy as np
 from multiprocessing import Value
+from typing import List, Optional, Union
 
-from .multiprocessing_template import ParallelProcessor, WorkerManager, SerialManager, SharedData
+import numpy as np
+import polars as pl
+
+from .io import merge_snplists, partition_variants
+from .multiprocessing_template import ParallelProcessor, SerialManager, SharedData, WorkerManager
 from .precision import PrecisionOperator
-from .io import partition_variants, merge_snplists
 
 
 class LDClumper(ParallelProcessor):
@@ -26,14 +27,14 @@ class LDClumper(ParallelProcessor):
             List of block-specific sumstats DataFrames and their offsets
         """
         sumstats = kwargs.get('sumstats')
-            
+
         # Partition annotations into blocks
         sumstats_blocks: list[pl.DataFrame] = partition_variants(metadata, sumstats)
 
         cumulative_num_variants = np.cumsum(np.array([len(df) for df in sumstats_blocks]))
         cumulative_num_variants = [0] + list(cumulative_num_variants[:-1])
 
-        return list(zip(sumstats_blocks, cumulative_num_variants))
+        return list(zip(sumstats_blocks, cumulative_num_variants, strict=False))
 
     @staticmethod
     def create_shared_memory(metadata: pl.DataFrame, block_data: list[tuple], **kwargs) -> SharedData:
@@ -101,7 +102,7 @@ class LDClumper(ParallelProcessor):
 
         # Sort variants by chi-square statistic
         sort_idx = np.argsort(chisq)[::-1]  # Descending order
-        
+
         # Initialize arrays for tracking pruned and index variants
         n = len(z_scores)
         was_pruned = np.zeros(n, dtype=bool)
@@ -112,19 +113,19 @@ class LDClumper(ParallelProcessor):
             # Stop if we reach variants below threshold
             if chisq[i] < chisq_threshold:
                 break
-                
+
             # Skip if this variant was already pruned
             if was_pruned[i]:
                 continue
-                
+
             # This is an index variant
             is_index[i] = True
-            
+
             # Compute LD with all other variants
             indicator = np.zeros(n)
             indicator[i] = 1
             ld = ldgm.solve(indicator)
-            
+
             # Mark variants in high LD for pruning
             to_prune = (ld ** 2 >= rsq_threshold)
             assert to_prune[i]  # Lead SNP should be in LD with itself
@@ -132,18 +133,18 @@ class LDClumper(ParallelProcessor):
 
         # Initialize results array with all False
         results = np.zeros(num_variants, dtype=float)  # Use float for shared memory
-        
+
         # Map results back to original variants using sumstat_indices
         # Only set results for variants that were successfully merged
         results[sumstat_indices.flatten()] = is_index.astype(float)  # Convert to float for shared memory
-        
+
         # Store results
         block_slice = slice(variant_offset, variant_offset + num_variants)
         shared_data['is_index', block_slice] = results
 
     @classmethod
-    def supervise(cls, manager: Union[WorkerManager, SerialManager], 
-                shared_data: SharedData, 
+    def supervise(cls, manager: Union[WorkerManager, SerialManager],
+                shared_data: SharedData,
                 block_data: list, **kwargs) -> pl.DataFrame:
         """Monitor workers and process results.
 
@@ -159,10 +160,10 @@ class LDClumper(ParallelProcessor):
         manager.start_workers()
         manager.await_workers()
         is_index = shared_data['is_index']
-        
+
         # Concatenate the original sumstats DataFrames in order
         sumstats = pl.concat([df for df, _ in block_data])
-        
+
         # Add is_index column with results, converting back to boolean
         return sumstats.with_columns(pl.Series('is_index', is_index.astype(bool)))
 
@@ -212,7 +213,7 @@ class LDClumper(ParallelProcessor):
             print(f"Number of variants in summary statistics: {len(result)}")
             nonzero_count = (result['is_index']).sum()
             print(f"Number of index variants: {nonzero_count}")
-        
+
         return result
 
 

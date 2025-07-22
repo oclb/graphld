@@ -1,12 +1,11 @@
 """Test simulation functionality."""
 
-import os
 import numpy as np
 import polars as pl
 import pytest
 
-from graphld import Simulate, read_ldgm_metadata
-from typing import Optional, Union, List
+from graphld import Simulate
+
 
 def test_simulate_with_annotations(metadata_path, create_annotations):
     """Test simulation with variant annotations."""
@@ -29,7 +28,9 @@ def test_simulate_with_annotations(metadata_path, create_annotations):
         annotations=annotations
     )
 
-    num_annotated_variants = np.sum(annotations.select(pl.col('POS').is_first_distinct()).to_numpy())
+    num_annotated_variants = np.sum(
+        annotations.select(pl.col('POS').is_first_distinct()).to_numpy()
+    )
     assert len(sim_result) == num_annotated_variants
     assert np.sum(sim_result.select('beta').to_numpy() != 0) > 0
 
@@ -116,7 +117,7 @@ def test_annotation_dependent_polygenicity(metadata_path, create_annotations):
 def test_heritability_scaling(metadata_path, create_annotations):
     """Test that total heritability scales correctly."""
     h2_values = [0.1, 0.5, 0.9]
-    
+
     for h2 in h2_values:
         sim = Simulate(
             sample_size=100_000,
@@ -136,7 +137,7 @@ def test_heritability_scaling(metadata_path, create_annotations):
         beta = result['beta'].to_numpy()
         beta_marginal = result['beta_marginal'].to_numpy()
         realized_h2 = np.dot(beta, beta_marginal)
-        
+
         np.testing.assert_allclose(realized_h2, h2, rtol=1e-2)
 
 

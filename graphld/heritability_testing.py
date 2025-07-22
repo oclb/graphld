@@ -1,21 +1,20 @@
 """
 GraphREML
 """
-from multiprocessing import Value
-
-from .multiprocessing_template import ParallelProcessor, WorkerManager, SharedData
 from dataclasses import dataclass
+from multiprocessing import Value
 from typing import *
 
+import h5py
 import numpy as np
 import polars as pl
 import scipy.stats as sps
-
-from .precision import PrecisionOperator
-from .likelihood import *
-from .io import *
-import h5py
 from filelock import FileLock
+
+from .io import *
+from .likelihood import *
+from .multiprocessing_template import ParallelProcessor, SharedData, WorkerManager
+from .precision import PrecisionOperator
 
 CHUNK_SIZE = 1000
 
@@ -52,7 +51,7 @@ class ModelOptions:
     annotation_columns: Optional[List[str]] = None
     params: Optional[np.ndarray] = None
     sample_size: Optional[float] = None
-    intercept: float = 1.0 
+    intercept: float = 1.0
     link_fn_denominator: float = 6e6
     binary_annotations_only: bool = False
 
@@ -61,7 +60,7 @@ class ModelOptions:
             self.annotation_columns = ['base']
         if self.params is None:
             self.params = np.zeros((len(self.annotation_columns),1))
-        
+
         assert self.params.ndim == 2
 
 @dataclass
@@ -119,7 +118,7 @@ class MethodOptions:
                 raise ValueError("use_surrogate_markers must be True if score_test_hdf5_file_name is specified.")
             if self.match_by_position:
                 raise ValueError("match_by_position must be False if score_test_hdf5_file_name is specified.")
-        
+
 def _filter_binary_annotations(annotation_data: pl.DataFrame,
                                annotation_columns: List[str],
                                verbose: bool = False
@@ -181,7 +180,7 @@ def softmax_robust(x: np.ndarray) -> np.ndarray:
     mask = x < 0
     y[mask] = np.log1p(np.exp(x[mask]))
     return y
-    
+
 def _get_softmax_link_function(denominator: int) -> tuple[Callable, Callable, Callable]:
     """Create softmax link function and its gradient.
 
@@ -199,7 +198,7 @@ def _get_softmax_link_function(denominator: int) -> tuple[Callable, Callable, Ca
     def _link_arg(annot: np.ndarray, theta: np.ndarray) -> np.ndarray:
         if annot.ndim == 0:
             return annot * theta
-        
+
         # Avoid platform-specific divide by zero warning for matmul with zeros matrix
         if not np.any(annot):
             return np.zeros((annot.shape[0], theta.shape[1]))
@@ -214,7 +213,7 @@ def _get_softmax_link_function(denominator: int) -> tuple[Callable, Callable, Ca
         """Gradient of softmax link function."""
         x = _link_arg(annot, theta)
         result = annot / denominator / (1 + np.exp(-x))
-        equivalent_result = annot / denominator * np.exp(x) / (1 + np.exp(x)) 
+        equivalent_result = annot / denominator * np.exp(x) / (1 + np.exp(x))
         result[x.ravel() < 0, ...] = equivalent_result[x.ravel() < 0, ...]
         return result
 
@@ -267,12 +266,12 @@ class GraphREML(ParallelProcessor):
         if method.max_chisq_threshold is not None:
             max_z2s = [float(np.nanmax(block.select('Z').to_numpy() ** 2)) for block in sumstats_blocks]
             keep_block = [max_z2 <= method.max_chisq_threshold for max_z2 in max_z2s]
-            sumstats_blocks = [block if keep_block 
-                else pl.DataFrame([]) for block, max_z2 in zip(sumstats_blocks, max_z2s)]
+            sumstats_blocks = [block if keep_block
+                else pl.DataFrame([]) for block, max_z2 in zip(sumstats_blocks, max_z2s, strict=False)]
             if method.verbose and not all(keep_block):
                 print(f"{len(sumstats_blocks)-sum(keep_block)} out of {len(sumstats_blocks)} blocks discarded due to\n"
                       f"max chisq threshold of {method.max_chisq_threshold}")
-            
+
         cumulative_num_variants = np.cumsum(np.array([len(df) for df in sumstats_blocks]))
         cumulative_num_variants = [0] + list(cumulative_num_variants[:-1])
         block_indices = list(range(len(sumstats_blocks)))
@@ -285,10 +284,10 @@ class GraphREML(ParallelProcessor):
                 'block_index': index,
                 'Pz': Pz
             }
-            for block, offset, index, Pz 
-            in zip(sumstats_blocks, cumulative_num_variants, block_indices, block_Pz)
+            for block, offset, index, Pz
+            in zip(sumstats_blocks, cumulative_num_variants, block_indices, block_Pz, strict=False)
         ]
-    
+
     @staticmethod
     def create_shared_memory(metadata: pl.DataFrame, block_data: list[tuple], **kwargs) -> SharedData:
         """Create output array.
@@ -313,7 +312,7 @@ class GraphREML(ParallelProcessor):
         return result
 
     @staticmethod
-    def _initialize_block_zscores(ldgm: PrecisionOperator, 
+    def _initialize_block_zscores(ldgm: PrecisionOperator,
                                 annot_df: pl.DataFrame,
                                 annotation_columns: List[str],
                                 match_by_position: bool,
@@ -367,7 +366,7 @@ class GraphREML(ParallelProcessor):
 
         if verbose:
             print(f"Number of missing rows assigned surrogates: {len(variant_info_missing)}")
-        
+
         # Keep only first occurrence of each index for Z-scores
         first_index_mask = variant_info.select(pl.col('index').is_first_distinct()).to_numpy().flatten()
         z = ldgm.variant_info.select('Z').filter(first_index_mask).to_numpy()
@@ -411,7 +410,7 @@ class GraphREML(ParallelProcessor):
         per_variant_h2 = link_fn(annotations, params)
         delta_D = np.zeros(ldgm.shape[0])
         np.add.at(delta_D, ldgm.variant_indices, per_variant_h2.flatten() - old_variant_h2.flatten())
-        
+
         # Update diag(M)
         ldgm.update_matrix(delta_D)
 
@@ -424,7 +423,7 @@ class GraphREML(ParallelProcessor):
 
         # Gradient of per-variant h2 wrt parameters
         del_h2_del_a = link_fn_grad(annotations, params)
-        
+
         # Gradient of diag(M)
         del_M_del_a = np.zeros((ldgm.shape[0], params.shape[0]))
         np.add.at(del_M_del_a, ldgm.variant_indices, del_h2_del_a)
@@ -445,8 +444,8 @@ class GraphREML(ParallelProcessor):
 
     @staticmethod
     def _link_fn_derivatives(
-        annot: np.ndarray, 
-        params: np.ndarray, 
+        annot: np.ndarray,
+        params: np.ndarray,
         link_fn_denominator: float
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Compute 1st and 2nd derivatives of the link function for each variant.
@@ -507,7 +506,7 @@ class GraphREML(ParallelProcessor):
         many_samples = 200
 
         # First term of d2L/dx2: d2L/dm2 (dm/dx)2
-        first_term = gaussian_likelihood_hessian(Pz, ldgm, del_M_del_a=None, 
+        first_term = gaussian_likelihood_hessian(Pz, ldgm, del_M_del_a=None,
                         diagonal_method="xdiag", n_samples=many_samples)
         first_term *= del_h2i_del_xi ** 2
 
@@ -531,7 +530,7 @@ class GraphREML(ParallelProcessor):
             dataset[current_size:] = data.ravel()
         else:
             dataset[current_size:] = data
-    
+
     @classmethod
     def _write_variant_data(cls, hdf5_filename: str, annotation_names: List[str], variant_data: np.ndarray) -> bool:
         """Checks if the file already contains a 'variants' group. 
@@ -550,19 +549,19 @@ class GraphREML(ParallelProcessor):
             with h5py.File(hdf5_filename, 'a') as f:
                 if 'variants' in f:
                     return False
-                
+
                 f.create_group('traits')
                 variants_group = f.create_group('variants')
-                variants_group.create_dataset('annotations', 
+                variants_group.create_dataset('annotations',
                                             data=variant_data.select(annotation_names).to_numpy(),
                                             compression=VARIANT_INFO_COMPRESSION_TYPE,
                                             chunks=(CHUNK_SIZE, len(annotation_names)),
                                             )
-                variants_group.create_dataset('POS', 
+                variants_group.create_dataset('POS',
                                             data=variant_data.select('POS').to_numpy(),
                                             compression=VARIANT_INFO_COMPRESSION_TYPE,
                                             )
-                variants_group.create_dataset('RSID', 
+                variants_group.create_dataset('RSID',
                                             data=variant_data.select('SNP').to_numpy(),
                                             compression=VARIANT_INFO_COMPRESSION_TYPE,
                                             dtype=h5py.special_dtype(vlen=str),
@@ -638,28 +637,28 @@ class GraphREML(ParallelProcessor):
         model_options: ModelOptions
         method_options: MethodOptions
         model_options, method_options = worker_params
-            
+
         sumstats: pl.DataFrame = block_data['sumstats']
         if len(sumstats) == 0:  # Skip blocks that were filtered out
             return
 
         Pz: np.ndarray
         if flag.value == FLAGS['INITIALIZE']:
-            ldgm, Pz = cls._initialize_block_zscores(ldgm, 
-                                                    sumstats, 
+            ldgm, Pz = cls._initialize_block_zscores(ldgm,
+                                                    sumstats,
                                                     model_options.annotation_columns,
                                                     method_options.match_by_position,
                                                     method_options.verbose)
-            
+
             # Work in effect-size as opposed to Z score units
             Pz /= np.sqrt(model_options.sample_size)
             ldgm.times_scalar(model_options.intercept / model_options.sample_size)
             block_data['Pz'] = Pz
         # ldgm is modified in place and re-used in subsequent iterations
-            
+
         else:
             Pz = block_data['Pz']
-        
+
         annot_indices: np.ndarray = ldgm.variant_info.select('annot_indices').to_numpy().flatten()
         max_index: int = np.max(annot_indices) + 1 if len(annot_indices) > 0 else 0
         variant_offset: int = block_data['variant_offset']
@@ -684,10 +683,10 @@ class GraphREML(ParallelProcessor):
             result_padded[annot_indices] = result.ravel()
             shared_data['variant_data', block_variants] = result_padded
             return
-        
+
         block_index: int = block_data['block_index']
         num_annot = len(model_options.annotation_columns)
-            
+
         old_variant_h2: np.ndarray = shared_data['variant_data', block_variants][annot_indices]
 
         likelihood_only = (flag.value == FLAGS['COMPUTE_LIKELIHOOD_ONLY'])
@@ -701,7 +700,7 @@ class GraphREML(ParallelProcessor):
             num_samples=method_options.gradient_num_samples,
             likelihood_only=likelihood_only
                 )
-                
+
         shared_data['likelihood', block_index] = likelihood
         variant_h2_padded = np.zeros(max_index)
         variant_h2_padded[annot_indices] = variant_h2.ravel()
@@ -709,11 +708,11 @@ class GraphREML(ParallelProcessor):
         if likelihood_only:
             return
 
-        gradient_slice = slice(block_index * num_annot, 
+        gradient_slice = slice(block_index * num_annot,
                             (block_index + 1) * num_annot)
         shared_data['gradient', gradient_slice] = gradient.flatten()
-        
-        hessian_slice = slice(block_index * num_annot**2, 
+
+        hessian_slice = slice(block_index * num_annot**2,
                             (block_index + 1) * num_annot**2)
         shared_data['hessian', hessian_slice] = hessian.flatten()
 
@@ -732,23 +731,23 @@ class GraphREML(ParallelProcessor):
         num_groups = min(num_groups, num_blocks)
         block_size = num_blocks // num_groups
         remainder = num_blocks % num_groups
-        
+
         # Initialize output array
         block_shape = blocks.shape[1:]
         grouped = np.zeros((num_groups,) + block_shape)
-        
+
         # Sum blocks within each group
         start_idx = 0
         for i in range(num_groups):
             # Add one extra block to some groups to handle remainder
             extra = 1 if i < remainder else 0
             end_idx = start_idx + block_size + extra
-            
+
             # Sum along the block dimension
             grouped[i, ...] = blocks[start_idx:end_idx, ...].sum(axis=0)
-            
+
             start_idx = end_idx
-        
+
         return grouped
 
     @classmethod
@@ -756,19 +755,19 @@ class GraphREML(ParallelProcessor):
         """Get group assignment for each variant."""
         num_blocks = len(block_indptrs) - 1
         group_sizes = cls._group_blocks(np.ones(num_blocks, dtype=int), num_groups).astype(int)
-        
+
         jackknife_block_assignments = np.zeros(num_blocks)
         idx = 0
         for group, size in enumerate(group_sizes):
             jackknife_block_assignments[idx:idx+size] = group
             idx += size
-        
+
         jackknife_variant_assignments = np.zeros(block_indptrs[-1], dtype=int)
-        for start, end, group in zip(block_indptrs[:-1], block_indptrs[1:], jackknife_block_assignments):
+        for start, end, group in zip(block_indptrs[:-1], block_indptrs[1:], jackknife_block_assignments, strict=False):
             jackknife_variant_assignments[start:end] = group
 
         assert np.sum(np.diff(jackknife_variant_assignments)!=0) == num_groups-1
-        
+
         return jackknife_variant_assignments
 
     @staticmethod
@@ -785,20 +784,20 @@ class GraphREML(ParallelProcessor):
         """
         num_blocks = gradient_blocks.shape[0]
         num_params = params.shape[0]
-        
+
         # Sum blocks to get full gradient and Hessian
         gradient = gradient_blocks.sum(axis=0)  # Shape: (num_params,) - sum across blocks
         hessian = hessian_blocks.sum(axis=0)    # Shape: (num_params, num_params) - sum across blocks
-        
+
         # Initialize output array
         jackknife = np.zeros((num_blocks, num_params))
-        
+
         # Compute jackknife estimate for each block
         for block in range(num_blocks):
             # Remove current block from total gradient and Hessian
             block_gradient = gradient_blocks[block, :]  # Shape: (num_params,)
             block_hessian = hessian_blocks[block, :, :]  # Shape: (num_params, num_params)
-            
+
             # Compute leave-one-out gradient and Hessian
             loo_gradient = gradient - block_gradient
 
@@ -809,10 +808,10 @@ class GraphREML(ParallelProcessor):
             print(f"num_params: {num_params}")
 
             loo_hessian = hessian - block_hessian + 1e-12 * np.eye(num_params)
-            
+
             # Compute jackknife estimate for this block
             jackknife[block] = params + np.linalg.solve(loo_hessian, loo_gradient)
-            
+
         return jackknife
 
     @staticmethod
@@ -832,14 +831,14 @@ class GraphREML(ParallelProcessor):
         num_blocks = len(block_data)
         num_jk = jackknife_params.shape[0]
         num_params = jackknife_params.shape[1]
-        
+
         # Get link function
         link_fn, _, _ = _get_softmax_link_function(model.link_fn_denominator)
-        
+
         # Initialize output arrays
         jackknife_h2 = np.zeros((num_jk, num_params))
         jackknife_annot_sums = np.zeros((num_jk, num_params))
-        
+
         # Pre-compute annotations for each block
         block_annotations = []
         for block in range(num_blocks):
@@ -847,7 +846,7 @@ class GraphREML(ParallelProcessor):
                 continue
             annotations = block_data[block]['sumstats'].select(model.annotation_columns).to_numpy()
             block_annotations.append(annotations)
-            
+
         # Compute heritability and annotation sums for each jackknife estimate
         for jk in range(num_jk):
             # Compute per-SNP heritability using jackknife parameters
@@ -857,7 +856,7 @@ class GraphREML(ParallelProcessor):
                 jackknife_h2[jk, :] += (per_snp_h2[:, np.newaxis] * annotations).sum(axis=0)
                 # Add to annotation sums
                 jackknife_annot_sums[jk, :] += annotations.sum(axis=0)
-        
+
         return jackknife_h2, jackknife_annot_sums
 
     @staticmethod
@@ -885,11 +884,11 @@ class GraphREML(ParallelProcessor):
         """
         n_blocks = jackknife_estimates.shape[0]
         point_estimate = np.mean(jackknife_estimates, axis=0)
-        
+
         # Check if all estimates are identical (within numerical precision)
         if np.allclose(jackknife_estimates, point_estimate, rtol=1e-24, atol=0):
             return 0.0
-            
+
         standard_error = np.sqrt((n_blocks - 1) * np.var(jackknife_estimates, axis=0, ddof=1))
         # Calculate two-sided log10(p-value)
         log10pval = (np.log(2) + sps.norm.logcdf(-np.abs(point_estimate / standard_error))) / np.log(10)
@@ -904,7 +903,7 @@ class GraphREML(ParallelProcessor):
             block_data: annotation + gwas data passed to workers
             **kwargs: Additional arguments
         """
-        
+
         num_iterations = kwargs.get('num_iterations')
         num_params = kwargs.get('num_params')
         verbose = kwargs.get('verbose')
@@ -913,20 +912,20 @@ class GraphREML(ParallelProcessor):
         trust_region_lambda = method.trust_region_size
         log_likelihood_history = []
         trust_region_history = []
-        
+
         def _trust_region_step(gradient: np.ndarray, hessian: np.ndarray, trust_region_lambda: float) -> np.ndarray:
             """Compute trust region step by solving (H + λD)x = -g.
             """
             hess_mod = hessian + trust_region_lambda * np.diag(np.diag(hessian))
             hess_mod += np.finfo(float).eps * np.eye(len(hessian))
-            
+
             return np.linalg.solve(hess_mod, -gradient)
 
-        
+
         for rep in range(num_iterations):
             if verbose:
                 print(f"\n\tStarting iteration {rep}...")
-            
+
             # Calculate likelihood, gradient, and hessian for each block
             flag = FLAGS['INITIALIZE'] if rep == 0 else FLAGS['COMPUTE_ALL']
             manager.start_workers(flag)
@@ -935,25 +934,25 @@ class GraphREML(ParallelProcessor):
             likelihood = cls._sum_blocks(shared_data['likelihood'], (1,))[0]
             gradient = cls._sum_blocks(shared_data['gradient'], (num_params,))
             hessian = cls._sum_blocks(shared_data['hessian'], (num_params,num_params))
-            
+
             old_params = shared_data['params'].copy()
             old_likelihood = likelihood
-            
+
             # Reset trust region size if specified
             if method.reset_trust_region or rep == 0:
                 trust_region_lambda = method.trust_region_size
-                
+
             # Trust region optimization loop
             for trust_iter in range(method.max_trust_iterations):
                 # Compute proposed step
                 step = _trust_region_step(gradient, hessian, trust_region_lambda)
                 shared_data['params'] = old_params + step
-                
+
                 # Evaluate proposed step
                 manager.start_workers(FLAGS['COMPUTE_LIKELIHOOD_ONLY'])
                 manager.await_workers()
                 new_likelihood = cls._sum_blocks(shared_data['likelihood'], (1,))[0]
-                
+
                 # Compute actual vs predicted increase
                 actual_increase = new_likelihood - old_likelihood
                 predicted_increase = step.T @ gradient + 0.5 * step.T @ (hessian @ step)
@@ -961,7 +960,7 @@ class GraphREML(ParallelProcessor):
 
                 if verbose:
                     print(f"\tIncrease in log-likelihood: {actual_increase}, predicted increase: {predicted_increase}")
-                
+
                 # Check if step is acceptable and update trust region size if needed
                 rho = actual_increase / predicted_increase
                 if rho < method.trust_region_rho_lb:
@@ -970,7 +969,7 @@ class GraphREML(ParallelProcessor):
                             print(f"\tTerminated trust region size search with predicted likelihood increase {predicted_increase}.")
                         break
                     # Reset trust region size to initial value if its below that
-                    trust_region_lambda = max(method.trust_region_size, 
+                    trust_region_lambda = max(method.trust_region_size,
                                             trust_region_lambda * method.trust_region_scalar)
                     shared_data['params'] = old_params  # Revert step
                 elif rho > method.trust_region_rho_ub:
@@ -978,19 +977,19 @@ class GraphREML(ParallelProcessor):
                     break  # Accept step and continue to next iteration
                 else:
                     break  # Accept step with current trust region size
-                    
+
                 if trust_iter == method.max_trust_iterations - 1:
                     if verbose:
                         print("Warning: Maximum trust region iterations reached")
-                                        
+
             log_likelihood_history.append(new_likelihood)
             trust_region_history.append(trust_region_lambda)
-            
+
             if verbose:
                 print(f"Trust region lambda: {trust_region_lambda}")
                 if len(log_likelihood_history) >= 2:
                     print(f"Change in likelihood: {log_likelihood_history[-1] - log_likelihood_history[-2]}")
-            
+
             # Check convergence
             converged = False
             if len(log_likelihood_history) >= 3:
@@ -1001,21 +1000,21 @@ class GraphREML(ParallelProcessor):
         # After optimization
         if verbose:
             print(f"Finished optimization after {rep+1} iterations.")
-        
+
         # Get block-wise gradients and Hessians for jackknife
         num_blocks = len(block_data)
         gradient_blocks = shared_data['gradient'].reshape((num_blocks, num_params))
         hessian_blocks = shared_data['hessian'].reshape((num_blocks, num_params, num_params))
-        
+
         # Group blocks for jackknife
         method.num_jackknife_blocks = min(method.num_jackknife_blocks, num_blocks)
         jk_gradient_blocks = cls._group_blocks(gradient_blocks, method.num_jackknife_blocks)
         jk_hessian_blocks = cls._group_blocks(hessian_blocks, method.num_jackknife_blocks)
-        
+
         # Compute jackknife estimates using the grouped blocks
         params = shared_data['params'].copy()
         jackknife_params = cls._compute_pseudojackknife(jk_gradient_blocks, jk_hessian_blocks, params)
-        
+
         # Compute jackknife heritability estimates and standard errors
         jackknife_h2, jackknife_annot_sums = cls._compute_jackknife_heritability(block_data, jackknife_params, model)
 
@@ -1025,17 +1024,17 @@ class GraphREML(ParallelProcessor):
         n_blocks = jackknife_params.shape[0]
         params_se = np.sqrt((n_blocks - 1) * np.var(jackknife_params, axis=0, ddof=1))
         h2_se = np.sqrt((n_blocks - 1) * np.var(jackknife_h2, axis=0, ddof=1))
-        
+
         # Compute normalized heritability for each jackknife estimate
         jackknife_h2_normalized = jackknife_h2 / jackknife_annot_sums
-        
+
         # Compute quotient for point estimates and SE
         jackknife_enrichment_quotient = jackknife_h2_normalized / jackknife_h2_normalized[:, [0]]
         enrichment_se = np.sqrt((n_blocks - 1) * np.var(jackknife_enrichment_quotient, axis=0, ddof=1))
-        
+
         # Compute difference for p-values
         jackknife_enrichment_diff = jackknife_h2_normalized - jackknife_h2_normalized[:, [0]]
-        
+
         # Point estimates
         ref_col = 0 # Maybe TODO
         annotations = pl.concat([dict['sumstats'] for dict in block_data if len(dict['sumstats']) > 0])
@@ -1055,7 +1054,7 @@ class GraphREML(ParallelProcessor):
         ])
 
         likelihood_changes = np.diff(log_likelihood_history).tolist()
-        
+
         if verbose:
             num_annotations = len(annotation_heritability)
             print(f"Heritability: {annotation_heritability[:min(5, num_annotations)]}")
@@ -1074,19 +1073,19 @@ class GraphREML(ParallelProcessor):
             block_indptrs = [dict['variant_offset'] for dict in block_data] + [len(variant_score)]
             variant_jackknife_assignments = cls._get_variant_jackknife_assignments(
                 block_indptrs, method.num_jackknife_blocks)
-            
+
             # Project the annotations out of the score
             annotations_matrix = annotations.select(model.annotation_columns).to_numpy()
             if method.score_test_orthogonalize:
                 _project_out(variant_score, annotations_matrix)
-            
+
             cls._write_variant_data(method.score_test_hdf5_file_name,
                                     annotations.select('RSID', 'POS').to_numpy(),
                                     annotations_matrix,
                                     )
 
-            cls._write_trait_stats(method, 
-                                    params, 
+            cls._write_trait_stats(method,
+                                    params,
                                     jackknife_params,
                                     variant_score,
                                     variant_hessian,
@@ -1109,7 +1108,7 @@ class GraphREML(ParallelProcessor):
             'variant_h2': variant_h2,
             'log': {
                 'converged': converged,
-                'num_iterations': rep + 1,  
+                'num_iterations': rep + 1,
                 'likelihood_changes': likelihood_changes,
                 'final_likelihood': log_likelihood_history[-1],
                 'trust_region_lambdas': trust_region_history,
@@ -1167,7 +1166,7 @@ def run_graphREML(model_options: ModelOptions,
             on=join_cols,
             how=merge_how
         )
-        
+
         # Handle column renaming - ensure we have consistent CHR and POS columns
         if 'CHR_right' in merged_data.columns and 'POS_right' in merged_data.columns:
             # Drop existing CHR and POS columns if they exist to avoid duplicates
@@ -1177,7 +1176,7 @@ def run_graphREML(model_options: ModelOptions,
                 'CHR_right': 'CHR',
                 'POS_right': 'POS'
             })
-                
+
     else:
         join_cols = ['CHR', 'POS']
         merged_data = summary_stats.join(
@@ -1185,10 +1184,10 @@ def run_graphREML(model_options: ModelOptions,
             on=join_cols,
             how=merge_how
         )
-    
+
     # Deduplicate chr/pos pairs with multiple entries in the summary statistics
     merged_data = merged_data.unique(subset=join_cols, keep='first')
-    
+
     # Print shape of each DataFrame
     print(f"Summary stats shape: {summary_stats.shape}")
     print(f"Annotation data shape: {annotation_data.shape}")

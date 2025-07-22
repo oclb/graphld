@@ -1,13 +1,12 @@
 """Test CLI functionality."""
 
-import os
 import tempfile
 from pathlib import Path
 
 import polars as pl
 import pytest
 
-from graphld.cli import _blup, _clump, _simulate, _reml
+from graphld.cli import _blup, _clump, _reml, _simulate
 
 
 @pytest.fixture
@@ -50,7 +49,7 @@ def test_blup(metadata_path, sumstats_path):
             verbose=False,
             quiet=True
         )
-        
+
         # Check output exists and has expected columns
         result = pl.read_csv(tmp.name, separator='\t')
         assert 'Z' in result.columns  # BLUP outputs Z-scores
@@ -74,7 +73,7 @@ def test_clump(metadata_path, sumstats_path):
             verbose=False,
             quiet=True
         )
-        
+
         # Check output exists and has expected columns
         result = pl.read_csv(tmp.name, separator='\t')
         assert len(result) > 0  # Should have some results with relaxed thresholds
@@ -100,7 +99,7 @@ def test_simulate(metadata_path):
             verbose=False,
             sample_size=1000
         )
-        
+
         # Check output exists and has expected columns
         result = pl.read_csv(tmp.name, separator='\t')
         assert 'Z' in result.columns
@@ -133,23 +132,23 @@ def test_reml_basic(metadata_path, create_annotations, create_sumstats):
     sumstats = create_sumstats(str(metadata_path), 'EUR')
     annotations = create_annotations(metadata_path, 'EUR')
     annotations = annotations.rename({'POS': 'BP'})
-    
+
     # Ensure CHR is Int64 in both DataFrames
     sumstats = sumstats.with_columns(pl.col('CHR').cast(pl.Int64))
     annotations = annotations.with_columns(pl.col('CHR').cast(pl.Int64))
 
     with tempfile.TemporaryDirectory() as tmpdir:
         out_prefix = Path(tmpdir) / "test"
-        
+
         # Write sumstats to temporary file
         sumstats_file = Path(tmpdir) / "sumstats.csv"
         sumstats.write_csv(sumstats_file, separator='\t')
-        
+
         # Write annotations to temporary file
         annot_dir = Path(tmpdir) / "annot"
         annot_dir.mkdir()
         annotations.write_csv(annot_dir / "baselineLD.22.annot", separator='\t')
-        
+
         _reml(
             type("Args", (), {
                 "sumstats": str(sumstats_file),
@@ -161,6 +160,7 @@ def test_reml_basic(metadata_path, create_annotations, create_sumstats):
                 "intercept": 1.0,
                 "num_iterations": 2,  # Small number for testing
                 "convergence_tol": 0.001,
+                "convergence_window": 2,
                 "run_in_serial": True,
                 "num_processes": None,
                 "verbose": False,
@@ -197,6 +197,7 @@ def test_reml_basic(metadata_path, create_annotations, create_sumstats):
                 "intercept": 1.0,
                 "num_iterations": 2,  # Small number for testing
                 "convergence_tol": 0.001,
+                "convergence_window": 2,
                 "run_in_serial": True,
                 "num_processes": None,
                 "verbose": False,

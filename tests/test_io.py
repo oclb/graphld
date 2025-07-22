@@ -1,8 +1,8 @@
 """Tests for merge_snplists functionality."""
 
 
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 import polars as pl
 import pytest
@@ -10,14 +10,14 @@ from scipy.sparse import csr_matrix
 
 from graphld import PrecisionOperator
 from graphld.io import (
+    create_ldgm_metadata,
+    load_annotations,
     load_ldgm,
     merge_alleles,
     merge_snplists,
-    create_ldgm_metadata,
-    read_ldgm_metadata,
     partition_variants,
-    load_annotations,
-    read_bed
+    read_bed,
+    read_ldgm_metadata,
 )
 
 
@@ -133,7 +133,7 @@ def test_merge_snplists():
     })
     m2 = csr_matrix((5, 5))
     op2 = PrecisionOperator(m2, v2)
-    
+
     # Create matching sumstats
     sumstats2 = pl.DataFrame({
         'SNP': ['rs1', 'rs1_dup', 'rs2', 'rs2_dup', 'rs3'],
@@ -144,7 +144,7 @@ def test_merge_snplists():
         'BETA': [0.1, 0.15, 0.2, 0.25, 0.3],
         'SE': [0.01, 0.015, 0.02, 0.025, 0.03]
     })
-    
+
     merged_op, indices = merge_snplists(op2, sumstats2)
     assert 'is_representative' in merged_op.variant_info.columns
     assert len(merged_op.variant_info) == 5  # Should keep all variants
@@ -163,7 +163,7 @@ def test_merge_snplists():
     # Check that BETA has been phased correctly
     expected_beta = [0.1, 0.2, 0.3]  # Original values
     actual_beta = list(merged_op.variant_info['BETA'])
-    assert all(abs(a - e) < 1e-10 for a, e in zip(actual_beta, expected_beta))
+    assert all(abs(a - e) < 1e-10 for a, e in zip(actual_beta, expected_beta, strict=False))
 
 
 def test_merge_snplists_errors():
@@ -245,27 +245,27 @@ def test_create_ldgm_metadata():
     """Test creation of LDGM metadata file."""
     # Get test directory
     test_dir = Path(__file__).parent.parent / "data/test"
-    
+
     # Create metadata
     with tempfile.NamedTemporaryFile(suffix='.csv') as tmp:
         df = create_ldgm_metadata(test_dir, tmp.name)
-        
+
         # Check DataFrame properties
         assert len(df) == 4, "Expected 4 LDGM files"
         assert all(col in df.columns for col in [
             'chrom', 'chromStart', 'chromEnd', 'name', 'snplistName',
             'population', 'numVariants', 'numIndices', 'numEntries', 'info'
         ])
-        
+
         # Check file properties
         assert set(df['population'].unique()) == {'EUR', 'EAS'}
         assert all(df['chrom'] == 1)
         assert df['chromStart'].is_sorted()
-        
+
         # Read back and verify
         df2 = read_ldgm_metadata(tmp.name)
         assert df.equals(df2)
-        
+
         # Check numeric properties
         assert all(df['numVariants'] > 0)
         assert all(df['numIndices'] > 0)
@@ -283,7 +283,7 @@ def test_read_ldgm_metadata_validation():
             'name': ['test.edgelist']  # Missing required columns
         })
         invalid_df.write_csv(tmp.name)
-        
+
         # Check that validation fails
         with pytest.raises(ValueError, match="Missing required columns"):
             read_ldgm_metadata(tmp.name)
@@ -293,35 +293,35 @@ def test_read_ldgm_metadata_filtering():
     """Test filtering options in read_ldgm_metadata."""
     # Get test directory
     test_dir = Path(__file__).parent.parent / "data/test"
-    
+
     # Create metadata file
     with tempfile.NamedTemporaryFile(suffix='.csv') as tmp:
         df = create_ldgm_metadata(test_dir, tmp.name)
-        
+
         # Test population filtering
         df_eur = read_ldgm_metadata(tmp.name, populations='EUR')
         assert len(df_eur) == 2
         assert all(df_eur['population'] == 'EUR')
-        
+
         df_both = read_ldgm_metadata(tmp.name, populations=['EUR', 'EAS'])
         assert df_both.equals(df)  # Should match original
-        
+
         with pytest.raises(ValueError, match="No blocks found for populations"):
             read_ldgm_metadata(tmp.name, populations='AFR')
-            
+
         # Test chromosome filtering
         df_chr1 = read_ldgm_metadata(tmp.name, chromosomes=1)
         assert len(df_chr1) == 4
         assert all(df_chr1['chrom'] == 1)
-        
+
         with pytest.raises(ValueError, match="No blocks found for chromosomes"):
             read_ldgm_metadata(tmp.name, chromosomes=2)
-            
+
         # Test max_blocks
         df_limited = read_ldgm_metadata(tmp.name, max_blocks=2)
         assert len(df_limited) == 2
         assert df_limited.equals(df.head(2))
-        
+
         # Test combined filtering
         df_combined = read_ldgm_metadata(
             tmp.name,
@@ -349,7 +349,7 @@ def test_partition_variants():
         'numEntries': [20, 20, 20],
         'info': ['', '', '']
     })
-    
+
     # Create test variant data with different column names
     variants = pl.DataFrame({
         'CHR': [1, 1, 1, 1, 2, 2],
@@ -357,16 +357,16 @@ def test_partition_variants():
         'REF': ['A', 'C', 'G', 'T', 'A', 'C'],
         'ALT': ['T', 'G', 'C', 'A', 'G', 'T']
     })
-    
+
     # Test automatic column name detection
     partitioned = partition_variants(metadata, variants)
     assert len(partitioned) == 3
-    
+
     # Check block contents
     assert len(partitioned[0]) == 2  # Block 1: pos 150, 250
     assert len(partitioned[1]) == 2  # Block 2: pos 350, 450
     assert len(partitioned[2]) == 2  # Block 3: pos 250, 350 on chr 2
-    
+
     # Test with explicit column names
     variants2 = pl.DataFrame({
         'chromosome': [1, 1, 1, 1, 2, 2],
@@ -381,18 +381,18 @@ def test_partition_variants():
         pos_col='position'
     )
     assert len(partitioned2) == 3
-    for df1, df2 in zip(partitioned, partitioned2):
+    for df1, df2 in zip(partitioned, partitioned2, strict=False):
         assert len(df1) == len(df2)
-    
+
     # Test with string chromosome
     variants3 = variants.with_columns(
         pl.col('CHR').cast(str).alias('CHR')
     )
     partitioned3 = partition_variants(metadata, variants3)
     assert len(partitioned3) == 3
-    for df1, df3 in zip(partitioned, partitioned3):
+    for df1, df3 in zip(partitioned, partitioned3, strict=False):
         assert len(df1) == len(df3)
-    
+
     # Test error cases
     bad_variants = pl.DataFrame({
         'CHROM': [1, 2],  # Wrong column name
@@ -400,7 +400,7 @@ def test_partition_variants():
     })
     with pytest.raises(ValueError, match="Could not find chromosome column"):
         partition_variants(metadata, bad_variants)
-        
+
     bad_variants = pl.DataFrame({
         'CHR': [1, 2],
         'POSITION': [100, 200]  # Wrong column name
@@ -435,7 +435,7 @@ def test_load_annotations(test_data_dir):
 
     # Verify data is not empty
     assert len(annotations) > 0
-    
+
     # Verify some specific properties
     assert all(annotations['CHR'] == 22)  # Filtered by chromosome
     assert all(annotations['POS'] > 0)  # Positions are valid
@@ -470,7 +470,7 @@ def test_load_annotations(test_data_dir):
 
 def test_load_annotations_with_bed(test_data_dir):
     """Test loading annotations with BED file integration."""
-    
+
     # Load annotations with BED files
     annotations = load_annotations(
         annot_path=str(test_data_dir),
@@ -482,11 +482,11 @@ def test_load_annotations_with_bed(test_data_dir):
     # Verify BED annotations were added
     assert 'test_regions' in annotations.columns
     assert annotations['test_regions'].dtype == pl.Int64
-    
+
     # Count variants in regions
     in_regions = annotations.filter(pl.col('test_regions') == 1)
     assert len(in_regions) > 0  # Should have some variants in regions
-    
+
     # Verify region annotations are correct
     for row in in_regions.iter_rows(named=True):
         assert row['CHR'] == 22
@@ -497,7 +497,7 @@ def test_load_annotations_with_bed(test_data_dir):
             (16050200 <= pos < 16050300) or  # region2
             (17000000 <= pos < 17100000)     # region3
         )
-    
+
     # Test excluding BED files
     annotations_no_bed = load_annotations(
         annot_path=str(test_data_dir),

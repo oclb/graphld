@@ -2,25 +2,22 @@
 Simulate GWAS summary statistics.
 """
 
-from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Union, Tuple
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
-from multiprocessing import Process, Value, Array, cpu_count
 import os
-import traceback
-from itertools import zip_longest
+from dataclasses import dataclass
+from multiprocessing import Value
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
 import polars as pl
-from .io import read_ldgm_metadata, partition_variants, load_ldgm
+
+from .heritability import softmax_robust
+from .io import partition_variants
 from .multiprocessing_template import ParallelProcessor, SharedData, WorkerManager
 from .precision import PrecisionOperator
-from .heritability import softmax_robust
+
 
 def _default_link_fn(annotations: np.ndarray) -> np.ndarray:
     """Default link function mapping annotations to relative per-variant heritability."""
-    from .heritability import softmax_robust
     return softmax_robust(np.sum(annotations, axis=1))
 
 @dataclass
@@ -39,7 +36,7 @@ class _SimulationSpecification:
         link_fn: Function mapping annotation vector to relative per-variant heritability.
             Default is softmax: x -> log(1 + exp(sum(x)))
         component_random_seed: Random seed for component assignments
-        annotation_columns: List of column names to use as annotations. Annotations are 
+        annotation_columns: List of column names to use as annotations. Annotations are
             expected to be in the LDGM variant_info DataFrame
     """
     sample_size: int
@@ -95,19 +92,18 @@ def _simulate_beta_block(ldgm: PrecisionOperator,
 
     # variants and indices differ because there can be multiple variants per index
     num_variants = len(af)
-    num_indices = ldgm.shape[0]
 
     # Sample components
     weights = spec.component_weight
     variances = spec.component_variance
-    
+
     # Normalize weights to sum to 1 (add null component)
     total_weight = np.sum(weights)
     if total_weight > 1:
         raise ValueError(f"Component weights sum to {total_weight} > 1")
     weights = np.append(weights, [1 - total_weight])  # Add null component
     variances = np.append(variances, [0])  # Zero variance for null component
-    
+
     if spec.random_seed is not None:
         np.random.seed(spec.random_seed)
     component_assignments = np.random.choice(
@@ -116,11 +112,11 @@ def _simulate_beta_block(ldgm: PrecisionOperator,
 
     # Compute per-variant heritabilities
     h2_per_variant = spec.link_fn(annotations)
-    
+
     # Calculate allele frequency term
     af_term = 2 * af * (1 - af)
     af_term = af_term ** (1 + spec.alpha_param)
-    
+
     h2_per_variant *= af_term
 
     h2_per_variant *= variances[component_assignments]
@@ -146,20 +142,23 @@ def _simulate_noise_block(ldgm: PrecisionOperator,
     Returns:
         Noise vector
     """
-    
+
     # Generate noise with variance equal to the LD matrix
     np.random.seed(random_seed)
     white_noise = np.random.randn(ldgm.shape[0])
     return ldgm.solve_Lt(white_noise)[ldgm.variant_indices].reshape(-1, 1)
 
 
-def _create_block_annotations(metadata: pl.DataFrame, ldgm_metadata_path: str) -> list[pl.DataFrame]:
+def _create_block_annotations(
+    metadata: pl.DataFrame,
+    ldgm_metadata_path: str
+) -> list[pl.DataFrame]:
     """Create block-specific annotation DataFrames from SNP lists.
-    
+
     Args:
         metadata: DataFrame containing LDGM metadata
         ldgm_metadata_path: Path to LDGM metadata file
-        
+
     Returns:
         List of DataFrames containing CHR and POS columns for each block
     """
@@ -181,13 +180,17 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
     """Parallel processor for simulating GWAS summary statistics."""
 
     @staticmethod
-    def create_shared_memory(metadata: pl.DataFrame, block_data: list[tuple], **kwargs) -> SharedData:
+    def create_shared_memory(
+        metadata: pl.DataFrame,
+        block_data: list[tuple],
+        **kwargs
+    ) -> SharedData:
         """Create shared memory arrays for simulation.
-        
+
         Args:
             metadata: Metadata DataFrame containing block information
-            block_data: List of block-specific annotation DataFrames
-            **kwargs:
+            block_data: List of tuples containing block-specific annotation DataFrames
+            **kwargs: Additional keyword arguments
         """
         # Get total number of variants and indices
         num_variants = np.array([len(df) for df, _ in block_data])
@@ -201,7 +204,7 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
             'noise': total_variants,   # Noise component
             'scale_param': 1,         # Single value
         })
-        
+
         # Initialize arrays with zeros
         shared['beta'][:] = 0
         shared['alpha'][:] = 0
@@ -214,28 +217,31 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
     @classmethod
     def prepare_block_data(cls, metadata: pl.DataFrame, **kwargs) -> list[tuple]:
         """Prepare block-specific data for processing.
-        
+
         Args:
             metadata: DataFrame containing LDGM metadata
             **kwargs: Additional arguments from run(), including:
                 annotations: Optional DataFrame containing variant annotations
-                
+
         Returns:
             List of block-specific annotation DataFrames, or None if no annotations
         """
         annotations = kwargs.get('annotations')
         if annotations is None:
-            block_annotations = _create_block_annotations(metadata, kwargs.get('ldgm_metadata_path_duplicate'))
+            block_annotations = _create_block_annotations(
+                metadata,
+                kwargs.get('ldgm_metadata_path_duplicate')
+            )
         else:
             block_annotations = partition_variants(metadata, annotations)
-    
+
         cumulative_num_variants = np.cumsum(np.array([len(df) for df in block_annotations]))
         cumulative_num_variants = [0] + list(cumulative_num_variants[:-1])
 
-        return list(zip(block_annotations, cumulative_num_variants))
+        return list(zip(block_annotations, cumulative_num_variants, strict=False))
 
     @classmethod
-    def process_block(cls, ldgm: PrecisionOperator, flag: Value, 
+    def process_block(cls, ldgm: PrecisionOperator, flag: Value,
                      shared_data: SharedData, block_offset: int,
                      block_data: Optional[tuple] = None,
                      worker_params: Optional[Dict] = None) -> None:
@@ -245,7 +251,7 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
             assert isinstance(block_data, tuple), "block_data must be a tuple"
             annotations, variant_offset = block_data
             num_variants = len(annotations)
-            
+
             # Merge annotations with LDGM variant info and get indices of merged variants
             from .io import merge_snplists
             ldgm, sumstat_indices = merge_snplists(
@@ -259,13 +265,13 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
             variant_offset = block_offset
             num_variants = ldgm.shape[0]
             sumstat_indices = range(num_variants)
-        
+
         # Get block slice using the number of indices
         block_slice = slice(variant_offset, variant_offset + num_variants)
-        
+
         # Simulate effect sizes using the merged data
         beta, alpha = _simulate_beta_block(ldgm, worker_params)
-        
+
         block_random_seed = None if worker_params.random_seed is None \
             else worker_params.random_seed + variant_offset
         noise = _simulate_noise_block(ldgm, random_seed=block_random_seed)
@@ -279,7 +285,7 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
         beta_reshaped[sumstat_indices, 0] = beta.flatten()
         alpha_reshaped[sumstat_indices, 0] = alpha.flatten()
         noise_reshaped[sumstat_indices, 0] = noise.flatten()
-        
+
         # Update the shared memory arrays
         block_slice = slice(variant_offset, variant_offset + num_variants)
         shared_data['beta', block_slice] = beta_reshaped
@@ -287,21 +293,27 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
         shared_data['noise', block_slice] = noise_reshaped
 
     @classmethod
-    def supervise(cls, manager: WorkerManager, shared_data: Dict[str, Any], block_data: list, **kwargs) -> pl.DataFrame:
+    def supervise(
+        cls,
+        manager: WorkerManager,
+        shared_data: Dict[str, Any],
+        block_data: list,
+        **kwargs
+    ) -> pl.DataFrame:
         """Supervise worker processes and collect results.
-        
+
         Args:
             manager: Worker manager
             shared_data: Dictionary of shared memory arrays
             **kwargs: Additional arguments
-            
+
         Returns:
             DataFrame containing simulated summary statistics
         """
         manager.start_workers()
         manager.await_workers()
         beta, alpha, noise = shared_data['beta'], shared_data['alpha'], shared_data['noise']
-        
+
         # Compute scaling parameter to achieve desired heritability
         spec = kwargs['spec']
         h2 = spec.heritability
@@ -310,13 +322,13 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
         scaling_param = np.sqrt(h2 / current_h2) if current_h2 > 0 else 1
         beta *= scaling_param
         alpha *= scaling_param
-        
+
         # Concatenate block annotations and add simulation results
         result = pl.concat([
             df.select(['CHR', 'SNP', 'POS', 'A1', 'A2'])
             for df, _ in block_data
         ])
-        
+
         return result.with_columns([
             pl.Series('Z', noise + np.sqrt(spec.sample_size) * alpha),
             pl.Series('beta', beta),
@@ -325,24 +337,24 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
         ])
 
     def simulate(
-            self,
-            ldgm_metadata_path: str = 'data/ldgms/ldgm_metadata.csv',
-            populations: Optional[Union[str, List[str]]] = 'EUR',
-            chromosomes: Optional[Union[int, List[int]]] = None,
-            run_in_serial: bool = False,
-            num_processes: Optional[int] = None,
-            annotations: Optional[pl.DataFrame] = None,
-            verbose: bool = False,
-            ) -> pl.DataFrame:
+        self,
+        ldgm_metadata_path: str = 'data/ldgms/ldgm_metadata.csv',
+        populations: Optional[Union[str, List[str]]] = 'EUR',
+        chromosomes: Optional[Union[int, List[int]]] = None,
+        run_in_serial: bool = False,
+        num_processes: Optional[int] = None,
+        annotations: Optional[pl.DataFrame] = None,
+        verbose: bool = False,
+    ) -> pl.DataFrame:
         """Simulate genetic data.
-        
+
         Args:
             ldgm_metadata_path: Path to LDGM metadata file
             populations: Population(s) to filter
             chromosomes: Chromosome(s) to filter
             run_in_serial: Whether to run in serial mode
             annotations: Optional variant annotations
-        
+
         Returns:
             Simulated genetic data DataFrame
         """
@@ -353,8 +365,9 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
             chromosomes=chromosomes,
             worker_params=self,  # Use instance itself as spec
             spec=self,
-            annotations=annotations,  
-            ldgm_metadata_path_duplicate=ldgm_metadata_path, # So that it is passed to prepare_block_data
+            annotations=annotations,
+            # Pass path to prepare_block_data
+            ldgm_metadata_path_duplicate=ldgm_metadata_path,
             num_processes=num_processes,
         )
 
@@ -362,7 +375,7 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
             print(f"Number of variants in summary statistics: {len(result)}")
             nonzero_count = (result['beta'] != 0).sum()
             print(f"Number of variants with nonzero beta: {nonzero_count}")
-        
+
         return result
 
 def run_simulate(
@@ -419,7 +432,7 @@ def run_simulate(
         random_seed=random_seed,
         annotation_columns=annotation_columns,
     )
-    
+
     return sim.simulate(
         ldgm_metadata_path=ldgm_metadata_path,
         populations=populations,

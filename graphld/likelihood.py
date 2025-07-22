@@ -1,6 +1,6 @@
 """Functions for computing likelihoods in the LDGM model."""
 
-from typing import Optional, Union, Tuple
+from typing import Optional
 
 import numpy as np
 
@@ -137,4 +137,4 @@ def gaussian_likelihood_hessian(
 
     return hess
 
-    
+

@@ -2,10 +2,6 @@
 
 """Test multiprocessing framework."""
 
-NUM_SOLVES = 1
-NUM_FACTORS = 1
-NUM_PROCESSES = 2
-
 import time
 from multiprocessing import Array
 from pathlib import Path
@@ -14,6 +10,11 @@ import numpy as np
 
 from graphld.io import load_ldgm, read_ldgm_metadata
 from graphld.multiprocessing_template import ParallelProcessor, SharedData, WorkerManager
+
+# Constants
+NUM_SOLVES = 1
+NUM_FACTORS = 1
+NUM_PROCESSES = 2
 
 
 class SolveProcessor(ParallelProcessor):
@@ -51,11 +52,11 @@ class SolveProcessor(ParallelProcessor):
         # Get input vector slice for this block
         vector = shared_data[('input', slice(block_offset, block_offset + ldgm.shape[0]))]
 
-        for i in range(NUM_FACTORS):
+        for _ in range(NUM_FACTORS):
             ldgm.del_factor()
             ldgm.factor()
 
-        for i in range(NUM_SOLVES):
+        for _ in range(NUM_SOLVES):
             solution = ldgm.solve(vector)
 
         # Store solution in shared memory
@@ -92,13 +93,13 @@ def solve_serial(metadata_file, population=None, chromosomes=None, seed=None):
         # Load and factor LDGM
         ldgm = load_ldgm(str(ldgm_path / block['name']))
 
-        for i in range(NUM_FACTORS):
+        for _ in range(NUM_FACTORS):
             ldgm.del_factor()
             ldgm.factor()
 
         # Get input slice and solve - match parallel version exactly
         vector = input_array[block_offset:block_offset + ldgm.shape[0]]
-        for i in range(NUM_SOLVES):
+        for _ in range(NUM_SOLVES):
             solution = ldgm.solve(vector)
 
         # Store solution
