@@ -566,6 +566,22 @@ def read_ldgm_metadata(
         raise ValueError(f"Error reading metadata file: {e}") from e
 
 
+def _get_range_mask(values: np.ndarray, start: np.ndarray, end: np.ndarray) -> np.ndarray:
+    result = np.zeros_like(values, dtype=bool)
+    if len(end) == 0:
+        return result
+    range_idx = 0
+    for i in range(len(values)):
+        while values[i] >= end[range_idx]:
+            range_idx += 1
+            if range_idx == len(end):
+                break
+        if range_idx == len(end):
+            break
+        result[i] = values[i] >= start[range_idx]
+
+    return result
+
 POSITIONS_FILE = 'data/rsid_position.csv'
 def load_annotations(annot_path: str,
                     chromosome: Optional[int] = None,
@@ -698,8 +714,8 @@ def load_annotations(annot_path: str,
 
     # Process BED files if they exist
 
-    # Create a list to store new annotation columns
-    bed_annotations = []
+    # Create a dictionary to store new annotation columns
+    bed_annotations = {}
     for bed_file in bed_files:
         # Get the name for this annotation from the filename
         bed_name = os.path.splitext(os.path.basename(bed_file))[0]
@@ -712,31 +728,26 @@ def load_annotations(annot_path: str,
             pl.col("chrom").str.replace("chr", "").cast(pl.Int64).alias("chrom")
         ])
 
-        # For each chromosome, create a boolean mask for variants within regions
-        mask = pl.Series(name=bed_name, values=[0] * len(annotations))
+        new_annot = np.zeros(len(annotations), dtype=bool)
 
-        # Group BED regions by chromosome for efficiency
-        for chrom_group in bed_df.group_by("chrom"):
-            chrom = chrom_group[0]
-            regions = chrom_group[1]
+        # Group BED regions by chromosome
+        unique_chromosomes = annotations.get_column("CHR").unique()
+        for chrom in unique_chromosomes:
+            chrom_indices = (annotations["CHR"] == chrom).to_numpy()
+            if not chrom_indices.any():
+                continue
+            bed_regions = bed_df.filter(bed_df["chrom"] == chrom).select("chromStart", "chromEnd").to_numpy()
+            positions = annotations.filter(annotations["CHR"] == chrom)["POS"].to_numpy()
+            new_annot[chrom_indices] = _get_range_mask(
+                values=positions,
+                start=bed_regions[:, 0],
+                end=bed_regions[:, 1]
+                )
 
-            # Get variants for this chromosome
-            chrom_mask = (annotations["CHR"] == chrom)
-            chrom_pos = annotations.filter(chrom_mask)["POS"]
-
-            # For each region in this chromosome
-            for region in regions.iter_rows():
-                start = region[1]  # chromStart
-                end = region[2]    # chromEnd
-
-                # Update mask for variants in this region
-                region_mask = (chrom_pos >= start) & (chrom_pos < end)
-                mask = mask.set(chrom_mask & region_mask, 1)
-
-        bed_annotations.append(mask)
+        bed_annotations[bed_name] = new_annot
 
     # Add all BED annotations to the main DataFrame
-    annotations = annotations.with_columns(bed_annotations)
+    annotations = annotations.with_columns(**bed_annotations)
 
     return annotations
 
