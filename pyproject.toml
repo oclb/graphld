@@ -7,19 +7,19 @@ name = "graphld"
 version = "1.1.0"
 description = "Graph-based linkage disequilibrium matrix estimation"
 readme = "README.md"
-requires-python = "~=3.11.0"
+requires-python = ">=3.11.0"
 authors = [
     { name = "Luke O'Connor" }
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Intended Audience :: Science/Research",
 ]
 dependencies = [
-    "numpy",
+    "numpy>=2.2",
     "polars>=1.31.0",
     "scipy>=1.13",
     "scikit-sparse>=0.4.12",
@@ -82,6 +82,7 @@ select = [
     "I",  # isort
     "B",  # flake8-bugbear
 ]
+
 
 [tool.uv]
 package = true

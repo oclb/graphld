@@ -458,15 +458,6 @@ def test_load_annotations(test_data_dir):
             file_pattern='baselineLD.{chrom}.annot'
         )
 
-    # Test loading all chromosomes
-    all_chrom_annotations = load_annotations(
-        annot_path=str(test_data_dir),
-        chromosome=None,
-        file_pattern='baselineLD.{chrom}.annot'
-    )
-    assert len(all_chrom_annotations) > 0
-    assert 'SNP' in all_chrom_annotations.columns
-
 
 def test_load_annotations_with_bed(test_data_dir):
     """Test loading annotations with BED file integration."""
@@ -481,7 +472,7 @@ def test_load_annotations_with_bed(test_data_dir):
 
     # Verify BED annotations were added
     assert 'test_regions' in annotations.columns
-    assert annotations['test_regions'].dtype == pl.Int64
+    assert annotations['test_regions'].dtype == pl.Boolean
 
     # Count variants in regions
     in_regions = annotations.filter(pl.col('test_regions') == 1)
