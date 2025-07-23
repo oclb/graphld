@@ -10,6 +10,8 @@ download_precision:
 	ls -d ldgms/*/ | xargs rmdir
 	chmod +x create_rsid_position.sh
 	./create_rsid_position.sh > rsid_position.csv
+	chmod +x rename_ukbb_files.sh
+	./rename_ukbb_files.sh
 	
 download:
 	curl -L -o - https://zenodo.org/record/8157131/files/AFR.precision.tar.gz | tar -xz -C ldgms
@@ -25,6 +27,8 @@ download:
 	ls -d ldgms/*/ | xargs rmdir
 	chmod +x create_rsid_position.sh
 	./create_rsid_position.sh > rsid_position.csv
+	chmod +x rename_ukbb_files.sh
+	./rename_ukbb_files.sh
 	
 
 download_sumstats:
