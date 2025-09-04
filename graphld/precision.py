@@ -540,7 +540,7 @@ class PrecisionOperator(LinearOperator):
         at https://github.com/eepperly/XTrace/blob/main/code/xdiag.m
 
         Args:
-            v: Matrix of probe vectors (should be Rademacher random variables)
+            v: Matrix of probe vectors
             initialization: Initial values for self.solve(v)
 
         Returns:

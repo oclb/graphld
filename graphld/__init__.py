@@ -1,4 +1,6 @@
-"""GraphLD package for LD-aware genomic analysis."""
+# Globally silence numerical runtime warnings (e.g., divide by zero, invalid value)
+from numpy import seterr
+seterr(divide="ignore", invalid="ignore", over="warn", under="ignore")
 
 from graphld.blup import BLUP, run_blup
 from graphld.clumping import LDClumper, run_clump
