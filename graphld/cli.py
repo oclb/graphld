@@ -15,6 +15,7 @@ from graphld.vcf_io import read_gwas_vcf
 
 from .heritability import MethodOptions, ModelOptions, run_graphREML
 from .io import load_annotations
+from .surrogates import get_surrogate_markers
 
 
 def _construct_cmd_string(args, parser):
@@ -245,17 +246,19 @@ def _surrogates(
     else:
         raise ValueError("Input file must end in .vcf or .sumstats")
 
-    # Run surrogate marker identification
-    surrogates_df = get_surrogate_markers(
+    # Run surrogate marker identification -> writes an HDF5 file and returns its path
+    out_path = get_surrogate_markers(
         metadata_path=metadata,
         nonmissing_variant_ids=sumstats_df,
         population=population,
         run_serial=run_in_serial,
         num_processes=num_processes,
+        output_path=out,
     )
 
-    # Write output
-    surrogates_df.write_csv(out, separator='\t')
+    if not quiet:
+        sys.stdout.write(f"Wrote surrogates to {out_path}\n")
+        sys.stdout.flush()
 
     end_time = time.time()
     if not quiet:
@@ -529,6 +532,7 @@ def _reml(args):
         max_chisq_threshold=args.max_chisq_threshold,
         score_test_hdf5_file_name=args.score_test_filename,
         score_test_hdf5_trait_name=args.name or args.sumstats,
+        surrogate_markers_path=args.surrogates,
     )
 
     # Run GraphREML
@@ -859,6 +863,14 @@ def _add_reml_parser(subparsers):
         help="Only include annotations that are binary (0/1 valued)"
     )
 
+    # Optional path to surrogate markers HDF5 (produced by `graphld surrogates`)
+    parser.add_argument(
+        "--surrogates",
+        type=str,
+        default=None,
+        help="Path to surrogate markers HDF5 file to use during GraphREML"
+    )
+
     parser.set_defaults(func=_reml)
 
 def _main(args):
@@ -879,7 +891,7 @@ def _main(args):
     _add_clump_parser(subp)
 
     # Surrogates command
-    # _add_surrogates_parser(subp)
+    _add_surrogates_parser(subp)
 
     # Genetic simulation command
     _add_simulate_parser(subp)
@@ -937,18 +949,17 @@ def _main(args):
             parsed_args.quiet,
         )
     elif parsed_args.cmd == "surrogates":
-        raise NotImplementedError
-        # return _surrogates(
-        #     sumstats=parsed_args.sumstats,
-        #     out=parsed_args.out,
-        #     metadata=parsed_args.metadata,
-        #     num_processes=parsed_args.num_processes,
-        #     run_in_serial=parsed_args.run_in_serial,
-        #     population=parsed_args.population,
-        #     verbose=parsed_args.verbose,
-        #     quiet=parsed_args.quiet,
-        #     chromosome=parsed_args.chromosome,
-        # )
+        return _surrogates(
+            parsed_args.sumstats,
+            parsed_args.out,
+            parsed_args.metadata,
+            parsed_args.num_processes,
+            parsed_args.run_in_serial,
+            parsed_args.population,
+            parsed_args.verbose,
+            parsed_args.quiet,
+            parsed_args.chromosome,
+        )
     elif parsed_args.cmd == "simulate":
         return _simulate(
             parsed_args.sumstats_out,

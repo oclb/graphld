@@ -149,8 +149,7 @@ def test_reml_basic(metadata_path, create_annotations, create_sumstats):
         annot_dir.mkdir()
         annotations.write_csv(annot_dir / "baselineLD.22.annot", separator='\t')
 
-        _reml(
-            type("Args", (), {
+        args = {
                 "sumstats": str(sumstats_file),
                 "annot_dir": str(annot_dir),
                 "out": str(out_prefix),
@@ -178,7 +177,11 @@ def test_reml_basic(metadata_path, create_annotations, create_sumstats):
                 "annotation_columns": None,
                 "score_test_filename": None,
                 "binary_annotations_only": False,
-            })()
+                "surrogates": None,
+            }
+
+        _reml(
+            type("Args", (), args)()
         )
 
         # Check that output files exist
@@ -186,41 +189,13 @@ def test_reml_basic(metadata_path, create_annotations, create_sumstats):
         assert (out_prefix.with_suffix(".convergence.csv")).exists()
 
         # Also test alt_output format
+        args['alt_output'] = True
         _reml(
-            type("Args", (), {
-                "sumstats": str(sumstats_file),
-                "annot_dir": str(annot_dir),
-                "out": str(out_prefix) + "_alt",
-                "metadata": str(metadata_path),
-                "num_samples": 1000,
-                "name": "test",
-                "intercept": 1.0,
-                "num_iterations": 2,  # Small number for testing
-                "convergence_tol": 0.001,
-                "convergence_window": 2,
-                "run_in_serial": True,
-                "num_processes": None,
-                "verbose": False,
-                "quiet": True,
-                "num_jackknife_blocks": 100,
-                "match_by_position": True,
-                "reset_trust_region": False,
-                "chromosome": None,
-                "population": "EUR",
-                "xtrace_num_samples": 100,
-                "max_chisq_threshold": None,
-                "alt_output": True,  # Test alternative output format
-                "maximum_missingness": 1.0,
-                "variant_stats_output": None,
-                "annotation_columns": None,
-                "score_test_filename": None,
-                "binary_annotations_only": False,
-            })()
+            type("Args", (), args)()
         )
 
         # Check that alt output files exist
-        alt_prefix = Path(str(out_prefix) + "_alt")
-        assert (alt_prefix.with_suffix(".heritability.csv")).exists()
-        assert (alt_prefix.with_suffix(".enrichment.csv")).exists()
-        assert (alt_prefix.with_suffix(".parameters.csv")).exists()
-        assert (alt_prefix.with_suffix(".convergence.csv")).exists()
+        assert (out_prefix.with_suffix(".heritability.csv")).exists()
+        assert (out_prefix.with_suffix(".enrichment.csv")).exists()
+        assert (out_prefix.with_suffix(".parameters.csv")).exists()
+        assert (out_prefix.with_suffix(".convergence.csv")).exists()

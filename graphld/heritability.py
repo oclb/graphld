@@ -87,6 +87,7 @@ class MethodOptions:
         score_test_hdf5_file_name: Optional file name to create or append to an hdf5 file with pre-computed
             derivatives for the score test.
         score_test_hdf5_trait_name: Name of the trait's subdirectory within the score test HDF5 file.
+        surrogate_markers_path: Optional path to an HDF5 file with per-block surrogate mappings.
     """
     gradient_num_samples: int = 100
     gradient_seed: Optional[int] = 123
@@ -109,6 +110,7 @@ class MethodOptions:
     max_chisq_threshold: Optional[float] = None
     score_test_hdf5_file_name: Optional[str] = None
     score_test_hdf5_trait_name: Optional[str] = None
+    surrogate_markers_path: Optional[str] = None
 
     def __post_init__(self):
         if self.score_test_hdf5_file_name is not None:
@@ -157,7 +159,7 @@ def _filter_binary_annotations(annotation_data: pl.DataFrame,
     return filtered_annotation_data, cols_to_keep
 
 
-def _surrogate_marker(ldgm: PrecisionOperator, missing_index: int, candidates: pl.DataFrame) -> int:
+def _surrogate_marker(ldgm: PrecisionOperator, missing_index: int, candidates: pl.DataFrame) -> dict:
     """Find a surrogate marker for a missing variant.
 
     Args:
@@ -166,7 +168,7 @@ def _surrogate_marker(ldgm: PrecisionOperator, missing_index: int, candidates: p
         candidates: Array of candidate variant IDs
 
     Returns:
-        ID of the surrogate marker
+        Dictionary corresponding to a row in the candidates DataFrame, including key 'index'
     """
     indicator = np.zeros(ldgm.shape[0])
     indicator[missing_index] = 1
@@ -262,6 +264,7 @@ class GraphREML(ParallelProcessor):
         """
         sumstats: pl.DataFrame = kwargs.get('sumstats')
         method: MethodOptions = kwargs.get('method')
+        surrogate_h5: Optional[str] = kwargs.get('surrogate_markers_path')
         sumstats_blocks: list[pl.DataFrame] = partition_variants(metadata, sumstats)
         num_block_variants = sum(len(block) for block in sumstats_blocks)
         assert num_block_variants <= sumstats.shape[0], f"Too many variants in blocks: {num_block_variants} > {sumstats.shape[0]}"
@@ -281,13 +284,15 @@ class GraphREML(ParallelProcessor):
         cumulative_num_variants = [0] + list(cumulative_num_variants[:-1])
         block_indices = list(range(len(sumstats_blocks)))
         block_Pz = [None for _ in block_indices]
+        block_names = metadata.get_column('name').to_list() if len(metadata) > 0 else []
 
         return [
             {
                 'sumstats': block,
                 'variant_offset': offset,
                 'block_index': index,
-                'Pz': Pz
+                'Pz': Pz,
+                'block_name': block_names[index] if index < len(block_names) else None,
             }
             for block, offset, index, Pz
             in zip(sumstats_blocks, cumulative_num_variants, block_indices, block_Pz, strict=False)
@@ -321,7 +326,7 @@ class GraphREML(ParallelProcessor):
                                 annot_df: pl.DataFrame,
                                 annotation_columns: List[str],
                                 match_by_position: bool,
-                                verbose: bool = False
+                                verbose: bool = False,
                                 ):
         """Initialize Z-scores for a block by merging variants and computing Pz.
         
@@ -348,20 +353,25 @@ class GraphREML(ParallelProcessor):
             modify_in_place=True
         )
         if verbose:
-            print(f"Number of variants in sumstats before merging: {len(annot_df)}")
-            print(f"Number of variants after merging: {len(ldgm.variant_info)}")
+            print(f"{len(annot_df)} sumstats variants before merging, {len(ldgm.variant_info)} afterward")
             if len(ldgm.variant_info) == 0:
-                print("No variants left after merging annotations and sumstats")
-
+                print(f"No variants left after merging annotations and sumstats")
+        
         variant_info = ldgm.variant_info.with_row_index(name="vi_row_nr")
-        variant_info_nonmissing = variant_info.filter(pl.col('Z').is_not_null()).with_row_index(name="surrogate_nr")
+        variant_info_nonmissing = variant_info.filter(pl.col('Z').is_not_null())\
+            .group_by('index').first()\
+            .with_row_index(name="surrogate_nr")
         variant_info_missing = variant_info.filter(pl.col('Z').is_null())
         indices_arr = np.array(variant_info.get_column('index').to_numpy())
         z_arr = np.array(variant_info.get_column('Z').to_numpy())
+        z_indices = np.full(ldgm.shape[0], fill_value=np.nan)
+        z_indices[variant_info_nonmissing.get_column('index').to_numpy()] = \
+            variant_info_nonmissing.get_column('Z').to_numpy()
         for row in variant_info_missing.to_dicts():
-            surrogate_row = _surrogate_marker(ldgm, row['index'], variant_info_nonmissing)
+            idx = row['index']
+            surrogate_row = _surrogate_marker(ldgm, idx, variant_info_nonmissing)
             indices_arr[row['vi_row_nr']] = surrogate_row['index']
-            z_arr[row['vi_row_nr']] = surrogate_row['Z']
+            z_arr[row['vi_row_nr']] = z_indices[surrogate_row['index']]
 
         ldgm.variant_info = variant_info.with_columns([
             pl.Series('index', indices_arr),
@@ -370,7 +380,7 @@ class GraphREML(ParallelProcessor):
         ]).drop('vi_row_nr')
 
         if verbose:
-            print(f"Number of missing rows assigned surrogates: {len(variant_info_missing)}")
+            print(f"{len(variant_info_missing)} missing rows assigned surrogates")
 
         # Keep only first occurrence of each index for Z-scores
         first_index_mask = variant_info.select(pl.col('index').is_first_distinct()).to_numpy().flatten()
@@ -381,6 +391,23 @@ class GraphREML(ParallelProcessor):
 
         return ldgm, Pz
 
+
+    @staticmethod
+    def _load_block_surrogate_map(surrogate_markers_path: str, block_name: Optional[str]) -> Optional[np.ndarray]:
+        """Load a per-block surrogate mapping from an HDF5 file if available.
+
+        Args:
+            surrogate_markers_path: Path to the surrogate markers HDF5 file
+            block_name: Name of the LD block (dataset key in the HDF5)
+
+        Returns:
+            Numpy array of surrogate indices for this block, or None if unavailable.
+        """
+        with h5py.File(surrogate_markers_path, 'r') as h5:
+            if block_name in h5:
+                return h5[block_name][:]
+            else:
+                raise ValueError(f"Block {block_name} not found in {surrogate_markers_path}")
 
     @staticmethod
     def _compute_block_likelihood(ldgm: PrecisionOperator,
@@ -650,6 +677,15 @@ class GraphREML(ParallelProcessor):
 
         Pz: np.ndarray
         if flag.value == FLAGS['INITIALIZE']:
+            if method_options.surrogate_markers_path is not None:
+                # Replaces existing 'index' column with surrogate indices
+                surrogate_map = cls._load_block_surrogate_map(method_options.surrogate_markers_path, 
+                                                            block_data.get('block_name'))
+                _indices = ldgm.variant_info.get_column('index').to_numpy()
+                ldgm.variant_info = ldgm.variant_info.with_columns([
+                    pl.Series('index', surrogate_map[_indices])
+                ])
+
             ldgm, Pz = cls._initialize_block_zscores(ldgm,
                                                     sumstats,
                                                     model_options.annotation_columns,
@@ -1181,8 +1217,7 @@ def run_graphREML(model_options: ModelOptions,
             method_options.verbose
         )
 
-    if method_options.gradient_seed is not None:
-        np.random.seed(method_options.gradient_seed)
+    np.random.seed(method_options.gradient_seed or 0)
 
     # Merge summary stats with annotations
     merge_how = 'right' if method_options.use_surrogate_markers else 'inner'
