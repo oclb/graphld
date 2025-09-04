@@ -163,8 +163,20 @@ class WorkerManager:
             f.value = flag
 
     def await_workers(self) -> None:
-        """Wait for all workers to finish current task."""
-        while any(flag.value >= 1 for flag in self.flags):
+        """Wait for all workers to finish current task; abort if a worker crashes."""
+        while True:
+            # Kill all workers if any throws an error
+            if any(flag.value == -1 for flag in self.flags):
+                for f in self.flags:
+                    f.value = -1
+                for p in self.processes:
+                    p.join(timeout=0.5)
+                raise RuntimeError("Worker process crashed. Aborting.")
+            
+            # Normal completion
+            if all(flag.value < 1 for flag in self.flags):
+                break
+
             time.sleep(0.01)
 
     def add_process(self, target: Callable, args: Tuple) -> None:
@@ -313,7 +325,12 @@ class ParallelProcessor(ABC):
                 block_offset = offset
                 starting_flag = flag.value
                 for ldgm, data in zip(ldgms, block_data, strict=False):
-                    cls.process_block(ldgm, flag, shared_data, block_offset, data, worker_params)
+                    try:
+                        cls.process_block(ldgm, flag, shared_data, block_offset, data, worker_params)
+                    except Exception:
+                        # Ensure the flag is flipped so the supervisor doesn't spin forever
+                        flag.value = -1
+                        raise
                     block_offset += ldgm.shape[0]
                 assert flag.value == starting_flag, "process_block should not change flag"
                 # Signal completion
