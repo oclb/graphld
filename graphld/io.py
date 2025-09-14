@@ -626,24 +626,21 @@ def load_annotations(annot_path: str,
 
         # Read all matching files for this chromosome
         dfs = []
-        seen_columns = set()
-
+        cols_found = set()
         for file_path in matching_files:
-            df = pl.read_csv(
+            df = pl.scan_csv(
                 file_path,
                 separator='\t',
                 infer_schema_length=infer_schema_length
             )
-
-            # Find and remove any duplicate columns seen in previous files
-            duplicate_cols = set(df.columns).intersection(seen_columns)
-            df = df.drop(list(duplicate_cols))
-            seen_columns.update(df.columns)
+            df = df.select([col for col in df.columns if col not in cols_found])
+            cols_found.update(df.columns)
             dfs.append(df)
 
         # Horizontally concatenate all dataframes for this chromosome
         if dfs:
             combined_df = pl.concat(dfs, how="horizontal")
+            combined_df = combined_df.select(sorted(combined_df.columns))
             annotations.append(combined_df)
 
     # Check if any files were found
@@ -653,7 +650,7 @@ def load_annotations(annot_path: str,
         )
 
     # Concatenate all chromosome dataframes vertically
-    annotations = pl.concat(annotations, how="vertical")
+    annotations = pl.concat(annotations, how="vertical").collect()
 
     # Convert binary columns to boolean to save memory
     numeric_types = (pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.Float32, pl.Float64)

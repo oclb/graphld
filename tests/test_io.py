@@ -539,3 +539,49 @@ chr3    1000    2000
     # Test with invalid max_fields
     with pytest.raises(ValueError, match="BED format has at most 12 fields"):
         read_bed(str(bed_file), max_fields=13)
+
+
+def test_load_annotations_vertical_concat_mismatched_columns(tmp_path):
+    """Regression test: load_annotations should handle differing columns per chromosome.
+
+    Create two minimal annotation files for different chromosomes that have
+    non-overlapping annotation columns so that per-chromosome horizontal
+    concatenation produces DataFrames with different schemas. The final
+    vertical concatenation across chromosomes should succeed by aligning
+    columns and filling missing values with nulls (or appropriate defaults),
+    rather than raising a ShapeError.
+    """
+    # Create chr1 annotations with column tss_bin_1
+    for chrom in range(1,3):
+
+        # Create chr2 annotations with different column Coding_UCSC
+        baseline_path = tmp_path / f"baseline.{chrom}.annot"
+        baseline_content = "\t".join(["SNP", "BP", "CHR", "Coding_UCSC"]) + "\n" \
+            + "\t".join([f"rs{chrom}2", "123", str(chrom), "0"]) + "\n"
+        baseline_path.write_text(baseline_content)
+        
+        custom_path = tmp_path / f"custom.{chrom}.annot"
+        custom_content = "\t".join(["SNP", "BP", "CHR", "tss_bin_1"]) + "\n" \
+            + "\t".join([f"rs{chrom}1", "123", str(chrom), "1"]) + "\n"
+        custom_path.write_text(custom_content)
+
+        custom_thin_path = tmp_path / f"custom_thin.{chrom}.annot"
+        custom_thin_content = "\t".join(["tss_bin_2"]) + "\n" \
+            + "\t".join(["0"]) + "\n"
+        custom_thin_path.write_text(custom_thin_content)
+
+    # Load without adding positions to avoid external positions file dependency
+    df = load_annotations(
+        annot_path=str(tmp_path),
+        add_positions=False,
+    )
+
+    # Should include rows from both chromosomes and both annotation columns
+    assert "tss_bin_1" in df.columns
+    assert "Coding_UCSC" in df.columns
+    # BP should have been renamed to POS when add_positions is False
+    assert "POS" in df.columns and "BP" not in df.columns
+    # Verify we loaded both rows
+    assert set(df["CHR"].to_list()) == {1, 2}
+    print(df.columns)
+    assert set(df.columns) == {"SNP", "POS", "CHR", "Coding_UCSC", "tss_bin_1", "tss_bin_2"}
