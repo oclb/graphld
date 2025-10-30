@@ -7,6 +7,12 @@ import pytest
 from graphld import Simulate
 
 
+# Module-level function for testing workaround 3
+def module_level_link_fn(x: np.ndarray) -> np.ndarray:
+    """Example module-level link function that can be pickled."""
+    return x[:, 0]
+
+
 def test_simulate_with_annotations(metadata_path, create_annotations):
     """Test simulation with variant annotations."""
     # Create simulator with specific settings
@@ -189,3 +195,95 @@ def test_reproducibility(metadata_path, create_annotations):
         result1['Z'].to_numpy(),
         result2['Z'].to_numpy()
     )
+
+
+def test_custom_link_function_pickling_error(metadata_path, create_annotations):
+    """Test that lambda functions cause informative error when using multiprocessing."""
+    # Lambda function that can't be pickled
+    custom_link = lambda x: x[:, 0] + 9 * x[:, 1] if x.shape[1] > 1 else x[:, 0]
+    
+    sim = Simulate(
+        sample_size=100_000,
+        heritability=0.5,
+        component_variance=[1.0],
+        component_weight=[0.3],
+        alpha_param=-1,
+        random_seed=42,
+        link_fn=custom_link,
+        annotation_columns=['af']
+    )
+    
+    annotations = create_annotations(metadata_path, populations="EUR")
+    
+    # This should raise an informative ValueError when trying to use multiprocessing
+    with pytest.raises(ValueError) as exc_info:
+        result = sim.simulate(
+            ldgm_metadata_path=metadata_path,
+            populations="EUR",
+            annotations=annotations,
+            run_in_serial=False  # Force multiprocessing
+        )
+    
+    # Check that it's an informative error message
+    error_msg = str(exc_info.value)
+    assert "picklable" in error_msg.lower()
+    assert "module level" in error_msg.lower() or "run_in_serial" in error_msg.lower()
+
+
+def test_custom_link_function_workaround_serial(metadata_path, create_annotations):
+    """Test workaround 1: Use run_in_serial=True with lambda functions."""
+    # Lambda works fine when run_in_serial=True
+    # Simple link function that just uses allele frequency
+    custom_link = lambda x: x[:, 0]
+    
+    sim = Simulate(
+        sample_size=100_000,
+        heritability=0.5,
+        component_variance=[1.0],
+        component_weight=[0.3],
+        alpha_param=-1,
+        random_seed=42,
+        link_fn=custom_link,
+        annotation_columns=['af']
+    )
+    
+    annotations = create_annotations(metadata_path, populations="EUR")
+    
+    # This should work with run_in_serial=True
+    result = sim.simulate(
+        ldgm_metadata_path=metadata_path,
+        populations="EUR",
+        annotations=annotations,
+        run_in_serial=True  # Avoids multiprocessing
+    )
+    
+    assert len(result) > 0
+    assert 'beta' in result.columns
+
+
+def test_custom_link_function_workaround_module_level(metadata_path, create_annotations):
+    """Test workaround 2: Use a module-level function instead of lambda."""
+    # Module-level functions can be pickled
+    sim = Simulate(
+        sample_size=100_000,
+        heritability=0.5,
+        component_variance=[1.0],
+        component_weight=[0.3],
+        alpha_param=-1,
+        random_seed=42,
+        link_fn=module_level_link_fn,  # Use the module-level function defined at top
+        annotation_columns=['af']
+    )
+    
+    annotations = create_annotations(metadata_path, populations="EUR")
+    
+    # This should work with multiprocessing
+    result = sim.simulate(
+        ldgm_metadata_path=metadata_path,
+        populations="EUR",
+        annotations=annotations,
+        run_in_serial=False
+    )
+    
+    assert len(result) > 0
+    assert 'beta' in result.columns

@@ -241,6 +241,10 @@ sumstats_clumped: pl.DataFrame = gld.run_clump(
 Summary statistics can be simulated from their asymptotic distribution without individual-level genotype data. Effect sizes are drawn from a flexible mixture distribution, with support for annotation-dependent and frequency-dependent architectures. Unlike the [MATLAB implementation](https://github.com/awohns/ldgm/blob/main/MATLAB/simulateSumstats.m), it does not support multiple ancestry groups.
 
 ```python
+# Define a custom link function at module level
+def annot_to_h2(x: np.ndarray) -> np.ndarray:
+    return x[:, 0] + 9 * x[:, 1]  # 10x more h2 for coding vs. noncoding
+
 sumstats: pl.DataFrame = gld.run_simulate(
     sample_size=10000,
     heritability=0.5,
@@ -252,7 +256,11 @@ sumstats: pl.DataFrame = gld.run_simulate(
     link_fn=annot_to_h2,
 )
 ```
-The effect size distribution is a mixture of normal distributions with variances specified by `component_variance` and weights specified by `component_weight`. If weights sum to less than one, remaining variants have no effect. The `alpha_param` parameter controls the frequency-dependent architecture and should normally range between -1 and 1. Annotations can be included; if so, the `link_fn` should be specified, mapping annotations to relative per-variant heritability. For example, if we have the all-ones annotation and a coding annotation, then the link function could be `lambda x: x[:, 0] + 9 * x[:, 1]`, giving 10x more per-variant heritability for coding vs. noncoding variants.
+The effect size distribution is a mixture of normal distributions with variances specified by `component_variance` and weights specified by `component_weight`. If weights sum to less than one, remaining variants have no effect. The `alpha_param` parameter controls the frequency-dependent architecture and should normally range between -1 and 1. 
+
+Annotations can be included; if so, the `link_fn` should be specified, mapping annotations to relative per-variant heritability. For example, if we have the all-ones annotation and a coding annotation, then the link function could map to 10x more per-variant heritability for coding vs. noncoding variants.
+
+Custom `link_fn` functions must be defined at module level (not as lambda functions or nested functions) to work with multiprocessing.
 
 ### Best Linear Unbiased Prediction (BLUP)
 Under the infinitesimal model, with per-s.d. effect sizes $\beta\sim N(0, D)$, the BLUP effect sizes are:

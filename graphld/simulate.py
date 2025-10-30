@@ -34,7 +34,8 @@ class _SimulationSpecification:
         annotation_dependent_polygenicity: If True, use annotations to modify proportion
             of causal variants instead of effect size magnitude
         link_fn: Function mapping annotation vector to relative per-variant heritability.
-            Default is softmax: x -> log(1 + exp(sum(x)))
+            Default is softmax: x -> log(1 + exp(sum(x))). Must be defined at module level
+            (not as lambda or nested function) to work with multiprocessing
         component_random_seed: Random seed for component assignments
         annotation_columns: List of column names to use as annotations. Annotations are
             expected to be in the LDGM variant_info DataFrame
@@ -111,7 +112,7 @@ def _simulate_beta_block(ldgm: PrecisionOperator,
     )
 
     # Compute per-variant heritabilities
-    h2_per_variant = spec.link_fn(annotations)
+    h2_per_variant = spec.link_fn(annotations).copy()  # Ensure writable array
 
     # Calculate allele frequency term
     af_term = 2 * af * (1 - af)
@@ -358,6 +359,19 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
         Returns:
             Simulated genetic data DataFrame
         """
+        # Check if link_fn is picklable when using multiprocessing
+        if not run_in_serial and self.link_fn is not _default_link_fn:
+            import pickle
+            try:
+                pickle.dumps(self.link_fn)
+            except (pickle.PicklingError, AttributeError, TypeError) as e:
+                raise ValueError(
+                    f"link_fn must be picklable to work with multiprocessing. "
+                    f"Lambda functions and nested functions cannot be pickled. "
+                    f"Define your link function at module level or use run_in_serial=True. "
+                    f"Original error: {e}"
+                ) from e
+        
         run_fn = self.run_serial if run_in_serial else self.run
         result = run_fn(
             ldgm_metadata_path=ldgm_metadata_path,
@@ -407,7 +421,8 @@ def run_simulate(
         annotation_dependent_polygenicity: If True, use annotations to modify proportion
             of causal variants instead of effect size magnitude
         link_fn: Function mapping annotation vector to relative per-variant heritability.
-            Default is softmax: x -> log(1 + exp(sum(x)))
+            Default is softmax: x -> log(1 + exp(sum(x))). Must be defined at module level
+            (not as lambda or nested function) to work with multiprocessing
         random_seed: Random seed for reproducibility
         annotation_columns: List of column names to use as annotations
         ldgm_metadata_path: Path to LDGM metadata file
