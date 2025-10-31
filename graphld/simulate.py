@@ -339,7 +339,7 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
 
     def simulate(
         self,
-        ldgm_metadata_path: str = 'data/ldgms/ldgm_metadata.csv',
+        ldgm_metadata_path: str = 'data/ldgms/metadata.csv',
         populations: Optional[Union[str, List[str]]] = 'EUR',
         chromosomes: Optional[Union[int, List[int]]] = None,
         run_in_serial: bool = False,
@@ -402,7 +402,7 @@ def run_simulate(
     link_fn: Callable[[np.ndarray], np.ndarray] = _default_link_fn,
     random_seed: Optional[int] = None,
     annotation_columns: Optional[List[str]] = None,
-    ldgm_metadata_path: str = 'data/ldgms/ldgm_metadata.csv',
+    ldgm_metadata_path: str = 'data/ldgms/metadata.csv',
     populations: Optional[Union[str, List[str]]] = 'EUR',
     chromosomes: Optional[Union[int, List[int]]] = None,
     run_in_serial: bool = False,
