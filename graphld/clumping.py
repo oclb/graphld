@@ -170,7 +170,7 @@ class LDClumper(ParallelProcessor):
     @classmethod
     def clump(cls,
             sumstats: pl.DataFrame,
-            ldgm_metadata_path: str = 'data/ldgms/ldgm_metadata.csv',
+            ldgm_metadata_path: str = 'data/ldgms/metadata.csv',
             rsq_threshold: float = 0.1,
             chisq_threshold: float = 30.0,
             populations: Optional[Union[str, List[str]]] = None,
@@ -186,7 +186,7 @@ class LDClumper(ParallelProcessor):
         
         Args:
             sumstats: Summary statistics DataFrame containing Z scores
-            ldgm_metadata_path: Path to metadata CSV file (default 'data/ldgms/ldgm_metadata.csv')
+            ldgm_metadata_path: Path to metadata CSV file (default 'data/ldgms/metadata.csv')
             rsq_threshold: r² threshold for clumping (default 0.1)
             chisq_threshold: χ² threshold for significance (default 30.0)
             populations: Optional population name(s)
