@@ -174,16 +174,16 @@ def test_score_test(metadata_path, create_annotations, create_sumstats):
 
     try:
         # Import the necessary functions from score_test
-        from graphld.score_test import _load_trait_data, _load_variant_data, run_score_test
+        from graphld.score_test import load_trait_data, load_variant_data, run_score_test
 
         # Load data from files
-        variant_data = _load_variant_data(variant_stats_path)
-        trait_data = _load_trait_data(variant_stats_path, trait_name='test')
-        variant_data['gradient'] = trait_data['gradient']
-        variant_data['hessian'] = trait_data['hessian']
-        variant_data['jackknife_blocks'] = trait_data['jackknife_blocks']
-        df_snp = pl.DataFrame(variant_data)
-        data = _load_trait_data(variant_stats_path, trait_name='test')
+        variant_data = load_variant_data(variant_stats_path)
+        trait_data = load_trait_data(variant_stats_path, trait_name='test')
+        df_snp = variant_data.with_columns(
+            pl.Series(name='gradient', values=trait_data['gradient']),
+            pl.Series(name='hessian', values=trait_data['hessian']),
+        )
+        data = load_trait_data(variant_stats_path, trait_name='test')
         params = data['parameters']
         jackknife_params = data['jackknife_parameters']
 
@@ -203,7 +203,9 @@ def test_score_test(metadata_path, create_annotations, create_sumstats):
             df_annot=annotations,
             params=params,
             jk_params=jackknife_params,
-            annot_test_list=[test_annot_name]
+            annot_test_list=[test_annot_name],
+            left_key='POS',
+            right_key='POS'
         )
 
         # Verify the result
