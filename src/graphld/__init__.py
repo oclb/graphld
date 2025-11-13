@@ -14,12 +14,10 @@ from graphld.likelihood import (
 from graphld.multiprocessing_template import ParallelProcessor, SharedData, WorkerManager
 from graphld.precision import PrecisionOperator
 from graphld.heritability import MethodOptions, ModelOptions, run_graphREML
-from graphld.score_test import run_score_test
 from graphld.simulate import Simulate, run_simulate
 from graphld.vcf_io import read_gwas_vcf
 
 __all__ = [
-    'run_score_test',
     'load_ldgm',
     'read_ldgm_metadata',
     'load_annotations',
