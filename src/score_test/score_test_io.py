@@ -142,11 +142,14 @@ def load_variant_annotations(annot_dir: str, annot_names: list[str] | None = Non
     """
     df_annot = load_annotations(annot_dir, add_positions=False)
     
+    # Note: load_annotations with add_positions=False renames BP to POS
+    exclude_cols = ['CHR', 'BP', 'POS', 'SNP', 'CM']
+    
     if annot_names:
-        available = [col for col in df_annot.columns if col not in ['CHR', 'BP', 'SNP', 'CM']]
+        available = [col for col in df_annot.columns if col not in exclude_cols]
         annot_names = [name for name in annot_names if name in available]
     else:
-        annot_names = [col for col in df_annot.columns if col not in ['CHR', 'BP', 'SNP', 'CM']]
+        annot_names = [col for col in df_annot.columns if col not in exclude_cols]
     
     return df_annot, annot_names
 

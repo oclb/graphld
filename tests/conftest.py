@@ -1,8 +1,12 @@
 """Shared test fixtures for graphld."""
 
 import os
+import sys
 from pathlib import Path
 from typing import List, Optional, Union
+
+# Add src to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import numpy as np
 import polars as pl

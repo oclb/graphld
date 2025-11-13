@@ -17,7 +17,7 @@ from .multiprocessing_template import ParallelProcessor, SharedData, WorkerManag
 from .precision import PrecisionOperator
 
 CHUNK_SIZE = 1000
-
+SPECIAL_COLNAMES = ['SNP', 'CHR', 'POS']
 FLAGS = {
     'ERROR': -2,
     'SHUTDOWN': -1,
@@ -116,6 +116,7 @@ class MethodOptions:
         if self.score_test_hdf5_file_name is not None:
             if self.score_test_hdf5_trait_name is None:
                 raise ValueError("score_test_hdf5_trait_name must be specified if score_test_hdf5_file_name is specified.")
+            self.score_test_hdf5_trait_name = self.score_test_hdf5_trait_name.replace('/', '_')
             if not self.use_surrogate_markers:
                 raise ValueError("use_surrogate_markers must be True if score_test_hdf5_file_name is specified.")
             if self.match_by_position:
@@ -564,7 +565,10 @@ class GraphREML(ParallelProcessor):
             dataset[current_size:] = data
 
     @classmethod
-    def _write_variant_data(cls, hdf5_filename: str, variant_data: pl.DataFrame, annotations: np.ndarray) -> bool:
+    def _write_variant_data(cls, hdf5_filename: str, 
+                            variant_data: pl.DataFrame, 
+                            annotations: np.ndarray, 
+                            jackknife_variant_assignments: np.ndarray) -> bool:
         """Checks if the file already contains a 'variants' group. 
         If not, creates it and writes variant information to it.
         
@@ -572,6 +576,7 @@ class GraphREML(ParallelProcessor):
             hdf5_filename: The name of the HDF5 file to write to.
             variant_data: Variant data to write to the 'variants' group.
             annotations: Annotations to write to the 'variants' group.
+            jackknife_variant_assignments: Jackknife variant assignments to write to the 'variants' group.
 
         Returns:
             bool: True if the 'variants' group was created, False otherwise.
@@ -589,6 +594,10 @@ class GraphREML(ParallelProcessor):
                                             compression=VARIANT_INFO_COMPRESSION_TYPE,
                                             chunks=(CHUNK_SIZE, annotations.shape[1]),
                                             )
+                variants_group.create_dataset('CHR',
+                                            data=variant_data.select('CHR').to_numpy(),
+                                            compression=VARIANT_INFO_COMPRESSION_TYPE,
+                                            )
                 variants_group.create_dataset('POS',
                                             data=variant_data.select('POS').to_numpy(),
                                             compression=VARIANT_INFO_COMPRESSION_TYPE,
@@ -597,6 +606,10 @@ class GraphREML(ParallelProcessor):
                                             data=variant_data.select('SNP').to_numpy(),
                                             compression=VARIANT_INFO_COMPRESSION_TYPE,
                                             dtype=h5py.special_dtype(vlen=str),
+                                            )
+                variants_group.create_dataset('jackknife_blocks',
+                                            data=jackknife_variant_assignments,
+                                            compression=VARIANT_INFO_COMPRESSION_TYPE,
                                             )
 
         return True
@@ -609,7 +622,6 @@ class GraphREML(ParallelProcessor):
         jackknife_parameters: np.ndarray,
         score: np.ndarray,
         hessian: np.ndarray,
-        jackknife_blocks: np.ndarray,
     ) -> None:
         """Create the 'trait_stats' group and write trait statistics to it.
         
@@ -638,12 +650,6 @@ class GraphREML(ParallelProcessor):
 
                 group.create_dataset('hessian',
                             data=hessian,
-                            compression=VARIANT_INFO_COMPRESSION_TYPE,
-                            chunks=(CHUNK_SIZE,),
-                            )
-
-                group.create_dataset('jackknife_blocks',
-                            data=jackknife_blocks,
                             compression=VARIANT_INFO_COMPRESSION_TYPE,
                             chunks=(CHUNK_SIZE,),
                             )
@@ -973,7 +979,7 @@ class GraphREML(ParallelProcessor):
 
         # if model.params is not None:
         #     shared_data['params'] = model.params
-        shared_data['params', 0] = -10 # Leave this for now
+        shared_data['params'] = np.full(num_params, 0) # Leave this for now
 
         last_step_bad = True
         for rep in range(num_iterations):
@@ -1061,7 +1067,7 @@ class GraphREML(ParallelProcessor):
         # Point estimates
         variant_h2 = shared_data['variant_data'].copy()
         annotations = pl.concat([
-            dict['sumstats'].select(model.annotation_columns + ['SNP', 'POS'])
+            dict['sumstats'].select(model.annotation_columns + SPECIAL_COLNAMES)
             for dict in block_data
             if len(dict['sumstats']) > 0
             ]
@@ -1106,16 +1112,16 @@ class GraphREML(ParallelProcessor):
             _project_out(variant_score, annotations_matrix)
 
             cls._write_variant_data(method.score_test_hdf5_file_name,
-                                    annotations.select('SNP', 'POS'),
+                                    annotations.select(SPECIAL_COLNAMES),
                                     annotations_matrix,
+                                    jackknife_variant_assignments
                                     )
 
             cls._write_trait_stats(method,
                                     params,
                                     jackknife_params,
                                     variant_score,
-                                    variant_hessian,
-                                    jackknife_variant_assignments)
+                                    variant_hessian)
 
         # Compute standard errors using jackknife formula: SE = sqrt((n-1) * var(estimates))
         n_blocks = jackknife_params.shape[0]
