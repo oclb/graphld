@@ -25,6 +25,7 @@ dependencies = [
     "scikit-sparse>=0.4.12",
     "h5py>=3.13.0",
     "filelock>=3.18.0",
+    "click>=8.2.1",
 ]
 
 
@@ -45,6 +46,7 @@ Repository = "https://github.com/oclb/graphld"
 [project.scripts]
 graphld = "graphld.cli:main"
 estest = "graphld.score_test:main"
+create-geneset-annot = "graphld.genesets:create_variant_annot"
 
 [tool.setuptools]
 packages = ["graphld"]
