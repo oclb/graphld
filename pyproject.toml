@@ -45,11 +45,11 @@ Repository = "https://github.com/oclb/graphld"
 
 [project.scripts]
 graphld = "graphld.cli:main"
-estest = "graphld.score_test:main"
-create-geneset-annot = "graphld.genesets:create_variant_annot"
+estest = "score_test.score_test:main"
+create-geneset-annot = "score_test.genesets:create_variant_annot"
 
 [tool.setuptools]
-packages = ["graphld"]
+packages = {find = {where = ["src"]}}
 
 [tool.pytest.ini_options]
 minversion = "7.4.0"
@@ -60,7 +60,7 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 
 [tool.coverage.run]
-source = ["graphld"]
+source = ["src/graphld", "src/score_test"]
 omit = ["tests/*"]
 
 [tool.coverage.report]
