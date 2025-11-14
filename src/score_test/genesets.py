@@ -1,9 +1,12 @@
 import numpy as np
 import polars as pl
-import click
 from scipy.sparse import csr_matrix
 
-from score_test_io import load_variant_data
+# Handle imports when running either as a script or as a package
+try:
+    from .score_test_io import load_variant_data
+except ImportError:
+    from score_test_io import load_variant_data
 
 POSITION_SCALE = 1e9  # Scale factor for chromosome positions
 

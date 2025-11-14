@@ -174,7 +174,8 @@ def test_score_test(metadata_path, create_annotations, create_sumstats):
 
     try:
         # Import the necessary functions from score_test
-        from graphld.score_test import load_trait_data, load_variant_data, run_score_test
+        from score_test.score_test_io import load_trait_data, load_variant_data
+        from score_test.score_test import run_score_test
 
         # Load data from files
         variant_data = load_variant_data(variant_stats_path)
@@ -198,21 +199,20 @@ def test_score_test(metadata_path, create_annotations, create_sumstats):
         )
 
         # Run the score test with the loaded dataframes
-        result: np.ndarray = run_score_test(
+        point_estimates, jackknife_estimates = run_score_test(
             df_snp=df_snp,
             df_annot=annotations,
             params=params,
             jk_params=jackknife_params,
             annot_test_list=[test_annot_name],
-            left_key='POS',
-            right_key='POS'
         )
 
-        # Verify the result
-        assert result is not None
+        # Verify the results
+        assert point_estimates is not None
+        assert jackknife_estimates is not None
 
         # Check the values are reasonable
-        assert np.any(result != 0)
+        assert np.any(point_estimates != 0)
 
     finally:
         # Clean up the variant statistics file

@@ -155,7 +155,7 @@ def load_variant_annotations(annot_dir: str, annot_names: list[str] | None = Non
 
 
 def load_gene_annotations(gene_annot_dir: str, variant_data: pl.DataFrame, gene_table_path: str, 
-                         nearest_weights: np.ndarray) -> Tuple[pl.DataFrame, List[str]]:
+                         nearest_weights: np.ndarray, annot_names: list[str] | None = None) -> Tuple[pl.DataFrame, List[str]]:
     """Load gene-level annotations and convert to variant-level.
     
     Args:
@@ -163,16 +163,27 @@ def load_gene_annotations(gene_annot_dir: str, variant_data: pl.DataFrame, gene_
         variant_data: Variant data DataFrame
         gene_table_path: Path to gene table TSV file
         nearest_weights: Weights for k-nearest genes
+        annot_names: Optional list of specific annotation names to load
         
     Returns:
         Tuple of (variant_annotations_df, annotation_column_names)
     """
-    from genesets import (load_gene_table, load_gene_sets_from_gmt, 
-                          convert_gene_sets_to_variant_annotations)
+
+    # Handle imports when running either as a script or as a package
+    try:
+        from .genesets import (load_gene_table, load_gene_sets_from_gmt, 
+                              convert_gene_sets_to_variant_annotations)
+    except ImportError:
+        from genesets import (load_gene_table, load_gene_sets_from_gmt, 
+                              convert_gene_sets_to_variant_annotations)
     
     chromosomes = variant_data['CHR'].unique().sort().to_list()
     gene_table = load_gene_table(gene_table_path, chromosomes)
     gene_sets = load_gene_sets_from_gmt(gene_annot_dir)
+    
+    if annot_names:
+        gene_sets = {name: genes for name, genes in gene_sets.items() if name in annot_names}
+    
     df_annot = convert_gene_sets_to_variant_annotations(
         gene_sets, variant_data, gene_table, nearest_weights
     )
@@ -194,7 +205,10 @@ def create_random_gene_annotations(variant_data: pl.DataFrame, gene_table_path: 
     Returns:
         Tuple of (variant_annotations_df, annotation_column_names)
     """
-    from genesets import (load_gene_table, convert_gene_sets_to_variant_annotations)
+    try:
+        from .genesets import (load_gene_table, convert_gene_sets_to_variant_annotations)
+    except ImportError:
+        from genesets import (load_gene_table, convert_gene_sets_to_variant_annotations)
     
     chromosomes = variant_data['CHR'].unique().sort().to_list()
     gene_table = load_gene_table(gene_table_path, chromosomes)

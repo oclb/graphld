@@ -1,16 +1,12 @@
 """Tests for genesets module."""
 
-import sys
 from pathlib import Path
-
-# Add src/score_test to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "src" / "score_test"))
 
 import numpy as np
 import polars as pl
 import pytest
 
-from genesets import (
+from score_test.genesets import (
     load_gene_table,
     load_gene_sets_from_gmt,
     convert_gene_sets_to_variant_annotations,

@@ -1,21 +1,13 @@
 """Tests for score_test_io module."""
 
-import os
-import tempfile
 from pathlib import Path
-
-import sys
-from pathlib import Path
-
-# Add src/score_test to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "src" / "score_test"))
 
 import h5py
 import numpy as np
 import polars as pl
 import pytest
 
-from score_test_io import (
+from score_test.score_test_io import (
     load_variant_data,
     load_trait_data,
     load_annotations,

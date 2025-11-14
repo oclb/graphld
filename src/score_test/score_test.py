@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.10"
 # dependencies = [
@@ -24,14 +24,25 @@ import h5py
 import numpy as np
 import polars as pl
 
-from score_test_io import (
-    load_variant_data,
-    load_trait_data,
-    load_variant_annotations,
-    load_gene_annotations,
-    create_random_gene_annotations,
-    create_random_variant_annotations,
-)
+# Handle imports when running either as a script or as a package
+try:
+    from .score_test_io import (
+        load_variant_data,
+        load_trait_data,
+        load_variant_annotations,
+        load_gene_annotations,
+        create_random_gene_annotations,
+        create_random_variant_annotations,
+    )
+except ImportError:
+    from score_test_io import (
+        load_variant_data,
+        load_trait_data,
+        load_variant_annotations,
+        load_gene_annotations,
+        create_random_gene_annotations,
+        create_random_variant_annotations,
+    )
 
 
 def _get_block_boundaries(blocks: np.ndarray) -> np.ndarray:
@@ -124,7 +135,7 @@ def run_score_test(df_snp: pl.DataFrame,
 
 def _setup_logging(output_fp: str | None, verbose: bool):
     """Set up logging configuration."""
-    log_format = '%(asctime)s %(levelname)s %(module)s - %(funcName)s: %(message)s'
+    log_format = '%(levelname)s %(module)s - %(funcName)s: %(message)s'
     date_format = '%Y-%m-%d %H:%M:%S'
 
     handlers = []
@@ -144,10 +155,9 @@ def _setup_logging(output_fp: str | None, verbose: bool):
     )
 
 
-@click.command()
+@click.command(context_settings={'help_option_names': ['-h', '--help']})
 @click.argument('variant_stats_hdf5', type=click.Path(exists=True))
-@click.option('-o', '--output', 'output_fp', default=None,
-              help="Output file path prefix (e.g., 'results/my_test'). '.txt' and '.log' will be appended.")
+@click.argument('output_fp', required=False, default=None)
 @click.option('-a', '--variant-annot-dir', 'variant_annot_dir', type=click.Path(exists=True),
               help="Directory containing variant-level annotation files (.annot).")
 @click.option('-g', '--gene-annot-dir', 'gene_annot_dir', type=click.Path(exists=True),
@@ -158,7 +168,7 @@ def _setup_logging(output_fp: str | None, verbose: bool):
               help="Comma-separated probabilities (0-1) for random variant-level annotations (e.g., '0.1,0.01').")
 @click.option('--gene-table', default='data/genes.tsv', type=click.Path(exists=True),
               help="Path to gene table TSV file (required for gene-level options).")
-@click.option('--nearest-weights', default='0.5,0.2,0.1,0.1,0.1',
+@click.option('--nearest-weights', default='0.4,0.2,0.1,0.1,0.1,0.05,0.05',
               help="Comma-separated weights for k-nearest genes (for gene-level options).")
 @click.option('--annotations',
               help="Optional comma-separated list of specific annotation names to test.")
@@ -173,6 +183,8 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
     """Run score test for annotation enrichment."""
     
     _setup_logging(output_fp, verbose)
+    logging.info(f"{time.strftime('%Y-%m-%d %H:%M:%S')}")
+    logging.info(f"Command: {' '.join(sys.argv)}")
     start_time = time.time()
 
     # Set random seed if provided
@@ -193,41 +205,37 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
     annot_names_filter = [a.strip() for a in annotations.split(',')] if annotations else None
 
     # Load variant data
-    logging.info(f"Loading variant data from {variant_stats_hdf5}")
     variant_data = load_variant_data(variant_stats_hdf5)
-    logging.info(f"Loaded {len(variant_data)} variants")
+    logging.info(f"Loaded {len(variant_data)} variants from {variant_stats_hdf5}")
     
     # Load annotations based on source type
     weights = np.array([float(w) for w in nearest_weights.split(',')], dtype=np.float64)
     
     if variant_annot_dir:
-        logging.info(f"Loading variant annotations from {variant_annot_dir}")
         df_annot, annot_names = load_variant_annotations(variant_annot_dir, annot_names_filter)
+        logging.info(f"Loaded {len(annot_names)} variant annotations from {variant_annot_dir}")
     elif gene_annot_dir:
-        logging.info(f"Loading gene annotations from {gene_annot_dir}")
         df_annot, annot_names = load_gene_annotations(
-            gene_annot_dir, variant_data, gene_table, weights
+            gene_annot_dir, variant_data, gene_table, weights, annot_names_filter
         )
+        logging.info(f"Loaded {len(annot_names)} gene annotations from {gene_annot_dir}")
     elif random_genes:
-        logging.info(f"Creating random gene annotations with probabilities: {random_genes}")
         probs = _parse_probs(random_genes)
         df_annot, annot_names = create_random_gene_annotations(
             variant_data, gene_table, weights, probs
         )
+        logging.info(f"Created {len(annot_names)} random gene annotations")
     else:  # random_variants
-        logging.info(f"Creating random variant annotations with probabilities: {random_variants}")
         probs = _parse_probs(random_variants)
         df_annot, annot_names = create_random_variant_annotations(
             variant_data, probs
         )
-    
-    logging.info(f"Testing {len(annot_names)} annotation(s): {', '.join(annot_names)}")
+        logging.info(f"Created {len(annot_names)} random variant annotations")
     
     with h5py.File(variant_stats_hdf5, 'r') as f:
         trait_names = [trait_name] if trait_name else list(f['traits'].keys())
     
     logging.info(f"Processing {len(trait_names)} trait(s)")
-    run_meta_analysis = len(trait_names) > 1 and 'meta_analysis' not in trait_names
 
     # Run the score test
     results_dict = {'annotation' : annot_names}
@@ -256,20 +264,18 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
         n = jackknife_estimates.shape[0] - 1
         z_scores = point_estimates.ravel() / std_dev / np.sqrt(n)
         results_dict[trait] = z_scores
-
+    
+    run_meta_analysis = len(trait_names) > 1 and 'meta_analysis' not in trait_names
     if run_meta_analysis:
-        logging.info("Computing meta-analysis across traits")
         std_dev = np.std(summed_jackknife_scores, axis=0)
         n = summed_jackknife_scores.shape[0] - 1
         results_dict['meta_analysis'] = summed_scores.ravel() / std_dev / np.sqrt(n)
 
     results_df = pl.DataFrame(results_dict)
     
-    # Print results to console if no output file or verbose mode
-    if not output_fp or verbose:
+    if verbose or not output_fp:
         print(results_df)
 
-    # Write results to file if output path provided
     if output_fp:
         results_df.write_csv(output_fp + ".txt", separator='\t')
         logging.info(f'Results written to {output_fp}.txt')

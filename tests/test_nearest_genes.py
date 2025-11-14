@@ -1,19 +1,8 @@
-import importlib.util
-import pathlib
-from typing import Callable
-
 import numpy as np
+from score_test.genesets import get_nearest_genes
 
-# TODO
-def _load_get_nearest_genes() -> Callable:
-    # Load scoretest/nearest_genes.py as a module and return get_nearest_genes
-    repo_root = pathlib.Path(__file__).resolve().parents[1]
-    mod_path = repo_root / "scoretest" / "nearest_genes.py"
-    spec = importlib.util.spec_from_file_location("nearest_genes", mod_path)
-    assert spec and spec.loader, f"Could not load module from {mod_path}"
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # type: ignore[attr-defined]
-    return getattr(mod, "get_nearest_genes")
+def _load_get_nearest_genes():
+    return get_nearest_genes
 
 
 def _brute_force_nearest(var_pos: np.ndarray, gene_pos: np.ndarray, k: int) -> np.ndarray:
