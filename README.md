@@ -17,13 +17,16 @@ It also provides very fast utilities for simulating GWAS summary statistics and 
 
 ## Installation
 
-Required system dependencies:
-- [SuiteSparse](https://github.com/DrTimothyAldenDavis/SuiteSparse) (for CHOLMOD): On Mac, install with `brew install suitesparse`. SuiteSparse is wrapped in [scikit-sparse](https://scikit-sparse.readthedocs.io/en/latest/).
-- IntelMKL (for Intel chips): The performance of SuiteSparse is significantly improved by using IntelMKL instead of OpenBLAS, which will likely be the default. See Giulio Genovese's documentation [here](https://github.com/freeseek/score?tab=readme-ov-file#intel-mkl).
+`graphld` and `reml` require [SuiteSparse](https://github.com/DrTimothyAldenDavis/SuiteSparse). On Mac, install with `brew install suitesparse`. SuiteSparse is wrapped in [scikit-sparse](https://scikit-sparse.readthedocs.io/en/latest/). For users with Intel chips, it his highly recommended to install IntelMKL, which can produce a 100x speedup with SuiteSparse vs. OpenBLAS, which is likely your default BLAS library. See Giulio Genovese's documentation [here](https://github.com/freeseek/score?tab=readme-ov-file#intel-mkl).
 
-If you are only using the [heritability enrichment score test](#enrichment-score-test), nothing needs to be installed. Clone the package and run the source file as a standalone script: `uv run graphld/score_test.py --help`.
+If you are only using the [heritability enrichment score test](#enrichment-score-test), no installation is needed; you can run the source file as a standalone script. With `uv` installed, run `uv run src/score_test/score_test.py --help`, or:
 
-### Using uv (recommended)
+```bash
+chmod +x src/score_test/score_test.py
+./src/score_test/score_test.py --help
+```
+
+### Installing with uv (recommended)
 
 In the repo directory:
 ```bash
@@ -108,26 +111,62 @@ If some variants are missing from your GWAS summary statistics, graphREML automa
 
 ### Enrichment Score Test
 
-The enrichment score test is a fast way to test a large number of genomic annotations for heritability enrichment conditional upon some null model. It produces Z statistics, but not point estimates. It requires precomputed derivatives (first and second derivatives of the log-likelihood for each variant). Run graphREML as described above with whatever annotations you wish to include in the null model (i.e., not the ones being tested), and supply the `--score-test-filename` flag to create a file containing pre-computed derivatives. The file also includes all the annotations in the null model, which will make it somewhat large (>1GB). Data for multiple traits can be added to the same file, but they must share the same annotations.
+The enrichment score test is a fast way to test a large number of genomic or gene annotations for heritability enrichment conditional upon some null model. It supports annotations in the following formats:
+- [LDSC `.annot` files](#ldsc-format-annotations-annot) containing variant annotations
+- [UCSC `.bed` files](#bed-format-annotations-bed) containing genomic regions
+- [Gene matrix transposed (`.gmt`) files](#gmt-format-annotations-gmt) including either gene symbols or gene IDs.
 
-To perform the score test:
+The test produces Z scores, but not point estimates; a positive score indicates an enrichment, a negative score depletion. These enrichments are conditional upon the null model, similar to the `tau` parameter in `S-LDSC`. You will need a file containing precomputed derivatives for each trait that is being tested. This can be downloaded from Zenodo via the Makefile, or you can run graphREML as described above and supply the `--score-test-filename` flag. The file also includes all the annotations in the null model, which will make it somewhat large (>1GB). Data for multiple traits can be added to the same file, but they must share the same annotations.
+
+Running the test on a set of genes requires a file containing the position of each gene, and such a file is provided in [data/genes.tsv](https://github.com/awohns/graphREML/blob/main/data/genes.tsv). If you do not move this file, then the script will find it automatically. The gene-level annotation will be converted into a variant-level annotation using variant-to-gene proximity and the weights specified with the `--nearest-weights` flag. The default weights are `0.4,0.2,0.1,0.1,0.1,.05,.05`: a variant gets an annotation value of `0.4` if its closest gene belongs to the gene set, `0.2` if its second-closest gene belongs to the gene set, and so on. This approach is based on the [Abstract Mediation Model](https://pubmed.ncbi.nlm.nih.gov/35143757/). Only binary gene annotations are supported.
+
+You can also create random annotations with the `--random-variants` and `--random-genes` flags. If you have created your own scores, you are encouraged to use this feature to verify that the test statistics are calibrated under the null.
+
+Usage:
 
 ```bash
 uv run estest \
     path/to/precomputed/derivatives.h5 \
     path/to/output/file/prefix \
-    -a /directory/containing/annotation/files/to/test \
+    --variant-annot-dir /directory/containing/dot-annot/files/ \
+
+uv run estest \
+    path/to/precomputed/derivatives.h5 \
+    path/to/output/file/prefix \
+    --variant-annot-dir /directory/containing/dot-bed/files/ \
+
+uv run estest \
+    path/to/precomputed/derivatives.h5 \
+    path/to/output/file/prefix \
+    --gene-annot-dir /directory/containing/gmt/files/ \
+
+# Create random variant annotations with 10%, 20%, and 30% variants
+uv run estest \
+    path/to/precomputed/derivatives.h5 \
+    path/to/output/file/prefix \
+    --random-variants 0.1,0.2,0.3 \ 
+
+# Create random gene annotations with 10%, 20%, and 30% genes
+uv run estest \
+    path/to/precomputed/derivatives.h5 \
+    path/to/output/file/prefix \
+    --random-genes 0.1,0.2,0.3 \
+
 ```
 
-Alternatively, use `uv run graphld/score_test.py` with the same arguments. All of the dependencies for this script are included as script dependencies, so there should be no installation needed. 
+Alternatively, use `uv run src/score_test/score_test.py` with the same arguments.
 
-A file will be saved called `output_prefix.txt` containing one row per annotation and one column per trait, plus a column named `meta_analysis`. Each entry is a Z score, where a positive value indicates that an annotation is enriched for heritability conditional upon the null model (i.e., that it has a positive value of `tau`)..
+A file will be saved called `output_prefix.txt` containing one row per annotation and one column per trait, plus one additional column named `meta_analysis` (if there is >1 trait). Each entry is a Z score.
 
-Optional arguments:
--   `-a`, `--annotations_dir`: Directory containing the new annotation files (in `.annot` format; see above) that you want to test for enrichment.  Optionally, include UCSC `.bed` files (one for the whole genome). Default: "data/annotations/", which is populated by the Makefile.
--   `--annotations`: Optional comma-separated list with a subset of annotation names to be tested (header names in the `.annot` files).
--   `--trait_name`: Optional name of a single trait to be tested (specified with `--name` in the `graphld reml` run). If unspecified, all traits are tested and a meta-analysis is performed.
-- `--add-random `: Optional comma-separated list of numbers between 0 and 1; for each entry, a random annotation will be created and tested with proportion of variants equal to the number specified. You can use this to validate that the test produces correctly calibrated Z scores.
+Additional optional arguments:
+-   `--annotations` TEXT:  comma-separated list with a subset of annotation names to be tested (header names in the `.annot` files).
+-   `--trait_name` TEXT:  name of a single trait to be tested (specified with `--name` in the `graphld reml` run). If unspecified, all traits are tested and a meta-analysis is performed.
+- `--nearest-weights` TEXT: comma-separated list of weights for variant-to-gene proximity (default: `0.4,0.2,0.1,0.1,0.1,.05,.05`).
+- `--name`, `-n` TEXT: Specific trait name to process from HDF5 file. If omitted, all traits are processed.
+- `--seed` INTEGER: seed for random number generator, used for creating random annotations.
+- `--gene-table` PATH: gene table TSV file (required for gene-level options), default: `data/genes.tsv`.
+- `--verbose`, `-v`
+- `--help`, `-h`
 
 ## API
 
@@ -212,9 +251,12 @@ for ldgm in merged_ldgms:
 The likelihood of GWAS summary statistics under an infinitesimal model is:
 
 $$\beta \sim N(0, D)$$
+
 $$z|\beta \sim N(n^{1/2}R\beta, R)$$
-where $\beta$ is the effect-size vector in s.d-per-s.d. units, $D$ is a diagonal matrix of per-variant heritabilities, $z$ is the GWAS summary statistic vector, $R$ is the LD correlation matrix, and $n$ is the sample size. Our likelihood functions operate on  precision-premultiplied GWAS summary statistics: 
-$$pz = n^{-1/2} R^{-1}z \sim N(0, M), M = D + n^{-1}R^{-1}.$$ 
+
+where $\beta$ is the effect-size vector in s.d-per-s.d. units, $D$ is a diagonal matrix of per-variant heritabilities, $z$ is the GWAS summary statistic vector, $R$ is the LD correlation matrix, and $n$ is the sample size. Our likelihood functions operate on precision-premultiplied GWAS summary statistics:
+
+$$pz = n^{-1/2} R^{-1}z \sim N(0, M), \quad M = D + n^{-1}R^{-1}$$
 
 The following functions are available:
 - `gaussian_likelihood(pz, M)`: Computes the log-likelihood
@@ -303,6 +345,9 @@ Read annotation files with `load_annotations`.
 
 ### BED Format Annotations (.bed)
 You can also read UCSC `.bed` annotation files with `load_annotations`, and they will be added to the annotation dataframe with one column per file.
+
+### GMT Format Annotations (.gmt)
+GMT files are tab-separated with one row per gene set and no header. The first entry is the gene set name, the second is a description, and the remaining entries are gene IDs. You can also read GMT files with `src/score_test/score_test_io.load_gene_annotations`.
 
 ## See Also
 
