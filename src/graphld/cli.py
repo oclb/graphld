@@ -482,10 +482,16 @@ def write_convergence_results(filename: str, results: dict):
 def _reml(args):
     """Run GraphREML command."""
     # Check for existing output files
-    tall_output = args.out + '.tall.csv'
-    if not args.alt_output:
-        if os.path.exists(tall_output):
-            raise FileExistsError(f"Output file {tall_output} already exists")
+    if args.out:
+        # Create output directory if it doesn't exist
+        out_dir = os.path.dirname(args.out)
+        if out_dir and not os.path.exists(out_dir):
+            os.makedirs(out_dir, exist_ok=True)
+        
+        tall_output = args.out + '.tall.csv'
+        if not args.alt_output:
+            if os.path.exists(tall_output):
+                raise FileExistsError(f"Output file {tall_output} already exists")
 
     start_time = time.time()
 
@@ -555,36 +561,38 @@ def _reml(args):
     if args.verbose:
         print(f"Likelihood changes: {np.diff(np.array(results['likelihood_history']))}")
 
-    # Prepare output files
-    convergence_file = args.out + '.convergence.csv'
-    write_convergence_results(convergence_file, results)
+    # Write output files only if out is specified
+    if args.out:
+        # Prepare output files
+        convergence_file = args.out + '.convergence.csv'
+        write_convergence_results(convergence_file, results)
 
-    if args.alt_output:
-        heritability_file = args.out + '.heritability.csv'
-        write_results(heritability_file,
-                        results['heritability'],
-                        results['heritability_se'],
-                        results['heritability_log10pval'],
-                        model_options.annotation_columns,
-                        args.name or args.sumstats)
+        if args.alt_output:
+            heritability_file = args.out + '.heritability.csv'
+            write_results(heritability_file,
+                            results['heritability'],
+                            results['heritability_se'],
+                            results['heritability_log10pval'],
+                            model_options.annotation_columns,
+                            args.name or args.sumstats)
 
-        enrichment_file = args.out + '.enrichment.csv'
-        write_results(enrichment_file,
-                        results['enrichment'],
-                        results['enrichment_se'],
-                        results['enrichment_log10pval'],
-                        model_options.annotation_columns,
-                        args.name or args.sumstats)
+            enrichment_file = args.out + '.enrichment.csv'
+            write_results(enrichment_file,
+                            results['enrichment'],
+                            results['enrichment_se'],
+                            results['enrichment_log10pval'],
+                            model_options.annotation_columns,
+                            args.name or args.sumstats)
 
-        parameters_file = args.out + '.parameters.csv'
-        write_results(parameters_file,
-                        results['parameters'],
-                        results['parameters_se'],
-                        results['parameters_log10pval'],
-                        model_options.annotation_columns,
-                        args.name or args.sumstats)
-    else:
-        write_tall_results(tall_output, model_options, results)
+            parameters_file = args.out + '.parameters.csv'
+            write_results(parameters_file,
+                            results['parameters'],
+                            results['parameters_se'],
+                            results['parameters_log10pval'],
+                            model_options.annotation_columns,
+                            args.name or args.sumstats)
+        else:
+            write_tall_results(tall_output, model_options, results)
 
 def _add_common_arguments(parser):
     """Add arguments that are common to all subcommands."""
@@ -603,16 +611,24 @@ def _add_common_arguments(parser):
     parser.add_argument("-v", "--verbose", action="store_true", default=False)
     parser.add_argument("-q", "--quiet", action="store_true", default=False)
 
-def _add_io_arguments(parser):
+def _add_io_arguments(parser, out_required=True):
     """Add common input/output arguments."""
     parser.add_argument(
         'sumstats',
         help='Path to summary statistics file (.vcf or .sumstats)',
     )
-    parser.add_argument(
-        'out',
-        help='Output file path',
-    )
+    if out_required:
+        parser.add_argument(
+            'out',
+            help='Output file path',
+        )
+    else:
+        parser.add_argument(
+            'out',
+            nargs='?',
+            default=None,
+            help='Output file path (optional)',
+        )
     parser.add_argument(
         '--maximum-missingness',
         type=float,
@@ -766,8 +782,8 @@ def _add_reml_parser(subparsers):
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
-    # Add common I/O arguments
-    _add_io_arguments(parser)
+    # Add common I/O arguments (out is optional for reml)
+    _add_io_arguments(parser, out_required=False)
 
     # Required arguments
     parser.add_argument(
