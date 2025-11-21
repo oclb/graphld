@@ -75,6 +75,7 @@ results/*
 scorestats/*
 figures/*
 scripts/*
+tmp/*
 
 # Large data files
 data/ldgms/*.edgelist
