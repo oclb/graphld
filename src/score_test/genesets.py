@@ -209,7 +209,7 @@ def convert_gene_to_variant_annotations(gene_annot,
     df_annot = pl.DataFrame({
         'CHR': variant_table['CHR'],
         'BP': variant_table['POS'],
-        'SNP': variant_table['RSID'],
+        'RSID': variant_table['RSID'],
         'CM': pl.Series([0.0] * len(variant_table)),
         **variant_annots
     })

@@ -1,5 +1,6 @@
 """I/O operations for score test."""
 
+from ast import Attribute
 import logging
 import os
 from pathlib import Path
@@ -12,6 +13,19 @@ import polars as pl
 if TYPE_CHECKING:
     from score_test import TraitData, GeneAnnot, VariantAnnot
 
+def _load_hdf5_group(group: h5py.Group) -> dict:
+    result = {}
+    for key, value in group.items():
+        if isinstance(value, h5py.Group):
+            result[key] = _load_hdf5_group(value)
+        elif isinstance(value, h5py.Dataset):
+            result[key] = value[...]
+        else: 
+            raise ValueError(f"Unknown type: {type(value)}")
+
+    for attr_name, attr_value in group.attrs.items():
+        result['@' + attr_name] = attr_value
+    return result
 
 def is_gene_level_hdf5(hdf5_path: str) -> bool:
     """Check if HDF5 file contains gene-level data.
@@ -23,54 +37,54 @@ def is_gene_level_hdf5(hdf5_path: str) -> bool:
         True if file contains gene-level data, False for variant-level
     """
     with h5py.File(hdf5_path, 'r') as f:
-        return 'genes' in f
+        # Check metadata attribute first
+        if 'data_type' in f.attrs:
+            return f.attrs['data_type'] == 'gene'
+        # Fallback: check if row_data contains gene_id
+        if 'row_data' not in f:
+            raise ValueError(f"HDF5 file must contain 'row_data' group")
+        return 'gene_id' in f['row_data']
 
 
-def load_data_table(hdf5_path: str) -> pl.DataFrame:
+def load_row_data(hdf5_path: str) -> pl.DataFrame:
     """
-    Load data table (variants or genes) from HDF5 file format.
+    Load row data table from HDF5 file format.
 
     Args:
         hdf5_path: Path to the HDF5 file
 
     Returns:
-        Polars DataFrame containing variant or gene data
+        Polars DataFrame containing row data (variants or genes)
     """
 
     if not os.path.exists(hdf5_path):
         raise FileNotFoundError(f"HDF5 file not found: {hdf5_path}")
 
     with h5py.File(hdf5_path, 'r') as f:
-        # Check if this is gene-level or variant-level data
-        if 'genes' in f:
-            data_group = f['genes']
-        elif 'variants' in f:
-            data_group = f['variants']
-        else:
-            raise ValueError(f"HDF5 file must contain either 'genes' or 'variants' group")
+        if 'row_data' not in f:
+            raise ValueError(f"HDF5 file must contain 'row_data' group")
         
-        # Load all datasets from data group
-        data = {}
-        for key in data_group.keys():
-            dataset = data_group[key]
-            if hasattr(dataset, 'shape'):  # It's a dataset, not a group
-                arr = dataset[:].ravel() if len(dataset.shape) == 2 and dataset.shape[1] == 1 else dataset[:]
-                # Convert bytes to strings if needed
-                if arr.dtype.kind == 'S':
-                    arr = arr.astype(str)
-                data[key] = arr
+        # Use helper to load all datasets
+        data = _load_hdf5_group(f['row_data'])
         
-        # Handle old format with 'annotations' matrix
-        if 'annotations' in data and len(data['annotations'].shape) == 2:
-            annotations = data.pop('annotations')
-            for i in range(annotations.shape[1]):
-                data[f'annot_{i}'] = annotations[:, i]
+        # Remove attributes (prefixed with @)
+        data = {k: v for k, v in data.items() if not k.startswith('@')}
+        
+        # Process arrays: flatten 2D columns with shape (n, 1) and convert bytes to strings
+        for key, arr in data.items():
+            if hasattr(arr, 'shape'):
+                # Flatten 2D arrays with single column
+                if len(arr.shape) == 2 and arr.shape[1] == 1:
+                    data[key] = arr.ravel()
+                # Convert bytes to strings
+                if hasattr(arr, 'dtype') and arr.dtype.kind == 'S':
+                    data[key] = arr.astype(str)
 
     return pl.DataFrame(data)
 
 
 # Backward compatibility alias
-load_variant_data = load_data_table
+load_variant_data = load_row_data
 
 
 def get_trait_names(hdf5_path: str, trait_name: Optional[str] = None) -> List[str]:
@@ -99,22 +113,14 @@ def load_trait_hdf5(hdf5_path: str, trait_name: str) -> dict:
     Load trait data from HDF5 file format.
     
     Returns:
-        Dictionary with keys: gradient (required), and optionally parameters, jackknife_parameters, hessian
+        Dictionary with keys: gradient (required), and optionally parameters, jackknife_parameters, other datasets
     """
 
-    required_keys = ['gradient']
-    optional_keys = ['parameters', 'jackknife_parameters', 'hessian']
-    
     with h5py.File(hdf5_path, 'r') as f:
         trait_group = f[f'traits/{trait_name}']
-        data = {key: trait_group[key][:] for key in required_keys}
         
-        # Load optional keys if they exist
-        for key in optional_keys:
-            if key in trait_group:
-                data[key] = trait_group[key][:]
-            else:
-                data[key] = None
+        # Use helper to load everything recursively
+        data = _load_hdf5_group(trait_group)
 
     return data
 
@@ -139,35 +145,38 @@ def load_trait_data(hdf5_path: str, trait_name: str, variant_table: pl.DataFrame
     
     trait_hdf5 = load_trait_hdf5(hdf5_path, trait_name)
     
-    # Store gradient with variant table, and hessian if available
-    new_columns = [pl.Series(name='gradient', values=trait_hdf5['gradient'])]
+    # Determine primary key column
+    possible_keys = ['RSID', 'gene_id', 'gene_name', 'CHR', 'POS']
+    keys = [key for key in possible_keys if key in variant_table.columns]
+    if len(keys) == 0:
+        raise ValueError("variant_table must have one of: " + ", ".join(possible_keys))
     
-    # Determine key column (RSID for variants, gene_id for genes)
-    if 'RSID' in variant_table.columns:
-        key = 'RSID'
-        exclude_cols = ['CHR', 'POS', 'RSID', 'jackknife_blocks', 'gradient']
-    elif 'gene_id' in variant_table.columns:
-        key = 'gene_id'
-        exclude_cols = ['CHR', 'POS', 'gene_id', 'gene_name', 'jackknife_blocks', 'gradient']
-    else:
-        raise ValueError("variant_table must have either 'RSID' or 'gene_id' column")
-    
-    if trait_hdf5['hessian'] is not None and len(trait_hdf5['hessian']) > 0:
-        new_columns.append(pl.Series(name='hessian', values=trait_hdf5['hessian']))
-        exclude_cols.append('hessian')
+    # Add trait-specific columns (gradient, hessian, etc.)
+    new_columns = []
+    for key_name, value in trait_hdf5.items():
+        if isinstance(value, np.ndarray):
+            new_columns.append(pl.Series(name=key_name, values=value))
     
     df = variant_table.with_columns(new_columns)
+
+    if 'parameters' in trait_hdf5:
+        params = trait_hdf5['parameters']['parameters']
+        jk_params = trait_hdf5['parameters']['jackknife_parameters']
+    else:
+        params, jk_params = None, None
     
-    # Get annotation column names (exclude standard columns)
-    annot_names = [col for col in df.columns if col not in exclude_cols]
-    
-    return TraitData(
+    # Create TraitData - it will compute exclude_cols and annot_names via properties
+    trait_data = TraitData(
         df=df,
-        params=trait_hdf5['parameters'],
-        jk_params=trait_hdf5['jackknife_parameters'],
-        annot_names=annot_names,
-        key=key,
+        params=params,
+        jk_params=jk_params,
+        keys=keys,
     )
+    
+    # Compute annotation names using the property
+    trait_data.annot_names = [col for col in df.columns if col not in trait_data.exclude_cols]
+    
+    return trait_data
 
 
 def load_annotations(annot_path: str,
@@ -337,8 +346,12 @@ def load_variant_annotations(annot_dir: str, annot_names: list[str] | None = Non
     
     df_annot = load_annotations(annot_dir, add_positions=False)
     
+    # Rename SNP to RSID for consistency
+    if 'SNP' in df_annot.columns:
+        df_annot = df_annot.rename({'SNP': 'RSID'})
+    
     # Note: load_annotations with add_positions=False renames BP to POS
-    exclude_cols = ['CHR', 'BP', 'POS', 'SNP', 'CM']
+    exclude_cols = ['CHR', 'BP', 'POS', 'RSID', 'CM']
     
     if annot_names:
         available = [col for col in df_annot.columns if col not in exclude_cols]
@@ -453,13 +466,14 @@ def create_random_variant_annotations(variant_table: pl.DataFrame,
         variant_annots[col_name] = np.random.binomial(1, p, size=num_variants).astype(np.float64)
     
     # Create output DataFrame
-    # Use RSID for variants, gene_id for genes
-    snp_col = variant_table['RSID'] if 'RSID' in variant_table.columns else variant_table['gene_id']
+    # Use RSID for variants
+    if 'RSID' not in variant_table.columns:
+        raise ValueError("variant_table must have 'RSID' column for variant annotations")
     
     df_annot = pl.DataFrame({
         'CHR': variant_table['CHR'],
         'BP': variant_table['POS'],
-        'SNP': snp_col,
+        'RSID': variant_table['RSID'],
         'CM': pl.Series([0.0] * len(variant_table)),
         **variant_annots
     })
@@ -517,7 +531,7 @@ def save_trait_data(trait_data: 'TraitData',
                     hdf5_path: str, 
                     trait_name: str,
                     ) -> None:
-    """Save trait data to HDF5 file.
+    """Save trait data to HDF5 file in new format.
     
     Args:
         trait_data: TraitData object to save
@@ -525,26 +539,41 @@ def save_trait_data(trait_data: 'TraitData',
         trait_name: Name of the trait
     """
     with h5py.File(hdf5_path, 'a') as f:
-        # Determine if this is gene-level or variant-level data
-        is_gene_level = 'gene_id' in trait_data.df.columns
-        group_name = 'genes' if is_gene_level else 'variants'
+        # Create metadata attribute if it doesn't exist
+        if 'metadata' not in f.attrs:
+            f.attrs['metadata'] = ''
         
-        # Create data group if it doesn't exist, or recreate if size mismatch
-        if group_name in f:
-            existing_size = len(f[group_name][list(f[group_name].keys())[0]])
+        # Set data_type and keys attributes
+        if 'gene_id' in trait_data.df.columns:
+            f.attrs['data_type'] = 'gene'
+            f.attrs['keys'] = ['gene_id', 'gene_name']
+        else:
+            f.attrs['data_type'] = 'variant'
+            f.attrs['keys'] = ['RSID', 'POS']
+        
+        # Create row_data group if it doesn't exist, or recreate if size mismatch
+        if 'row_data' in f:
+            existing_size = len(f['row_data'][list(f['row_data'].keys())[0]])
             expected_size = len(trait_data.df)
             if existing_size != expected_size:
                 # Size mismatch - delete and recreate
-                del f[group_name]
+                del f['row_data']
         
-        if group_name not in f:
-            data_group = f.create_group(group_name)
+        if 'row_data' not in f:
+            data_group = f.create_group('row_data')
             
-            # Save all columns except gradient, which is trait specific
-            exclude_cols = {'gradient', 'hessian'}
+            # Save all columns except trait-specific ones (gradient, hessian, etc.)
+            # Use TraitData's exclude_cols property
+            row_data_cols = set(trait_data.df.columns) - trait_data.exclude_cols
+            # Add back standard columns that should be in row_data
+            row_data_cols.update({'CHR', 'POS', 'jackknife_blocks'})
+            if 'RSID' in trait_data.df.columns:
+                row_data_cols.add('RSID')
+            if 'gene_id' in trait_data.df.columns:
+                row_data_cols.update({'gene_id', 'gene_name'})
             
             for col in trait_data.df.columns:
-                if col not in exclude_cols:
+                if col in row_data_cols:
                     data = trait_data.df[col].to_numpy()
                     # Handle string columns
                     if data.dtype == object:
@@ -561,11 +590,20 @@ def save_trait_data(trait_data: 'TraitData',
         
         trait_group = f.create_group(trait_path)
         
-        # Save trait data
-        if trait_data.params is not None:
-            trait_group.create_dataset('parameters', data=trait_data.params)
-
-        if trait_data.jk_params is not None:
-            trait_group.create_dataset('jackknife_parameters', data=trait_data.jk_params)
-
+        # Save parameters in parameters/ subgroup
+        if trait_data.params is not None or trait_data.jk_params is not None:
+            params_group = trait_group.create_group('parameters')
+            if trait_data.params is not None:
+                params_group.create_dataset('parameters', data=trait_data.params)
+            if trait_data.jk_params is not None:
+                params_group.create_dataset('jackknife_parameters', data=trait_data.jk_params)
+        
+        # Save gradient (required)
         trait_group.create_dataset('gradient', data=trait_data.df['gradient'].to_numpy())
+        
+        # Save any other trait-specific datasets (e.g., hessian)
+        standard_cols = {'CHR', 'POS', 'jackknife_blocks', 'RSID', 'gene_id', 'gene_name', 'gradient'}
+        annot_cols = set(trait_data.annot_names) if trait_data.annot_names else set()
+        for col in trait_data.df.columns:
+            if col not in standard_cols and col not in annot_cols:
+                trait_group.create_dataset(col, data=trait_data.df[col].to_numpy())

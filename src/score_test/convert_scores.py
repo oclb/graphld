@@ -42,7 +42,7 @@ def convert_variant_to_gene_scores(trait_data: TraitData,
         'gradient': gradient,
     })
 
-    return TraitData(df, key='gene_id')
+    return TraitData(df, keys=['gene_id', 'gene_name', 'CHR', 'POS'])
 
 def convert_hdf5(variant_stats_hdf5: str,
                  gene_stats_hdf5: str,

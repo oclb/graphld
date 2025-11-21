@@ -22,7 +22,6 @@ from typing import List, Tuple
 import warnings
 
 import click
-import h5py
 import numpy as np
 import polars as pl
 
@@ -35,7 +34,7 @@ try:
         get_trait_names,
         get_trait_groups,
         is_gene_level_hdf5,
-        load_data_table,
+        load_row_data,
         load_gene_table,
         load_trait_data,
         load_variant_annotations,
@@ -50,7 +49,7 @@ except ImportError:
         get_trait_names,
         get_trait_groups,
         is_gene_level_hdf5,
-        load_data_table,
+        load_row_data,
         load_gene_table,
         load_trait_data,
         load_variant_annotations,
@@ -95,8 +94,16 @@ class TraitData:
     params: np.ndarray | None = None
     jk_params: np.ndarray | None = None
     annot_names: List[str] = None  # Names of annotation columns in df
-    key: str = 'RSID'  # Column name to use for merging
+    keys: List[str] = None  # Primary column names to use for merging
 
+    @property
+    def exclude_cols(self) -> set[str]:
+        """Columns to exclude when determining annotation names."""
+        base_cols = {'CHR', 'POS', 'jackknife_blocks', 'gradient', 'hessian'}
+        # Add key columns
+        if self.keys:
+            base_cols.update(self.keys)
+        return base_cols
 
 class Annot:
     """Base class for annotations that can be merged with TraitData."""
@@ -128,10 +135,10 @@ class VariantAnnot(Annot):
     def __init__(self, df: pl.DataFrame, annot_names: List[str]):
         """
         Args:
-            df: DataFrame with variant annotations (must have 'SNP' column)
+            df: DataFrame with variant annotations (must have 'RSID' column)
             annot_names: List of annotation column names to test
         """
-        super().__init__(annot_names, other_key='SNP')
+        super().__init__(annot_names, other_key='RSID')
         self.df = df
     
     def merge(self, trait_data: TraitData) -> tuple[np.ndarray, np.ndarray | None, np.ndarray, np.ndarray]:
@@ -141,6 +148,10 @@ class VariantAnnot(Annot):
             Tuple of (grad, correction, test_annot, block_boundaries)
             Note: correction is None if hessian is not available
         """
+        # Check if trait_data has the required key
+        if self.other_key not in trait_data.keys:
+            raise ValueError(f"TraitData does not have required key '{self.other_key}'. Available keys: {trait_data.keys}")
+        
         # Verify merge key exists in annotation DataFrame
         if self.other_key not in self.df.columns:
             raise ValueError(f"Merge key '{self.other_key}' not found in annotation DataFrame. "
@@ -148,7 +159,7 @@ class VariantAnnot(Annot):
         
         df_merged = trait_data.df.join(
             self.df,
-            left_on=trait_data.key,
+            left_on=self.other_key,
             right_on=self.other_key,
             how='inner',
             maintain_order='left'
@@ -207,6 +218,9 @@ class GeneAnnot(Annot):
         Returns:
             Tuple of (grad, correction, test_annot, block_boundaries)
         """
+        # Check if trait_data has the required key
+        if self.other_key not in trait_data.keys:
+            raise ValueError(f"TraitData does not have required key '{self.other_key}'. Available keys: {trait_data.keys}")
         # Use the appropriate key for merging (gene_id or gene_name)
         # For gene-level data, we need to match using the same identifier type as the gene sets
         merge_key = self.other_key
@@ -416,8 +430,8 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
     is_gene_level = is_gene_level_hdf5(variant_stats_hdf5)
     data_type = "gene" if is_gene_level else "variant"
     
-    # Load data table (variants or genes)
-    data_table = load_data_table(variant_stats_hdf5)
+    # Load row data (variants or genes)
+    data_table = load_row_data(variant_stats_hdf5)
     logging.info(f"Loaded {len(data_table)} {data_type}s from {variant_stats_hdf5}")
     
     # Load annotations based on source type

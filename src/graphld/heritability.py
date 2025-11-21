@@ -584,11 +584,17 @@ class GraphREML(ParallelProcessor):
         lock = FileLock(hdf5_filename + ".lock")
         with lock:
             with h5py.File(hdf5_filename, 'a') as f:
-                if 'variants' in f:
+                if 'row_data' in f:
                     return False
+                
+                metadata_group = f.create_group('metadata')
+                metadata_group.attrs['data_type'] = 'variant'
+                metadata_group.attrs['keys'] = ['RSID', 'POS']
+                metadata_group.attrs['source'] = 'graphld v' + __version__
 
                 f.create_group('traits')
-                variants_group = f.create_group('variants')
+                variants_group = f.create_group('row_data')
+
                 variants_group.create_dataset('annotations',
                                             data=annotations,
                                             compression=VARIANT_INFO_COMPRESSION_TYPE,
@@ -640,6 +646,7 @@ class GraphREML(ParallelProcessor):
                 if trait_name in traits_group:
                     raise ValueError(f"The group 'traits/{trait_name}' already exists.")
                 group = traits_group.create_group(trait_name)
+                param_group = group.create_group('parameters')
 
                 group.create_dataset('gradient',
                             data=score,
@@ -654,12 +661,12 @@ class GraphREML(ParallelProcessor):
                             chunks=(CHUNK_SIZE,),
                             )
 
-                group.create_dataset('parameters',
+                param_group.create_dataset('parameters',
                             data=parameters,
                             compression=VARIANT_INFO_COMPRESSION_TYPE,
                             )
 
-                group.create_dataset('jackknife_parameters',
+                param_group.create_dataset('jackknife_parameters',
                             data=jackknife_parameters,
                             compression=VARIANT_INFO_COMPRESSION_TYPE,
                             )
