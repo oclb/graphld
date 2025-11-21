@@ -14,38 +14,54 @@
 # Score test to evaluate the significance of
 # new annotations
 #-------------------------------------------------------
+from dataclasses import dataclass
 import logging
 import sys
 import time
 from typing import List, Tuple
+import warnings
 
 import click
 import h5py
 import numpy as np
 import polars as pl
 
+# Suppress numpy runtime warnings globally
+warnings.filterwarnings('ignore', category=RuntimeWarning)
+
 # Handle imports when running either as a script or as a package
 try:
     from .score_test_io import (
-        load_variant_data,
+        get_trait_names,
+        get_trait_groups,
+        is_gene_level_hdf5,
+        load_data_table,
+        load_gene_table,
         load_trait_data,
         load_variant_annotations,
         load_gene_annotations,
         create_random_gene_annotations,
         create_random_variant_annotations,
     )
+    from .genesets import convert_gene_to_variant_annotations
+    from .meta_analysis import MetaAnalysis
 except ImportError:
     from score_test_io import (
-        load_variant_data,
+        get_trait_names,
+        get_trait_groups,
+        is_gene_level_hdf5,
+        load_data_table,
+        load_gene_table,
         load_trait_data,
         load_variant_annotations,
         load_gene_annotations,
         create_random_gene_annotations,
         create_random_variant_annotations,
     )
+    from genesets import convert_gene_to_variant_annotations
 
 
-def _get_block_boundaries(blocks: np.ndarray) -> np.ndarray:
+def get_block_boundaries(blocks: np.ndarray) -> np.ndarray:
     temp = np.where(np.diff(blocks) != 0)[0]
     num_blocks = len(temp) + 1
     block_boundaries = np.zeros(num_blocks + 1, dtype=int)
@@ -65,46 +81,208 @@ def _parse_probs(probs_str: str) -> List[float]:
 
 def _project_out(y: np.ndarray, x: np.ndarray):
     """Projects out x from y in place."""
-    beta = np.linalg.solve(x.T @ x, x.T @ y )
+    # Use normal equations: beta = (X'X)^{-1} X'y
+    # Use lstsq on normal equations to handle near-singular cases
+    xtx = x.T @ x
+    xty = x.T @ y
+    beta, _, _, _ = np.linalg.lstsq(xtx, xty, rcond=None)
     y -= x @ beta
 
 
-def run_score_test(df_snp: pl.DataFrame,
-    df_annot: pl.DataFrame,
-    params: np.ndarray,
-    jk_params: np.ndarray,
-    annot_test_list: List[str],
+@dataclass
+class TraitData:
+    df: pl.DataFrame  # Must contain 'gradient', optionally 'hessian' and annotation columns
+    params: np.ndarray | None = None
+    jk_params: np.ndarray | None = None
+    annot_names: List[str] = None  # Names of annotation columns in df
+    key: str = 'RSID'  # Column name to use for merging
+
+
+class Annot:
+    """Base class for annotations that can be merged with TraitData."""
+    annot_names: List[str]
+    other_key: str
+    
+    def __init__(self, annot_names: List[str], other_key: str):
+        """
+        Args:
+            annot_names: List of annotation column names to test
+            other_key: Column name to use for merging (e.g., 'SNP', 'gene_id', 'gene_name')
+        """
+        self.annot_names = annot_names
+        self.other_key = other_key
+    
+    def merge(self, trait_data: TraitData) -> tuple[pl.DataFrame, np.ndarray, np.ndarray, np.ndarray]:
+        """Merge with TraitData and return extracted arrays.
+        
+        Returns:
+            Tuple of (merged_df, test_annot, model_annot, block_boundaries)
+        """
+        raise NotImplementedError("Subclasses must implement merge()")
+
+
+class VariantAnnot(Annot):
+    """Variant-level annotations."""
+    df: pl.DataFrame
+    
+    def __init__(self, df: pl.DataFrame, annot_names: List[str]):
+        """
+        Args:
+            df: DataFrame with variant annotations (must have 'SNP' column)
+            annot_names: List of annotation column names to test
+        """
+        super().__init__(annot_names, other_key='SNP')
+        self.df = df
+    
+    def merge(self, trait_data: TraitData) -> tuple[np.ndarray, np.ndarray | None, np.ndarray, np.ndarray]:
+        """Merge variant annotations with TraitData.
+        
+        Returns:
+            Tuple of (grad, correction, test_annot, block_boundaries)
+            Note: correction is None if hessian is not available
+        """
+        # Verify merge key exists in annotation DataFrame
+        if self.other_key not in self.df.columns:
+            raise ValueError(f"Merge key '{self.other_key}' not found in annotation DataFrame. "
+                           f"Available columns: {self.df.columns}")
+        
+        df_merged = trait_data.df.join(
+            self.df,
+            left_on=trait_data.key,
+            right_on=self.other_key,
+            how='inner',
+            maintain_order='left'
+        )
+        block_boundaries = get_block_boundaries(df_merged['jackknife_blocks'].to_numpy())
+
+        # Extract arrays from merged dataframe
+        grad = df_merged['gradient'].to_numpy().astype(np.float64)
+        
+        # Compute correction term: hessian * model_annotations (if hessian available)
+        if 'hessian' in df_merged.columns:
+            hessian = df_merged['hessian'].to_numpy().astype(np.float64)
+            model_annot = df_merged[trait_data.annot_names].to_numpy().astype(np.float64) if trait_data.annot_names else None
+            correction = hessian.reshape(-1, 1) * model_annot if model_annot is not None else None
+        else:
+            # No hessian available - return None for correction
+            model_annot = df_merged[trait_data.annot_names].to_numpy().astype(np.float64) if trait_data.annot_names else None
+            correction = None
+        
+        test_annot = df_merged[self.annot_names].to_numpy().astype(np.float64)
+        if model_annot is not None and model_annot.shape[1] > 0:
+            _project_out(test_annot, model_annot)
+
+        return grad, correction, test_annot, block_boundaries
+
+
+class GeneAnnot(Annot):
+    """Gene-level annotations."""
+    gene_sets: dict[str, list[str]]
+    
+    def __init__(self, gene_sets: dict[str, list[str]]):
+        """
+        Args:
+            gene_sets: Dictionary mapping set names to lists of genes
+        """
+        self.gene_sets = gene_sets
+        
+        # Determine gene key from first gene in first set
+        # Import helper function
+        try:
+            from .genesets import _is_gene_id
+        except ImportError:
+            from genesets import _is_gene_id
+        
+        first_gene = next(iter(next(iter(gene_sets.values()))))
+        self.other_key = 'gene_id' if _is_gene_id(first_gene) else 'gene_name'
+        
+        super().__init__(list(gene_sets.keys()), self.other_key)
+    
+    def merge(self, trait_data: TraitData) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Merge gene annotations with gene-level TraitData.
+        
+        Creates one-hot encodings for each gene set and returns unmodified grad/correction
+        from the TraitData.
+        
+        Returns:
+            Tuple of (grad, correction, test_annot, block_boundaries)
+        """
+        # Use the appropriate key for merging (gene_id or gene_name)
+        # For gene-level data, we need to match using the same identifier type as the gene sets
+        merge_key = self.other_key
+        
+        # Verify merge key exists in trait_data
+        if merge_key not in trait_data.df.columns:
+            raise ValueError(f"Merge key '{merge_key}' not found in trait_data.df")
+        
+        # Get gene identifiers from trait_data
+        gene_ids = trait_data.df[merge_key].to_list()
+        
+        # Create one-hot encoding for each gene set
+        # TODO vectorize
+        test_annot_dict = {}
+        for set_name, gene_list in self.gene_sets.items():
+            # Create binary indicator: 1 if gene is in set, 0 otherwise
+            gene_set = set(gene_list)
+            test_annot_dict[set_name] = [1.0 if gene in gene_set else 0.0 for gene in gene_ids]
+        
+        # Create DataFrame with one-hot encodings
+        test_annot_df = pl.DataFrame(test_annot_dict)
+        test_annot = test_annot_df.to_numpy().astype(np.float64)
+        
+        # Extract grad and correction (unmodified from TraitData)
+        grad = trait_data.df['gradient'].to_numpy().astype(np.float64)
+        correction_cols = [col for col in trait_data.df.columns if col.startswith('correction_')]
+        
+        # For gene-level data, there are no correction columns
+        if correction_cols:
+            correction = trait_data.df.select(correction_cols).to_numpy().astype(np.float64)
+        else:
+            correction = None
+        
+        # Get block boundaries
+        block_boundaries = get_block_boundaries(trait_data.df['jackknife_blocks'].to_numpy())
+        
+        return grad, correction, test_annot, block_boundaries
+
+
+class GenomeAnnot(Annot):
+    """Genome region annotations (from BED files)."""
+    
+    def __init__(self):
+        """TODO: Implement GenomeAnnot for BED file annotations."""
+        raise NotImplementedError("GenomeAnnot not yet implemented")
+    
+    def merge(self, trait_data: TraitData) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Merge genome region annotations with TraitData.
+        
+        Returns:
+            Tuple of (grad, correction, test_annot, block_boundaries)
+        """
+        # TODO: Implement BED file annotation logic
+        raise NotImplementedError("GenomeAnnot.merge() not yet implemented")
+
+
+def run_score_test(trait_data: TraitData,
+    annot: Annot,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Run score test for hypothesis testing of new annotation or functional category.
 
     Args:
-        df_snp: DataFrame containing variant statistics (must have RSID column)
-        df_annot: DataFrame containing annotations (must have SNP column)
-        params: Parameter values from the null model
-        jk_params: Jackknife estimates for the null model
-        annot_test_list: List of annotations to test
+        trait_data: TraitData object containing variant data with gradients/hessians and parameters
+        annot: Annot object (VariantAnnot or GeneAnnot) containing annotations to test
 
     Returns:
         Tuple of (point_estimates, jackknife_estimates)
     """
-    # Merge variant statistics with annotations
-    df_merged = df_snp.join(
-        df_annot,
-        left_on='RSID',
-        right_on='SNP',
-        how='inner',
-        maintain_order='left'
-    )
-    block_boundaries = _get_block_boundaries(df_merged['jackknife_blocks'].to_numpy())
+    # Merge trait data with annotations
+    grad, correction, test_annot, block_boundaries = annot.merge(trait_data)
+    
+    if correction is None:
+        raise ValueError("Hessian data is required for exact score test. Use run_approx_score_test instead.")
+    
     noBlocks = len(block_boundaries) - 1
-
-    grad = df_merged['gradient'].to_numpy().astype(np.float64)
-    test_annot = df_merged[annot_test_list].to_numpy().astype(np.float64)
-    model_annot = df_merged['annotations'].to_numpy().astype(np.float64)
-    hess = df_merged['hessian'].to_numpy().astype(np.float64)
-
-    _project_out(test_annot, model_annot)
 
     # Compute single-block derivatives
     U_block = [] # Derivative of the log-likelihood for each test annotation
@@ -113,7 +291,7 @@ def run_score_test(df_snp: pl.DataFrame,
         block = range(block_boundaries[i], block_boundaries[i+1])
         Ui = grad[block].reshape(1,-1) @ test_annot[block, :]
         U_block.append(Ui)
-        Ji = model_annot[block, :].T @ (hess[block].reshape(-1,1) * test_annot[block, :])
+        Ji = correction[block, :].T @ test_annot[block, :]
         J_block.append(Ji)
     U_total = sum(U_block)
     J_total = sum(J_block)
@@ -128,7 +306,45 @@ def run_score_test(df_snp: pl.DataFrame,
 
         # correct for the change in parameters when leaving out this block
         Ji = J_total - J_block[i]
-        U_jackknife[i, :] += ((jk_params[i,:] - params).reshape(1,-1) @ Ji).ravel()
+        U_jackknife[i, :] += ((trait_data.jk_params[i,:] - trait_data.params).reshape(1,-1) @ Ji).ravel()
+
+    return U_total, U_jackknife
+
+def run_approx_score_test(trait_data: TraitData,
+    annot: Annot,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Run approximate score test for hypothesis testing of new annotation or functional category.
+    
+    Unlike run_score_test, this function does not adjust for uncertainty in the fitted model parameters.
+
+    Args:
+        trait_data: TraitData object containing variant data with gradients
+        annot: Annot object (VariantAnnot or GeneAnnot) containing annotations to test
+
+    Returns:
+        Tuple of (point_estimates, jackknife_estimates)
+    """
+    # Merge trait data with annotations
+    grad, _, test_annot, block_boundaries = annot.merge(trait_data)
+    
+    noBlocks = len(block_boundaries) - 1
+
+    # Compute single-block derivatives
+    U_block = [] # Derivative of the log-likelihood for each test annotation
+    for i in range(noBlocks):
+        block = range(block_boundaries[i], block_boundaries[i+1])
+        Ui = grad[block].reshape(1,-1) @ test_annot[block, :]
+        U_block.append(Ui)
+    U_total = sum(U_block)
+
+    # Compute leave-one-out derivatives
+    U_jackknife = np.zeros((noBlocks, U_total.shape[1]))
+    for i in range(noBlocks):
+        block = range(block_boundaries[i], block_boundaries[i+1])
+
+        # deduct the score contributed from one LD block
+        U_jackknife[i, :] = U_total - U_block[i].ravel()
 
     return U_total, U_jackknife
 
@@ -178,8 +394,10 @@ def _setup_logging(output_fp: str | None, verbose: bool):
               help='Enable verbose output (log messages and results to console).')
 @click.option('--seed', type=int, default=None,
               help='Seed for generating random annotations.')
+@click.option('--approximate', is_flag=True,
+              help='Use approximate score test that does not correct for uncertainty in model parameters.')
 def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, random_genes, 
-         random_variants, gene_table, nearest_weights, annotations, trait_name, verbose, seed):
+         random_variants, gene_table, nearest_weights, annotations, trait_name, verbose, seed, approximate):
     """Run score test for annotation enrichment."""
     
     _setup_logging(output_fp, verbose)
@@ -190,74 +408,101 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
     # Set random seed if provided
     if seed:
         np.random.seed(seed)
-
-    # Check that exactly one annotation source is specified
-    num_provided = sum([
-        variant_annot_dir is not None,
-        gene_annot_dir is not None,
-        random_genes is not None,
-        random_variants is not None
-    ])
-    if num_provided != 1:
-        raise click.UsageError("Must specify exactly one of: --variant-annot-dir, --gene-annot-dir, --random-genes, --random-variants")
-
+    
     # Parse annotation names if provided
     annot_names_filter = [a.strip() for a in annotations.split(',')] if annotations else None
 
-    # Load variant data
-    variant_data = load_variant_data(variant_stats_hdf5)
-    logging.info(f"Loaded {len(variant_data)} variants from {variant_stats_hdf5}")
+    # Detect if this is gene-level or variant-level data
+    is_gene_level = is_gene_level_hdf5(variant_stats_hdf5)
+    data_type = "gene" if is_gene_level else "variant"
+    
+    # Load data table (variants or genes)
+    data_table = load_data_table(variant_stats_hdf5)
+    logging.info(f"Loaded {len(data_table)} {data_type}s from {variant_stats_hdf5}")
     
     # Load annotations based on source type
     weights = np.array([float(w) for w in nearest_weights.split(',')], dtype=np.float64)
     
+    num_provided = 0
+    annot = None
+    
     if variant_annot_dir:
-        df_annot, annot_names = load_variant_annotations(variant_annot_dir, annot_names_filter)
-        logging.info(f"Loaded {len(annot_names)} variant annotations from {variant_annot_dir}")
-    elif gene_annot_dir:
-        df_annot, annot_names = load_gene_annotations(
-            gene_annot_dir, variant_data, gene_table, weights, annot_names_filter
+        if is_gene_level:
+            raise click.UsageError("Cannot use --variant-annot-dir with gene-level HDF5 file")
+        annot = load_variant_annotations(variant_annot_dir, annot_names_filter)
+        logging.info(f"Loaded {len(annot.annot_names)} variant annotations from {variant_annot_dir}")
+        num_provided += 1
+    
+    if gene_annot_dir:
+        gene_annot: GeneAnnot = load_gene_annotations(
+            gene_annot_dir, data_table, gene_table, weights, annot_names_filter
         )
-        logging.info(f"Loaded {len(annot_names)} gene annotations from {gene_annot_dir}")
-    elif random_genes:
+        if is_gene_level:
+            # For gene-level data, use gene annotations directly
+            annot = gene_annot
+            logging.info(f"Loaded {len(annot.annot_names)} gene annotations from {gene_annot_dir}")
+        else:
+            # For variant-level data, convert gene to variant annotations
+            chromosomes = data_table['CHR'].unique().sort().to_list()
+            gene_table_df = load_gene_table(gene_table, chromosomes)
+            annot = convert_gene_to_variant_annotations(gene_annot, data_table, gene_table_df, weights)
+            logging.info(f"Loaded {len(annot.annot_names)} gene annotations from {gene_annot_dir}")
+        num_provided += 1
+    
+    if random_genes:
         probs = _parse_probs(random_genes)
-        df_annot, annot_names = create_random_gene_annotations(
-            variant_data, gene_table, weights, probs
+        gene_annot: GeneAnnot = create_random_gene_annotations(
+            data_table, gene_table, probs
         )
-        logging.info(f"Created {len(annot_names)} random gene annotations")
-    else:  # random_variants
+        if is_gene_level:
+            # For gene-level data, use gene annotations directly
+            annot = gene_annot
+            logging.info(f"Created {len(annot.annot_names)} random gene annotations")
+        else:
+            # For variant-level data, convert gene to variant annotations
+            chromosomes = data_table['CHR'].unique().sort().to_list()
+            gene_table_df = load_gene_table(gene_table, chromosomes)
+            annot = convert_gene_to_variant_annotations(gene_annot, data_table, gene_table_df, weights)
+            logging.info(f"Created {len(annot.annot_names)} random gene annotations")
+        num_provided += 1
+    
+    if random_variants:
+        if is_gene_level:
+            raise click.UsageError("Cannot use --random-variants with gene-level HDF5 file")
         probs = _parse_probs(random_variants)
-        df_annot, annot_names = create_random_variant_annotations(
-            variant_data, probs
-        )
-        logging.info(f"Created {len(annot_names)} random variant annotations")
-    
-    with h5py.File(variant_stats_hdf5, 'r') as f:
-        trait_names = [trait_name] if trait_name else list(f['traits'].keys())
-    
-    logging.info(f"Processing {len(trait_names)} trait(s)")
+        annot = create_random_variant_annotations(data_table, probs)
+        logging.info(f"Created {len(annot.annot_names)} random variant annotations")
+        num_provided += 1
+
+    if num_provided != 1:
+        msg = "Must specify exactly one of: --variant-annot-dir, " + \
+            "--gene-annot-dir, --random-genes, --random-variants"
+        raise click.UsageError(msg)
 
     # Run the score test
-    results_dict = {'annotation' : annot_names}
-    summed_scores = 0
-    summed_jackknife_scores = 0
+    results_dict = {'annotation' : annot.annot_names}
+    trait_names = get_trait_names(variant_stats_hdf5, trait_name)
+    
+    # Store results for each trait for meta-analysis
+    trait_results = {}
+    
     for trait in trait_names:
-        logging.info(f"Running score test for trait: {trait}")
-        trait_data = load_trait_data(variant_stats_hdf5, trait_name=trait)
-        variant_data_with_grad = variant_data.with_columns(
-            pl.Series(name='gradient', values=trait_data['gradient']),
-            pl.Series(name='hessian', values=trait_data['hessian']),
-        )
+        trait_data = load_trait_data(variant_stats_hdf5, trait_name=trait, variant_table=data_table)
 
-        point_estimates, jackknife_estimates = run_score_test(
-            df_snp=variant_data_with_grad,
-            df_annot=df_annot,
-            params=trait_data['parameters'],
-            jk_params=trait_data['jackknife_parameters'],
-            annot_test_list=annot_names,
+        if approximate or trait_data.params is None:
+            score_test = run_approx_score_test
+            logging.info(f"Using approximate score test for trait: {trait}")
+        else:
+            score_test = run_score_test
+            logging.info(f"Using exact score test for trait: {trait}")
+
+        point_estimates, jackknife_estimates = score_test(
+            trait_data=trait_data,
+            annot=annot,
         )
-        summed_scores += point_estimates
-        summed_jackknife_scores += jackknife_estimates
+        
+        # Store for meta-analysis
+        trait_results[trait] = (point_estimates, jackknife_estimates)
 
         # Compute Z-scores
         std_dev = np.std(jackknife_estimates, axis=0)
@@ -265,11 +510,31 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
         z_scores = point_estimates.ravel() / std_dev / np.sqrt(n)
         results_dict[trait] = z_scores
     
-    run_meta_analysis = len(trait_names) > 1 and 'meta_analysis' not in trait_names
-    if run_meta_analysis:
-        std_dev = np.std(summed_jackknife_scores, axis=0)
-        n = summed_jackknife_scores.shape[0] - 1
-        results_dict['meta_analysis'] = summed_scores.ravel() / std_dev / np.sqrt(n)
+    # Load trait groups and perform meta-analyses
+    trait_groups = get_trait_groups(variant_stats_hdf5)
+    
+    if trait_groups:
+        # Perform meta-analysis for each defined group
+        for group_name, group_traits in trait_groups.items():
+            # Filter to traits that were actually processed
+            group_traits = [t for t in group_traits if t in trait_results]
+            
+            if len(group_traits) > 1:
+                meta = MetaAnalysis()
+                for trait in group_traits:
+                    point_est, jk_est = trait_results[trait]
+                    meta.update(point_est, jk_est)
+                results_dict[group_name] = meta.z_scores.ravel()
+                logging.info(f"Computed meta-analysis for group '{group_name}' with {len(group_traits)} traits")
+    else:
+        # Fallback: meta-analyze all traits if no groups defined and multiple traits
+        if len(trait_names) > 1 and 'meta_analysis' not in trait_names:
+            meta = MetaAnalysis()
+            for trait in trait_names:
+                point_est, jk_est = trait_results[trait]
+                meta.update(point_est, jk_est)
+            results_dict['meta_analysis'] = meta.z_scores.ravel()
+            logging.info(f"Computed default meta-analysis for all {len(trait_names)} traits")
 
     results_df = pl.DataFrame(results_dict)
     
@@ -281,6 +546,7 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
         logging.info(f'Results written to {output_fp}.txt')
 
     logging.info(f'Total time: {time.time()-start_time:.2f}s')
+
 
 
 if __name__ == '__main__':
