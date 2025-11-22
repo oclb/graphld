@@ -10,11 +10,17 @@ import numpy as np
 import polars as pl
 import scipy.stats as sps
 from filelock import FileLock
+from importlib.metadata import version, PackageNotFoundError
 
 from .io import *
 from .likelihood import *
 from .multiprocessing_template import ParallelProcessor, SharedData, WorkerManager
 from .precision import PrecisionOperator
+
+try:
+    __version__ = version("graphld")
+except PackageNotFoundError:
+    __version__ = "unknown"
 
 CHUNK_SIZE = 1000
 SPECIAL_COLNAMES = ['SNP', 'CHR', 'POS']
@@ -27,8 +33,9 @@ FLAGS = {
     'INITIALIZE': 3,
     'WRITE_VARIANT_INFO': 4,
     'COMPUTE_VARIANT_SCORE': 5,
-    'COMPUTE_VARIANT_HESSIAN': 5,
+    'COMPUTE_VARIANT_HESSIAN': 6,
 }
+assert len(set(FLAGS.values())) == len(FLAGS.values())
 
 VARIANT_INFO_COMPRESSION_TYPE = 'lzf'
 
@@ -44,14 +51,12 @@ class ModelOptions:
             for heritability scaling
         intercept: LDSC intercept or 1
         link_fn_denominator: Scalar denominator for link function. 
-            Recommended to be roughly the number of SNPs. Defaults to 6e6,
-            roughly the number of common SNPs in Europeans.
     """
     annotation_columns: Optional[List[str]] = None
     params: Optional[np.ndarray] = None
     sample_size: Optional[float] = None
     intercept: float = 1.0
-    link_fn_denominator: float = 6e6
+    link_fn_denominator: float = 1e9
     binary_annotations_only: bool = False
 
     def __post_init__(self):
@@ -541,13 +546,23 @@ class GraphREML(ParallelProcessor):
         # First term of d2L/dx2: d2L/dm2 (dm/dx)2
         first_term = gaussian_likelihood_hessian(Pz, ldgm, del_M_del_a=None,
                         diagonal_method="xdiag", n_samples=many_samples)
-        first_term *= del_h2i_del_xi ** 2
+        
+        
+        # Index to match annotation variants in this LDGM block
+        first_term = first_term[ldgm.variant_indices].ravel()
+        # Index derivatives to match LDGM variants
+        del_h2i_del_xi_indexed = del_h2i_del_xi[ldgm.variant_indices].ravel()
+        del2_h2i_del_xi2_indexed = del2_h2i_del_xi2[ldgm.variant_indices].ravel()
+
+        first_term *= del_h2i_del_xi_indexed ** 2
 
         # Second term of d2L/dx2: dL/dM d2m/dx2 where dL/dM = dL/dx / dm/dx
-        hess_diag = first_term + del_L_del_xi / del_h2i_del_xi * del2_h2i_del_xi2
+        second_term = del_L_del_xi.ravel() / del_h2i_del_xi_indexed * del2_h2i_del_xi2_indexed
+        second_term[np.isnan(second_term)] = 0.0
+        hess_diag = first_term + second_term
 
         ldgm.del_factor()  # Free memory used by Cholesky factorization
-        return hess_diag[ldgm.variant_indices]
+        return hess_diag
 
     @staticmethod
     def _append_to_hdf5(dataset, data):
@@ -587,19 +602,22 @@ class GraphREML(ParallelProcessor):
                 if 'row_data' in f:
                     return False
                 
-                metadata_group = f.create_group('metadata')
-                metadata_group.attrs['data_type'] = 'variant'
-                metadata_group.attrs['keys'] = ['RSID', 'POS']
-                metadata_group.attrs['source'] = 'graphld v' + __version__
+                # Set metadata as root attributes
+                f.attrs['metadata'] = ''
+                f.attrs['data_type'] = 'variant'
+                f.attrs['keys'] = ['RSID', 'POS', 'CHR']
+                f.attrs['source'] = 'graphld v' + __version__
 
                 f.create_group('traits')
                 variants_group = f.create_group('row_data')
 
-                variants_group.create_dataset('annotations',
-                                            data=annotations,
-                                            compression=VARIANT_INFO_COMPRESSION_TYPE,
-                                            chunks=(CHUNK_SIZE, annotations.shape[1]),
-                                            )
+                # Split annotations into separate columns
+                for i in range(annotations.shape[1]):
+                    variants_group.create_dataset(f'annot_{i}',
+                                                data=annotations[:, i],
+                                                compression=VARIANT_INFO_COMPRESSION_TYPE,
+                                                chunks=(CHUNK_SIZE,),
+                                                )
                 variants_group.create_dataset('CHR',
                                             data=variant_data.select('CHR').to_numpy(),
                                             compression=VARIANT_INFO_COMPRESSION_TYPE,
@@ -617,6 +635,9 @@ class GraphREML(ParallelProcessor):
                                             data=jackknife_variant_assignments,
                                             compression=VARIANT_INFO_COMPRESSION_TYPE,
                                             )
+                
+                # Create empty groups group for trait groups
+                f.create_group('groups')
 
         return True
 
