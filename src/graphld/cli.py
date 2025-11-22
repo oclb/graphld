@@ -254,6 +254,7 @@ def _surrogates(
         run_serial=run_in_serial,
         num_processes=num_processes,
         output_path=out,
+        chromosomes=chromosome,
     )
 
     if not quiet:

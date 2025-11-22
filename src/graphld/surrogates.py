@@ -127,6 +127,7 @@ def get_surrogate_markers(
     run_serial: bool = False,
     num_processes: Optional[int] = None,
     output_path: Optional[Union[str, os.PathLike]] = None,
+    chromosomes: Optional[int] = None,
 ) -> Path:
     """Create an HDF5 file with one dataset per LD block containing index-level surrogates.
 
@@ -141,6 +142,7 @@ def get_surrogate_markers(
     result_path = run_fn(
         ldgm_metadata_path=metadata_path,
         populations=population,
+        chromosomes=chromosomes,
         nonmissing_variant_ids=nonmissing_variant_ids,
         num_processes=num_processes,
         worker_params={'output_path': Path(output_path)},
