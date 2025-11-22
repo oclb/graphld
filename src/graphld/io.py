@@ -640,7 +640,6 @@ def load_annotations(annot_path: str,
         # Horizontally concatenate all dataframes for this chromosome
         if dfs:
             combined_df = pl.concat(dfs, how="horizontal")
-            combined_df = combined_df.select(sorted(combined_df.columns))
             annotations.append(combined_df)
 
     # Check if any files were found
