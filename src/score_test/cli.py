@@ -133,11 +133,12 @@ def show(hdf5_file, verbose):
         else:
             click.echo("\nMeta-analyses: None defined")
         
-        # Show variant datasets
-        if 'variants' in f:
+        # Show variant datasets (check both row_data and variants for backward compatibility)
+        data_group = 'row_data' if 'row_data' in f else 'variants' if 'variants' in f else None
+        if data_group:
             click.echo(f"\nVariant datasets:")
-            for dataset_name in sorted(f['variants'].keys()):
-                dataset = f['variants'][dataset_name]
+            for dataset_name in sorted(f[data_group].keys()):
+                dataset = f[data_group][dataset_name]
                 if hasattr(dataset, 'shape'):
                     click.echo(f"  - {dataset_name}: shape={dataset.shape}, dtype={dataset.dtype}")
                 else:
@@ -180,10 +181,13 @@ def add_meta(hdf5_file, meta_name, traits):
     for pattern in traits:
         matches = [t for t in existing_traits if fnmatch.fnmatch(t, pattern)]
         if not matches:
-            click.echo(f"Error: No traits match pattern '{pattern}'", err=True)
-            click.echo(f"Available traits: {', '.join(sorted(existing_traits))}")
+            click.echo(f"Error: Trait(s) matching pattern '{pattern}' do not exist", err=True)
+            click.echo(f"Available traits: {', '.join(sorted(existing_traits))}", err=True)
             sys.exit(1)
         matched_traits.update(matches)
+    
+    # Convert to sorted list for consistency
+    matched_traits = sorted(matched_traits)
     
     # Require at least 2 traits
     if len(matched_traits) < 2:
