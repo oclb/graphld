@@ -178,6 +178,7 @@ def test_reml_basic(metadata_path, create_annotations, create_sumstats):
                 "score_test_filename": None,
                 "binary_annotations_only": False,
                 "surrogates": None,
+                "no_save": False,
             }
 
         _reml(

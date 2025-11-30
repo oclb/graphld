@@ -13,7 +13,7 @@ from score_test.score_test_io import (
     create_random_variant_annotations,
     get_trait_names,
 )
-from score_test.score_test import run_approx_score_test
+from score_test.score_test import run_score_test
 from score_test.meta_analysis import MetaAnalysis
 
 
@@ -97,7 +97,7 @@ def test_meta_analysis_with_random_variants(test_hdf5_path, setup_trait_groups):
         for trait_name in group_traits:
             trait_data = load_trait_data(str(test_hdf5_path), trait_name, variant_table)
             
-            point_estimates, jackknife_estimates, _ = run_approx_score_test(
+            point_estimates, jackknife_estimates = run_score_test(
                 trait_data=trait_data,
                 annot=annot,
             )
@@ -124,7 +124,7 @@ def test_meta_analysis_body_group(test_hdf5_path, setup_trait_groups):
     meta = MetaAnalysis()
     for trait_name in ['height', 'bmi']:
         trait_data = load_trait_data(str(test_hdf5_path), trait_name, variant_table)
-        point_estimates, jackknife_estimates, _ = run_approx_score_test(
+        point_estimates, jackknife_estimates = run_score_test(
             trait_data=trait_data,
             annot=annot,
         )
@@ -145,7 +145,7 @@ def test_meta_analysis_cancer_group(test_hdf5_path, setup_trait_groups):
     meta = MetaAnalysis()
     for trait_name in ['brca', 'prca']:
         trait_data = load_trait_data(str(test_hdf5_path), trait_name, variant_table)
-        point_estimates, jackknife_estimates, _ = run_approx_score_test(
+        point_estimates, jackknife_estimates = run_score_test(
             trait_data=trait_data,
             annot=annot,
         )
@@ -169,7 +169,7 @@ def test_trait_groups_with_multiple_annotations(test_hdf5_path, setup_trait_grou
         
         for trait_name in group_traits:
             trait_data = load_trait_data(str(test_hdf5_path), trait_name, variant_table)
-            point_estimates, jackknife_estimates, _ = run_approx_score_test(
+            point_estimates, jackknife_estimates = run_score_test(
                 trait_data=trait_data,
                 annot=annot,
             )
@@ -225,7 +225,7 @@ def test_meta_analysis_precision_weighting(test_hdf5_path, setup_trait_groups):
     trait_results = {}
     for trait_name in ['height', 'bmi']:
         trait_data = load_trait_data(str(test_hdf5_path), trait_name, variant_table)
-        point_est, jk_est, _ = run_approx_score_test(trait_data=trait_data, annot=annot)
+        point_est, jk_est = run_score_test(trait_data=trait_data, annot=annot)
         
         # Compute individual z-score
         std_dev = np.std(jk_est, axis=0)

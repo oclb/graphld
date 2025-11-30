@@ -186,10 +186,7 @@ def test_score_test(metadata_path, create_annotations, create_sumstats):
         test_annot_name = "test_score_annot"
 
         # Rename SNP to RSID for consistency with new format
-        # Cast RSID to binary to match HDF5 storage format
-        annotations = annotations.rename({'SNP': 'RSID'}).with_columns(
-            pl.col('RSID').cast(pl.Binary)
-        )
+        annotations = annotations.rename({'SNP': 'RSID'})
         
         # Add a random annotation column
         np.random.seed(42)
@@ -201,7 +198,7 @@ def test_score_test(metadata_path, create_annotations, create_sumstats):
         annot = VariantAnnot(annotations, [test_annot_name])
 
         # Run the score test with the loaded dataframes
-        point_estimates, jackknife_estimates, _ = run_score_test(
+        point_estimates, jackknife_estimates = run_score_test(
             trait_data=trait_data,
             annot=annot,
         )

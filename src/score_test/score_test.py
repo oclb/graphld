@@ -78,15 +78,6 @@ def _parse_probs(probs_str: str) -> List[float]:
     return probs
 
 
-def _project_out(y: np.ndarray, x: np.ndarray):
-    """Projects out x from y in place."""
-    # Use normal equations: beta = (X'X)^{-1} X'y
-    # Use lstsq on normal equations to handle near-singular cases
-    xtx = x.T @ x
-    xty = x.T @ y
-    beta, _, _, _ = np.linalg.lstsq(xtx, xty, rcond=None)
-    y -= x @ beta
-
 
 @dataclass
 class TraitData:
@@ -171,8 +162,6 @@ class VariantAnnot(Annot):
         hessian = df_merged['hessian'].to_numpy().astype(np.float64) if 'hessian' in df_merged.columns else None
         model_annot = df_merged[trait_data.annot_names].to_numpy().astype(np.float64) if trait_data.annot_names else None
         test_annot = df_merged[self.annot_names].to_numpy().astype(np.float64)
-        if model_annot is not None and model_annot.shape[1] > 0:
-            _project_out(test_annot, model_annot)
 
         return grad, hessian, model_annot, test_annot, block_boundaries
 
@@ -261,119 +250,7 @@ class GenomeAnnot(Annot):
         raise NotImplementedError("GenomeAnnot.merge() not yet implemented")
 
 
-def _link_fn(x: np.ndarray) -> np.ndarray:
-    """Softmax link function (without denominator).
-    
-    Args:
-        x: Array of values
-    
-    Returns:
-        Softmax of x
-    """
-    # Robust softmax: exp(x) / (1 + exp(x))
-    result = np.zeros_like(x)
-    pos_mask = x >= 0
-    result[pos_mask] = 1.0 / (1.0 + np.exp(-x[pos_mask]))
-    result[~pos_mask] = np.exp(x[~pos_mask]) / (1.0 + np.exp(x[~pos_mask]))
-    assert result.shape == x.shape
-    return result
-
-
-def _estimate_tau(test_annot: np.ndarray, grad: np.ndarray, hessian: np.ndarray) -> np.ndarray:
-    """Estimate coefficient tau for new annotation by taking a single Newton step.
-    
-    Args:
-        test_annot: Test annotation vector (n_variants,)
-        grad: Gradient vector (n_variants,)
-        hessian: Hessian vector (n_variants,)
-    
-    Returns:
-        Estimated coefficient (scalar)
-    """
-    dLdt = grad.reshape(1, -1) @ test_annot
-    d2Ldt2 = hessian.reshape(1, -1) @ (test_annot**2)
-    result = - dLdt / d2Ldt2
-    if np.any(d2Ldt2 >= 0):
-        logging.warning(f"Non-negative second derivative; setting tau to NaN")
-    result[d2Ldt2 >= 0] = np.nan
-    return result
-
-
-def _compute_enrichment(annot: np.ndarray, test_annot: np.ndarray, grad: np.ndarray, 
-                        hessian: np.ndarray, params: np.ndarray) -> np.ndarray:
-    """Compute enrichment point estimate for test annotations.
-
-    Enrichment is defined as heritability / expected heritability, where the expected 
-    heritability is computed under the baseline model.
-    
-    Args:
-        annot: Model annotation matrix (n_variants, n_annot)
-        test_annot: Test annotation matrix (n_variants, n_test_annot)
-        grad: Gradient vector (n_variants,)
-        hessian: Hessian vector (n_variants,)
-        params: Model parameters (n_annot,)
-    
-    Returns:
-        Enrichment values (n_test_annot,)
-    """
-    x = annot @ params.reshape(-1, 1)
-    denominator = _link_fn(x)
-    tau = _estimate_tau(test_annot, grad, hessian)
-    logging.info(f"Estimated tau: {tau.ravel()}")
-    numerator = _link_fn(x + test_annot * tau)
-    enrichment = np.sum(numerator, axis=0) / np.sum(denominator)
-    return enrichment
-
-
 def run_score_test(trait_data: TraitData,
-    annot: Annot,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Run score test for hypothesis testing of new annotation or functional category.
-
-    Args:
-        trait_data: TraitData object containing variant data with gradients/hessians and parameters
-        annot: Annot object (VariantAnnot or GeneAnnot) containing annotations to test
-
-    Returns:
-        Tuple of (point_estimates, jackknife_estimates, enrichments, jackknife_enrichments)
-    """
-    # Merge trait data with annotations
-    grad, hessian, annot, test_annot, block_boundaries = annot.merge(trait_data)
-    
-    noBlocks = len(block_boundaries) - 1
-
-    # Compute single-block derivatives
-    U_block = [] # Derivative of the log-likelihood for each test annotation
-    J_block = [] # Derivative of U_block w.r.t. each model parameter
-    for i in range(noBlocks):
-        block = range(block_boundaries[i], block_boundaries[i+1])
-        Ui = grad[block].reshape(1,-1) @ test_annot[block, :]
-        U_block.append(Ui)
-        # correction[i,j] = hessian[i] * annot[i,j]
-        correction = hessian[block].reshape(-1, 1) * annot[block, :]
-        Ji = correction.T @ test_annot[block, :]
-        J_block.append(Ji)
-    U_total = sum(U_block)
-    J_total = sum(J_block)
-
-    # Compute leave-one-out derivatives
-    U_jackknife = np.zeros((noBlocks, U_total.shape[1]))
-    for i in range(noBlocks):
-        block = range(block_boundaries[i], block_boundaries[i+1])
-
-        # deduct the score contributed from one LD block
-        U_jackknife[i, :] = U_total - U_block[i].ravel()
-
-        # correct for the change in parameters when leaving out this block
-        Ji = J_total - J_block[i]
-        U_jackknife[i, :] += ((trait_data.jk_params[i,:] - trait_data.params).reshape(1,-1) @ Ji).ravel()
-
-    enrichment = _compute_enrichment(annot, test_annot, grad, hessian, trait_data.params)
-
-    return U_total, U_jackknife, enrichment
-
-def run_approx_score_test(trait_data: TraitData,
     annot: Annot,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -409,7 +286,7 @@ def run_approx_score_test(trait_data: TraitData,
         # deduct the score contributed from one LD block
         U_jackknife[i, :] = U_total - U_block[i].ravel()
 
-    return U_total, U_jackknife, None
+    return U_total, U_jackknife
 
 
 def _setup_logging(output_fp: str | None, verbose: bool):
@@ -457,10 +334,8 @@ def _setup_logging(output_fp: str | None, verbose: bool):
               help='Enable verbose output (log messages and results to console).')
 @click.option('--seed', type=int, default=None,
               help='Seed for generating random annotations.')
-@click.option('--approximate', is_flag=True,
-              help='Use approximate score test that does not correct for uncertainty in model parameters.')
 def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, random_genes, 
-         random_variants, gene_table, nearest_weights, annotations, trait_name, verbose, seed, approximate):
+         random_variants, gene_table, nearest_weights, annotations, trait_name, verbose, seed):
     """Run score test for annotation enrichment."""
     
     _setup_logging(output_fp, verbose)
@@ -552,15 +427,7 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
     for trait in trait_names:
         trait_data = load_trait_data(variant_stats_hdf5, trait_name=trait, variant_table=data_table)
 
-        if approximate or trait_data.params is None:
-            score_test = run_approx_score_test
-            logging.info(f"Using approximate score test for trait: {trait}")
-        else:
-            score_test = run_score_test
-            logging.info(f"Using exact score test for trait: {trait}")
-
-        # Run score test - handle both exact and approximate versions
-        point_estimates, jackknife_estimates, enrichments = score_test(
+        point_estimates, jackknife_estimates = run_score_test(
                 trait_data=trait_data,
                 annot=annot,
             )
@@ -574,11 +441,6 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
         z_scores = point_estimates.ravel() / std_dev / np.sqrt(jackknife_estimates.shape[0] - 1)
         results_dict[z_col] = z_scores
         
-        # Add enrichments if available
-        if enrichments is not None:
-            enrichment_col = f"{trait}_enrichment"
-            results_dict[enrichment_col] = enrichments
-    
     # Load trait groups and perform meta-analyses
     trait_groups = get_trait_groups(variant_stats_hdf5)
     for group_name, group_traits in trait_groups.items():

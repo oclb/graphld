@@ -56,7 +56,7 @@ class ModelOptions:
     params: Optional[np.ndarray] = None
     sample_size: Optional[float] = None
     intercept: float = 1.0
-    link_fn_denominator: float = 6e6 # TODO
+    link_fn_denominator: float = 6e6
     binary_annotations_only: bool = False
 
     def __post_init__(self):
@@ -587,7 +587,6 @@ class GraphREML(ParallelProcessor):
     @classmethod
     def _write_variant_data(cls, hdf5_filename: str, 
                             variant_data: pl.DataFrame, 
-                            annotations: np.ndarray, 
                             jackknife_variant_assignments: np.ndarray) -> bool:
         """Checks if the file already contains a 'variants' group. 
         If not, creates it and writes variant information to it.
@@ -616,13 +615,6 @@ class GraphREML(ParallelProcessor):
                 f.create_group('traits')
                 variants_group = f.create_group('row_data')
 
-                # Split annotations into separate columns
-                for i in range(annotations.shape[1]):
-                    variants_group.create_dataset(f'annot_{i}',
-                                                data=annotations[:, i],
-                                                compression=VARIANT_INFO_COMPRESSION_TYPE,
-                                                chunks=(CHUNK_SIZE,),
-                                                )
                 variants_group.create_dataset('CHR',
                                             data=variant_data.select('CHR').to_numpy(),
                                             compression=VARIANT_INFO_COMPRESSION_TYPE,
@@ -650,18 +642,14 @@ class GraphREML(ParallelProcessor):
     def _write_trait_stats(
         cls,
         method_options: MethodOptions,
-        parameters: np.ndarray,
-        jackknife_parameters: np.ndarray,
         score: np.ndarray,
-        hessian: np.ndarray,
     ) -> None:
         """Create the 'trait_stats' group and write trait statistics to it.
         
         Args:
-            hdf5_filename: The name of the HDF5 file to write to.
-            trait_name: The name of the trait for which statistics are being created.
-            parameters: The parameters of the model fit.
-            jackknife_parameters: The jackknife estimates of the model parameters.
+            method_options: The method options, containing the trait name and HDF5 file name.
+            score: variant scores for the trait.
+
         """
         hdf5_filename = method_options.score_test_hdf5_file_name
         trait_name = method_options.score_test_hdf5_trait_name
@@ -672,7 +660,6 @@ class GraphREML(ParallelProcessor):
                 if trait_name in traits_group:
                     raise ValueError(f"The group 'traits/{trait_name}' already exists.")
                 group = traits_group.create_group(trait_name)
-                param_group = group.create_group('parameters')
 
                 group.create_dataset('gradient',
                             data=score,
@@ -681,21 +668,6 @@ class GraphREML(ParallelProcessor):
                             )
                 print(f"Gradient shape: {score.shape}")
 
-                group.create_dataset('hessian',
-                            data=hessian,
-                            compression=VARIANT_INFO_COMPRESSION_TYPE,
-                            chunks=(CHUNK_SIZE,),
-                            )
-
-                param_group.create_dataset('parameters',
-                            data=parameters,
-                            compression=VARIANT_INFO_COMPRESSION_TYPE,
-                            )
-
-                param_group.create_dataset('jackknife_parameters',
-                            data=jackknife_parameters,
-                            compression=VARIANT_INFO_COMPRESSION_TYPE,
-                            )
 
     @classmethod
     def process_block(cls, ldgm: PrecisionOperator,
@@ -1131,9 +1103,6 @@ class GraphREML(ParallelProcessor):
             manager.start_workers(FLAGS['COMPUTE_VARIANT_SCORE'])
             manager.await_workers()
             variant_score = shared_data['variant_data'].copy()
-            manager.start_workers(FLAGS['COMPUTE_VARIANT_HESSIAN'])
-            manager.await_workers()
-            variant_hessian = shared_data['variant_data'].copy()
 
             # Jackknife block to which each variant belongs
             block_indptrs = [dict['variant_offset'] for dict in block_data] + [len(variant_score)]
@@ -1146,15 +1115,11 @@ class GraphREML(ParallelProcessor):
 
             cls._write_variant_data(method.score_test_hdf5_file_name,
                                     annotations.select(SPECIAL_COLNAMES),
-                                    annotations_matrix,
                                     jackknife_variant_assignments
                                     )
 
             cls._write_trait_stats(method,
-                                    params,
-                                    jackknife_params,
-                                    variant_score,
-                                    variant_hessian)
+                                    variant_score)
 
         # Compute standard errors using jackknife formula: SE = sqrt((n-1) * var(estimates))
         n_blocks = jackknife_params.shape[0]

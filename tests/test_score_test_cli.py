@@ -30,9 +30,9 @@ def test_score_test_cli_random_variants():
     assert "bmi" in result.stdout
     assert "brca" in result.stdout
     
-    # Check we have 2 random variants with 15 columns 
-    # (annotation + 6 traits_z + 6 traits_enrichment + 2 groups)
-    assert "shape: (2, 15)" in result.stdout
+    # Check we have 2 random variants with 9 columns 
+    # (annotation + 6 traits_z + 2 groups)
+    assert "shape: (2, 9)" in result.stdout
     
     # Check that at least one group is present
     assert "body" in result.stdout or "cancer" in result.stdout
@@ -69,7 +69,6 @@ def test_score_test_cli_random_variants_with_output(tmp_path):
     # Check traits are present (with _Z suffix)
     for trait in ["bmi", "brca", "cad", "edu", "height", "prca"]:
         assert f"{trait}_Z" in df.columns
-        assert f"{trait}_enrichment" in df.columns
     
     # Check that group columns are present (with _Z suffix)
     assert "body_Z" in df.columns
@@ -90,8 +89,8 @@ def test_score_test_cli_multiple_random_variants():
     # Check it succeeded
     assert result.returncode == 0, f"Command failed with stderr: {result.stderr}"
     
-    # Check output contains expected number of rows (4 annotations, 15 columns)
-    assert "shape: (4, 15)" in result.stdout
+    # Check output contains expected number of rows (4 annotations, 9 columns)
+    assert "shape: (4, 9)" in result.stdout
 
 
 def test_score_test_meta_analysis():

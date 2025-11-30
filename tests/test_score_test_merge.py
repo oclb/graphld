@@ -113,7 +113,7 @@ def test_run_score_test_with_2d_annotations(tmp_path):
     variant_annot = create_random_variant_annotations(trait_data.df, probs)
     
     # Run score test - this should not raise an error
-    point_estimates, jackknife_estimates, _ = run_score_test(
+    point_estimates, jackknife_estimates = run_score_test(
         trait_data=trait_data,
         annot=variant_annot,
     )
