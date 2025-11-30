@@ -76,6 +76,7 @@ scorestats/*
 figures/*
 scripts/*
 tmp/*
+data/1kg_simulations/*
 
 # Large data files
 data/ldgms/*.edgelist
