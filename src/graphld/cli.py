@@ -482,17 +482,22 @@ def write_convergence_results(filename: str, results: dict):
 
 def _reml(args):
     """Run GraphREML command."""
+    # Check for output filename requirement
+    if not args.out and not args.no_save:
+        raise ValueError("Output filename is required unless --no-save is specified.")
+
     # Check for existing output files
     if args.out:
         # Create output directory if it doesn't exist
         out_dir = os.path.dirname(args.out)
         if out_dir and not os.path.exists(out_dir):
             os.makedirs(out_dir, exist_ok=True)
-        
-        tall_output = args.out + '.tall.csv'
-        if not args.alt_output:
-            if os.path.exists(tall_output):
-                raise FileExistsError(f"Output file {tall_output} already exists")
+
+        if not args.no_save:
+            tall_output = args.out + '.tall.csv'
+            if not args.alt_output:
+                if os.path.exists(tall_output):
+                    raise FileExistsError(f"Output file {tall_output} already exists")
 
     start_time = time.time()
 
@@ -568,32 +573,34 @@ def _reml(args):
         convergence_file = args.out + '.convergence.csv'
         write_convergence_results(convergence_file, results)
 
-        if args.alt_output:
-            heritability_file = args.out + '.heritability.csv'
-            write_results(heritability_file,
-                            results['heritability'],
-                            results['heritability_se'],
-                            results['heritability_log10pval'],
-                            model_options.annotation_columns,
-                            args.name or args.sumstats)
+        if not args.no_save:
+            if args.alt_output:
+                heritability_file = args.out + '.heritability.csv'
+                write_results(heritability_file,
+                                results['heritability'],
+                                results['heritability_se'],
+                                results['heritability_log10pval'],
+                                model_options.annotation_columns,
+                                args.name or args.sumstats)
 
-            enrichment_file = args.out + '.enrichment.csv'
-            write_results(enrichment_file,
-                            results['enrichment'],
-                            results['enrichment_se'],
-                            results['enrichment_log10pval'],
-                            model_options.annotation_columns,
-                            args.name or args.sumstats)
+                enrichment_file = args.out + '.enrichment.csv'
+                write_results(enrichment_file,
+                                results['enrichment'],
+                                results['enrichment_se'],
+                                results['enrichment_log10pval'],
+                                model_options.annotation_columns,
+                                args.name or args.sumstats)
 
-            parameters_file = args.out + '.parameters.csv'
-            write_results(parameters_file,
-                            results['parameters'],
-                            results['parameters_se'],
-                            results['parameters_log10pval'],
-                            model_options.annotation_columns,
-                            args.name or args.sumstats)
-        else:
-            write_tall_results(tall_output, model_options, results)
+                parameters_file = args.out + '.parameters.csv'
+                write_results(parameters_file,
+                                results['parameters'],
+                                results['parameters_se'],
+                                results['parameters_log10pval'],
+                                model_options.annotation_columns,
+                                args.name or args.sumstats)
+            else:
+                tall_output = args.out + '.tall.csv'
+                write_tall_results(tall_output, model_options, results)
 
 def _add_common_arguments(parser):
     """Add arguments that are common to all subcommands."""
@@ -797,6 +804,12 @@ def _add_reml_parser(subparsers):
     _add_common_arguments(parser)
 
     # Optional arguments specific to reml
+    parser.add_argument(
+        '--no-save',
+        help='Do not save results (if output filename is not provided) or only save logs (if output filename is provided)',
+        action='store_true',
+        default=False,
+    )
     parser.add_argument(
         '--name',
         help='Name for this analysis, used in --alt-output files and in score test .hdf5 files',

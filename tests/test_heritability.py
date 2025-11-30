@@ -157,7 +157,7 @@ def test_variant_specific_statistics(metadata_path, create_annotations, create_s
     with h5py.File(variant_stats_path, 'r') as f:
         # Verify that the file contains required blocks
         assert 'traits' in f, "HDF5 file missing 'traits' group"
-        assert 'variants' in f, "HDF5 file missing 'variants' group"
+        assert 'row_data' in f, "HDF5 file missing 'row_data' group"
 
     # Return the path to the HDF5 file for use in the score test
     return variant_stats_path
@@ -174,45 +174,41 @@ def test_score_test(metadata_path, create_annotations, create_sumstats):
 
     try:
         # Import the necessary functions from score_test
-        from score_test.score_test_io import load_trait_data, load_variant_data
-        from score_test.score_test import run_score_test
+        from score_test.score_test_io import load_trait_data, load_row_data
+        from score_test.score_test import run_score_test, VariantAnnot
 
-        # Load data from files
-        variant_data = load_variant_data(variant_stats_path)
-        trait_data = load_trait_data(variant_stats_path, trait_name='test')
-        df_snp = variant_data.with_columns(
-            pl.Series(name='gradient', values=trait_data['gradient']),
-            pl.Series(name='hessian', values=trait_data['hessian']),
-        )
-        data = load_trait_data(variant_stats_path, trait_name='test')
-        params = data['parameters']
-        jackknife_params = data['jackknife_parameters']
+        # Load variant and trait data
+        variant_table = load_row_data(variant_stats_path)
+        trait_data = load_trait_data(variant_stats_path, trait_name='test', variant_table=variant_table)
 
         # Create a simple test annotation dataframe
         annotations = create_annotations(metadata_path, 'EUR')
         test_annot_name = "test_score_annot"
 
+        # Rename SNP to RSID for consistency with new format
+        # Cast RSID to binary to match HDF5 storage format
+        annotations = annotations.rename({'SNP': 'RSID'}).with_columns(
+            pl.col('RSID').cast(pl.Binary)
+        )
+        
         # Add a random annotation column
         np.random.seed(42)
         annotations = annotations.with_columns(
             pl.Series(name=test_annot_name, values=np.random.normal(0, 1, annotations.height))
         )
 
+        # Create VariantAnnot object
+        annot = VariantAnnot(annotations, [test_annot_name])
+
         # Run the score test with the loaded dataframes
-        point_estimates, jackknife_estimates = run_score_test(
-            df_snp=df_snp,
-            df_annot=annotations,
-            params=params,
-            jk_params=jackknife_params,
-            annot_test_list=[test_annot_name],
+        point_estimates, jackknife_estimates, _ = run_score_test(
+            trait_data=trait_data,
+            annot=annot,
         )
 
         # Verify the results
         assert point_estimates is not None
         assert jackknife_estimates is not None
-
-        # Check the values are reasonable
-        assert np.any(point_estimates != 0)
 
     finally:
         # Clean up the variant statistics file

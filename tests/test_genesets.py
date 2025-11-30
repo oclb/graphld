@@ -7,10 +7,12 @@ import polars as pl
 import pytest
 
 from score_test.genesets import (
+    convert_gene_to_variant_annotations,
+    _is_gene_id,
+)
+from score_test.score_test_io import (
     load_gene_table,
     load_gene_sets_from_gmt,
-    convert_gene_sets_to_variant_annotations,
-    _is_gene_id,
 )
 
 
@@ -126,8 +128,8 @@ class TestLoadGeneSetsFromGmt:
             load_gene_sets_from_gmt(str(tmp_path))
 
 
-class TestConvertGeneSetsToVariantAnnotations:
-    """Tests for convert_gene_sets_to_variant_annotations function."""
+class TestConvertGeneToVariantAnnotations:
+    """Tests for convert_gene_to_variant_annotations function."""
     
     def test_convert_gene_sets_basic(self):
         """Test basic conversion of gene sets to variant annotations."""
@@ -144,7 +146,8 @@ class TestConvertGeneSetsToVariantAnnotations:
             'CHR': ['22', '22', '22'],
             'start': [30000000, 30240000, 36860000],
             'end': [30010000, 30250000, 36880000],
-            'midpoint': [30005000, 30245000, 36870000]
+            'midpoint': [30005000, 30245000, 36870000],
+            'POS': [30005000, 30245000, 36870000]  # Add POS for compatibility
         })
         
         gene_sets = {
@@ -154,7 +157,7 @@ class TestConvertGeneSetsToVariantAnnotations:
         
         nearest_weights = np.array([1.0])
         
-        result = convert_gene_sets_to_variant_annotations(
+        result = convert_gene_to_variant_annotations(
             gene_sets, variant_data, gene_table, nearest_weights
         )
         
@@ -163,7 +166,7 @@ class TestConvertGeneSetsToVariantAnnotations:
         assert len(result) == 4
         assert 'CHR' in result.columns
         assert 'BP' in result.columns
-        assert 'SNP' in result.columns
+        assert 'RSID' in result.columns  # Changed from 'SNP' to 'RSID'
         assert 'CM' in result.columns
         assert 'set1' in result.columns
         assert 'set2' in result.columns
@@ -186,7 +189,8 @@ class TestConvertGeneSetsToVariantAnnotations:
             'CHR': ['22', '22'],
             'start': [30000000, 36860000],
             'end': [30010000, 36880000],
-            'midpoint': [30005000, 36870000]
+            'midpoint': [30005000, 36870000],
+            'POS': [30005000, 36870000]
         })
         
         # Use Ensembl IDs in gene sets
@@ -196,7 +200,7 @@ class TestConvertGeneSetsToVariantAnnotations:
         
         nearest_weights = np.array([1.0])
         
-        result = convert_gene_sets_to_variant_annotations(
+        result = convert_gene_to_variant_annotations(
             gene_sets, variant_data, gene_table, nearest_weights
         )
         
@@ -218,7 +222,8 @@ class TestConvertGeneSetsToVariantAnnotations:
             'CHR': ['22'],
             'start': [30000000],
             'end': [30010000],
-            'midpoint': [30005000]
+            'midpoint': [30005000],
+            'POS': [30005000]
         })
         
         gene_sets = {
@@ -227,7 +232,7 @@ class TestConvertGeneSetsToVariantAnnotations:
         
         nearest_weights = np.array([1.0])
         
-        result = convert_gene_sets_to_variant_annotations(
+        result = convert_gene_to_variant_annotations(
             gene_sets, variant_data, gene_table, nearest_weights
         )
         

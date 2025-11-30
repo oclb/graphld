@@ -1,8 +1,8 @@
 import numpy as np
-from score_test.genesets import get_nearest_genes
+from score_test.genesets import _get_nearest_genes
 
 def _load_get_nearest_genes():
-    return get_nearest_genes
+    return _get_nearest_genes
 
 
 def _brute_force_nearest(var_pos: np.ndarray, gene_pos: np.ndarray, k: int) -> np.ndarray:

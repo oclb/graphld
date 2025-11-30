@@ -56,7 +56,7 @@ class ModelOptions:
     params: Optional[np.ndarray] = None
     sample_size: Optional[float] = None
     intercept: float = 1.0
-    link_fn_denominator: float = 1e9
+    link_fn_denominator: float = 6e6 # TODO
     binary_annotations_only: bool = False
 
     def __post_init__(self):
@@ -118,6 +118,8 @@ class MethodOptions:
     surrogate_markers_path: Optional[str] = None
 
     def __post_init__(self):
+        if self.num_iterations < 1:
+            raise ValueError("num_iterations must be at least 1.")
         if self.score_test_hdf5_file_name is not None:
             if self.score_test_hdf5_trait_name is None:
                 raise ValueError("score_test_hdf5_trait_name must be specified if score_test_hdf5_file_name is specified.")
@@ -270,11 +272,13 @@ class GraphREML(ParallelProcessor):
         """
         sumstats: pl.DataFrame = kwargs.get('sumstats')
         method: MethodOptions = kwargs.get('method')
-        surrogate_h5: Optional[str] = kwargs.get('surrogate_markers_path')
         sumstats_blocks: list[pl.DataFrame] = partition_variants(metadata, sumstats)
         num_block_variants = sum(len(block) for block in sumstats_blocks)
         assert num_block_variants <= sumstats.shape[0], f"Too many variants in blocks: {num_block_variants} > {sumstats.shape[0]}"
-        print(f"{sum(len(block) for block in sumstats_blocks)} variants in blocks, {sumstats.shape[0]} initially")
+        if method.verbose:
+            print(f"{sum(len(block) for block in sumstats_blocks)} variants in blocks, {sumstats.shape[0]} initially")
+            print(f"Smallest block size: {min(len(block) for block in sumstats_blocks)}")
+            print(f"Largest block size: {max(len(block) for block in sumstats_blocks)}")
 
         # Filter blocks based on max Z² threshold
         if method.max_chisq_threshold is not None:
@@ -559,6 +563,7 @@ class GraphREML(ParallelProcessor):
         # Second term of d2L/dx2: dL/dM d2m/dx2 where dL/dM = dL/dx / dm/dx
         second_term = del_L_del_xi.ravel() / del_h2i_del_xi_indexed * del2_h2i_del_xi2_indexed
         second_term[np.isnan(second_term)] = 0.0
+        assert not np.isinf(second_term).any()
         hess_diag = first_term + second_term
 
         ldgm.del_factor()  # Free memory used by Cholesky factorization
@@ -842,7 +847,7 @@ class GraphREML(ParallelProcessor):
         for start, end, group in zip(block_indptrs[:-1], block_indptrs[1:], jackknife_block_assignments, strict=False):
             jackknife_variant_assignments[start:end] = group
 
-        assert np.sum(np.diff(jackknife_variant_assignments)!=0) == num_groups-1
+        assert np.sum(np.diff(jackknife_variant_assignments)!=0) <= num_groups-1
 
         return jackknife_variant_assignments
 

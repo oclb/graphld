@@ -27,12 +27,21 @@ class TestLoadVariantData:
         hdf5_path = tmp_path / "test_variants.h5"
         
         with h5py.File(hdf5_path, 'w') as f:
-            variants_group = f.create_group('variants')
-            variants_group.create_dataset('CHR', data=np.array([1, 1, 2, 2]))
-            variants_group.create_dataset('POS', data=np.array([1000, 2000, 3000, 4000]))
-            variants_group.create_dataset('RSID', data=np.array([b'rs1', b'rs2', b'rs3', b'rs4']))
-            variants_group.create_dataset('annotations', data=np.random.randn(4, 3))
-            variants_group.create_dataset('jackknife_blocks', data=np.array([0, 0, 1, 1]))
+            # Use new format with row_data group
+            f.attrs['metadata'] = ''
+            f.attrs['data_type'] = 'variant'
+            f.attrs['keys'] = ['RSID', 'POS']
+            row_data_group = f.create_group('row_data')
+            row_data_group.create_dataset('CHR', data=np.array([1, 1, 2, 2]))
+            row_data_group.create_dataset('POS', data=np.array([1000, 2000, 3000, 4000]))
+            row_data_group.create_dataset('RSID', data=np.array([b'rs1', b'rs2', b'rs3', b'rs4']))
+            # Split annotations into separate columns
+            annot_data = np.random.randn(4, 3)
+            for i in range(3):
+                row_data_group.create_dataset(f'annot_{i}', data=annot_data[:, i])
+            row_data_group.create_dataset('jackknife_blocks', data=np.array([0, 0, 1, 1]))
+            f.create_group('traits')
+            f.create_group('groups')
         
         # Load data
         df = load_variant_data(str(hdf5_path))
@@ -43,7 +52,9 @@ class TestLoadVariantData:
         assert 'CHR' in df.columns
         assert 'POS' in df.columns
         assert 'RSID' in df.columns
-        assert 'annotations' in df.columns
+        assert 'annot_0' in df.columns
+        assert 'annot_1' in df.columns
+        assert 'annot_2' in df.columns
         assert 'jackknife_blocks' in df.columns
         assert df['CHR'].to_list() == [1, 1, 2, 2]
         assert df['RSID'].to_list() == ['rs1', 'rs2', 'rs3', 'rs4']
@@ -67,26 +78,51 @@ class TestLoadTraitData:
         n_blocks = 10
         
         with h5py.File(hdf5_path, 'w') as f:
+            # Use new format
+            f.attrs['metadata'] = ''
+            f.attrs['data_type'] = 'variant'
+            f.attrs['keys'] = ['RSID', 'POS']
+            
+            # Create row_data group
+            row_data_group = f.create_group('row_data')
+            row_data_group.create_dataset('CHR', data=np.ones(n_variants, dtype=int))
+            row_data_group.create_dataset('POS', data=np.arange(n_variants))
+            annot_data = np.random.randn(n_variants, n_params)
+            for i in range(n_params):
+                row_data_group.create_dataset(f'annot_{i}', data=annot_data[:, i])
+            row_data_group.create_dataset('jackknife_blocks', data=np.repeat(np.arange(n_blocks), n_variants // n_blocks))
+            row_data_group.create_dataset('RSID', data=np.array([f'rs{i}' for i in range(n_variants)], dtype='S10'))
+            
+            # Create traits group
             traits_group = f.create_group('traits')
             trait_group = traits_group.create_group('test_trait')
-            trait_group.create_dataset('parameters', data=np.random.randn(n_params))
-            trait_group.create_dataset('jackknife_parameters', data=np.random.randn(n_blocks, n_params))
+            params_group = trait_group.create_group('parameters')
+            params_group.create_dataset('parameters', data=np.random.randn(n_params))
+            params_group.create_dataset('jackknife_parameters', data=np.random.randn(n_blocks, n_params))
             trait_group.create_dataset('gradient', data=np.random.randn(n_variants))
             trait_group.create_dataset('hessian', data=np.random.randn(n_variants))
+            
+            f.create_group('groups')
         
         # Load data
-        data = load_trait_data(str(hdf5_path), 'test_trait')
+        from score_test.score_test import TraitData
+        variant_table = load_variant_data(str(hdf5_path))
+        trait_data = load_trait_data(str(hdf5_path), 'test_trait', variant_table)
         
         # Assertions
-        assert isinstance(data, dict)
-        assert 'parameters' in data
-        assert 'jackknife_parameters' in data
-        assert 'gradient' in data
-        assert 'hessian' in data
-        assert data['parameters'].shape == (n_params,)
-        assert data['jackknife_parameters'].shape == (n_blocks, n_params)
-        assert data['gradient'].shape == (n_variants,)
-        assert data['hessian'].shape == (n_variants,)
+        assert isinstance(trait_data, TraitData)
+        assert isinstance(trait_data.df, pl.DataFrame)
+        assert 'gradient' in trait_data.df.columns
+        assert 'hessian' in trait_data.df.columns
+        # Check for annotation columns (stored in annot_names)
+        assert trait_data.annot_names is not None
+        assert len(trait_data.annot_names) == n_params
+        assert all(f'annot_{i}' in trait_data.annot_names for i in range(n_params))
+        assert all(f'annot_{i}' in trait_data.df.columns for i in range(n_params))
+        assert 'RSID' in trait_data.df.columns
+        assert trait_data.params.shape == (n_params,)
+        assert trait_data.jk_params.shape == (n_blocks, n_params)
+        assert len(trait_data.df) == n_variants
 
 
 class TestLoadAnnotations:
@@ -236,12 +272,14 @@ class TestLoadVariantAnnotations:
         })
         df.write_csv(annot_file, separator='\t')
         
-        df_annot, annot_names = load_variant_annotations(str(annot_dir))
+        from score_test.score_test import VariantAnnot
+        variant_annot = load_variant_annotations(str(annot_dir))
         
-        assert len(annot_names) == 2
-        assert 'annot1' in annot_names
-        assert 'annot2' in annot_names
-        assert len(df_annot) == 2
+        assert isinstance(variant_annot, VariantAnnot)
+        assert len(variant_annot.annot_names) == 2
+        assert 'annot1' in variant_annot.annot_names
+        assert 'annot2' in variant_annot.annot_names
+        assert len(variant_annot.df) == 2
     
     def test_load_variant_annotations_filtered(self, tmp_path):
         """Test loading specific annotation columns."""
@@ -260,12 +298,14 @@ class TestLoadVariantAnnotations:
         })
         df.write_csv(annot_file, separator='\t')
         
-        df_annot, annot_names = load_variant_annotations(str(annot_dir), ['annot1', 'annot3'])
+        from score_test.score_test import VariantAnnot
+        variant_annot = load_variant_annotations(str(annot_dir), ['annot1', 'annot3'])
         
-        assert len(annot_names) == 2
-        assert 'annot1' in annot_names
-        assert 'annot3' in annot_names
-        assert 'annot2' not in annot_names
+        assert isinstance(variant_annot, VariantAnnot)
+        assert len(variant_annot.annot_names) == 2
+        assert 'annot1' in variant_annot.annot_names
+        assert 'annot3' in variant_annot.annot_names
+        assert 'annot2' not in variant_annot.annot_names
 
 
 class TestLoadGeneAnnotations:
@@ -300,15 +340,16 @@ class TestLoadGeneAnnotations:
         
         weights = np.array([1.0])
         
-        df_annot, annot_names = load_gene_annotations(
+        # load_gene_annotations now returns a GeneAnnot object
+        from score_test.score_test import GeneAnnot
+        gene_annot = load_gene_annotations(
             str(gmt_dir), variant_data, str(gene_table_path), weights
         )
         
-        assert len(annot_names) == 1
-        assert 'set1' in annot_names
-        assert 'CHR' in df_annot.columns
-        assert 'SNP' in df_annot.columns
-        assert len(df_annot) == 3
+        assert isinstance(gene_annot, GeneAnnot)
+        assert len(gene_annot.annot_names) == 1
+        assert 'set1' in gene_annot.annot_names
+        assert 'GENE1' in gene_annot.gene_sets['set1']
 
 
 class TestCreateRandomGeneAnnotations:
@@ -335,20 +376,20 @@ class TestCreateRandomGeneAnnotations:
             'RSID': [f'rs{i}' for i in range(10)]
         })
         
-        weights = np.array([1.0])
         probs = [0.5, 0.2]
         
         np.random.seed(42)
-        df_annot, annot_names = create_random_gene_annotations(
-            variant_data, str(gene_table_path), weights, probs
+        from score_test.score_test import GeneAnnot
+        gene_annot = create_random_gene_annotations(
+            variant_data, str(gene_table_path), probs
         )
         
-        assert len(annot_names) == 2
-        assert 'random_gene_0' in annot_names
-        assert 'random_gene_1' in annot_names
-        assert len(df_annot) == 10
-        assert 'CHR' in df_annot.columns
-        assert 'SNP' in df_annot.columns
+        assert isinstance(gene_annot, GeneAnnot)
+        assert len(gene_annot.annot_names) == 2
+        assert 'random_gene_0' in gene_annot.annot_names
+        assert 'random_gene_1' in gene_annot.annot_names
+        assert 'random_gene_0' in gene_annot.gene_sets
+        assert 'random_gene_1' in gene_annot.gene_sets
     
     def test_create_random_gene_annotations_reproducible(self, tmp_path):
         """Test that random gene annotations are reproducible with seed."""
@@ -370,18 +411,17 @@ class TestCreateRandomGeneAnnotations:
             'RSID': [f'rs{i}' for i in range(5)]
         })
         
-        weights = np.array([1.0])
         probs = [0.5]
         
         # Generate twice with same seed
         np.random.seed(42)
-        df1, names1 = create_random_gene_annotations(variant_data, str(gene_table_path), weights, probs)
+        gene_annot1 = create_random_gene_annotations(variant_data, str(gene_table_path), probs)
         
         np.random.seed(42)
-        df2, names2 = create_random_gene_annotations(variant_data, str(gene_table_path), weights, probs)
+        gene_annot2 = create_random_gene_annotations(variant_data, str(gene_table_path), probs)
         
-        assert names1 == names2
-        assert df1['random_gene_0'].to_list() == df2['random_gene_0'].to_list()
+        assert gene_annot1.annot_names == gene_annot2.annot_names
+        assert gene_annot1.gene_sets['random_gene_0'] == gene_annot2.gene_sets['random_gene_0']
 
 
 class TestCreateRandomVariantAnnotations:
@@ -398,16 +438,18 @@ class TestCreateRandomVariantAnnotations:
         probs = [0.5, 0.2]
         
         np.random.seed(42)
-        df_annot, annot_names = create_random_variant_annotations(variant_data, probs)
+        from score_test.score_test import VariantAnnot
+        variant_annot = create_random_variant_annotations(variant_data, probs)
         
-        assert len(annot_names) == 2
-        assert 'random_variant_0' in annot_names
-        assert 'random_variant_1' in annot_names
-        assert len(df_annot) == 4
-        assert 'CHR' in df_annot.columns
-        assert 'BP' in df_annot.columns
-        assert 'SNP' in df_annot.columns
-        assert 'CM' in df_annot.columns
+        assert isinstance(variant_annot, VariantAnnot)
+        assert len(variant_annot.annot_names) == 2
+        assert 'random_variant_0' in variant_annot.annot_names
+        assert 'random_variant_1' in variant_annot.annot_names
+        assert len(variant_annot.df) == 4
+        assert 'CHR' in variant_annot.df.columns
+        assert 'BP' in variant_annot.df.columns
+        assert 'RSID' in variant_annot.df.columns  # Changed from 'SNP' to 'RSID'
+        assert 'CM' in variant_annot.df.columns
     
     def test_create_random_variant_annotations_values(self):
         """Test that random variant annotations have correct values."""
@@ -420,10 +462,10 @@ class TestCreateRandomVariantAnnotations:
         probs = [0.5]
         
         np.random.seed(42)
-        df_annot, annot_names = create_random_variant_annotations(variant_data, probs)
+        variant_annot = create_random_variant_annotations(variant_data, probs)
         
         # Check that values are 0 or 1
-        values = df_annot['random_variant_0'].to_list()
+        values = variant_annot.df['random_variant_0'].to_list()
         assert all(v in [0.0, 1.0] for v in values)
         
         # Check that approximately half are 1 (with some tolerance)
@@ -442,13 +484,13 @@ class TestCreateRandomVariantAnnotations:
         
         # Generate twice with same seed
         np.random.seed(42)
-        df1, names1 = create_random_variant_annotations(variant_data, probs)
+        variant_annot1 = create_random_variant_annotations(variant_data, probs)
         
         np.random.seed(42)
-        df2, names2 = create_random_variant_annotations(variant_data, probs)
+        variant_annot2 = create_random_variant_annotations(variant_data, probs)
         
-        assert names1 == names2
-        assert df1['random_variant_0'].to_list() == df2['random_variant_0'].to_list()
+        assert variant_annot1.annot_names == variant_annot2.annot_names
+        assert variant_annot1.df['random_variant_0'].to_list() == variant_annot2.df['random_variant_0'].to_list()
 
 
 if __name__ == '__main__':

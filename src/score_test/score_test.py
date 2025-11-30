@@ -168,22 +168,13 @@ class VariantAnnot(Annot):
 
         # Extract arrays from merged dataframe
         grad = df_merged['gradient'].to_numpy().astype(np.float64)
-        
-        # Compute correction term: hessian * model_annotations (if hessian available)
-        if 'hessian' in df_merged.columns:
-            hessian = df_merged['hessian'].to_numpy().astype(np.float64)
-            model_annot = df_merged[trait_data.annot_names].to_numpy().astype(np.float64) if trait_data.annot_names else None
-            correction = hessian.reshape(-1, 1) * model_annot if model_annot is not None else None
-        else:
-            # No hessian available - return None for correction
-            model_annot = df_merged[trait_data.annot_names].to_numpy().astype(np.float64) if trait_data.annot_names else None
-            correction = None
-        
+        hessian = df_merged['hessian'].to_numpy().astype(np.float64) if 'hessian' in df_merged.columns else None
+        model_annot = df_merged[trait_data.annot_names].to_numpy().astype(np.float64) if trait_data.annot_names else None
         test_annot = df_merged[self.annot_names].to_numpy().astype(np.float64)
         if model_annot is not None and model_annot.shape[1] > 0:
             _project_out(test_annot, model_annot)
 
-        return grad, correction, test_annot, block_boundaries
+        return grad, hessian, model_annot, test_annot, block_boundaries
 
 
 class GeneAnnot(Annot):
@@ -246,18 +237,11 @@ class GeneAnnot(Annot):
         
         # Extract grad and correction (unmodified from TraitData)
         grad = trait_data.df['gradient'].to_numpy().astype(np.float64)
-        correction_cols = [col for col in trait_data.df.columns if col.startswith('correction_')]
-        
-        # For gene-level data, there are no correction columns
-        if correction_cols:
-            correction = trait_data.df.select(correction_cols).to_numpy().astype(np.float64)
-        else:
-            correction = None
         
         # Get block boundaries
         block_boundaries = get_block_boundaries(trait_data.df['jackknife_blocks'].to_numpy())
         
-        return grad, correction, test_annot, block_boundaries
+        return grad, None, None, test_annot, block_boundaries
 
 
 class GenomeAnnot(Annot):
@@ -277,9 +261,73 @@ class GenomeAnnot(Annot):
         raise NotImplementedError("GenomeAnnot.merge() not yet implemented")
 
 
+def _link_fn(x: np.ndarray) -> np.ndarray:
+    """Softmax link function (without denominator).
+    
+    Args:
+        x: Array of values
+    
+    Returns:
+        Softmax of x
+    """
+    # Robust softmax: exp(x) / (1 + exp(x))
+    result = np.zeros_like(x)
+    pos_mask = x >= 0
+    result[pos_mask] = 1.0 / (1.0 + np.exp(-x[pos_mask]))
+    result[~pos_mask] = np.exp(x[~pos_mask]) / (1.0 + np.exp(x[~pos_mask]))
+    assert result.shape == x.shape
+    return result
+
+
+def _estimate_tau(test_annot: np.ndarray, grad: np.ndarray, hessian: np.ndarray) -> np.ndarray:
+    """Estimate coefficient tau for new annotation by taking a single Newton step.
+    
+    Args:
+        test_annot: Test annotation vector (n_variants,)
+        grad: Gradient vector (n_variants,)
+        hessian: Hessian vector (n_variants,)
+    
+    Returns:
+        Estimated coefficient (scalar)
+    """
+    dLdt = grad.reshape(1, -1) @ test_annot
+    d2Ldt2 = hessian.reshape(1, -1) @ (test_annot**2)
+    result = - dLdt / d2Ldt2
+    if np.any(d2Ldt2 >= 0):
+        logging.warning(f"Non-negative second derivative; setting tau to NaN")
+    result[d2Ldt2 >= 0] = np.nan
+    return result
+
+
+def _compute_enrichment(annot: np.ndarray, test_annot: np.ndarray, grad: np.ndarray, 
+                        hessian: np.ndarray, params: np.ndarray) -> np.ndarray:
+    """Compute enrichment point estimate for test annotations.
+
+    Enrichment is defined as heritability / expected heritability, where the expected 
+    heritability is computed under the baseline model.
+    
+    Args:
+        annot: Model annotation matrix (n_variants, n_annot)
+        test_annot: Test annotation matrix (n_variants, n_test_annot)
+        grad: Gradient vector (n_variants,)
+        hessian: Hessian vector (n_variants,)
+        params: Model parameters (n_annot,)
+    
+    Returns:
+        Enrichment values (n_test_annot,)
+    """
+    x = annot @ params.reshape(-1, 1)
+    denominator = _link_fn(x)
+    tau = _estimate_tau(test_annot, grad, hessian)
+    logging.info(f"Estimated tau: {tau.ravel()}")
+    numerator = _link_fn(x + test_annot * tau)
+    enrichment = np.sum(numerator, axis=0) / np.sum(denominator)
+    return enrichment
+
+
 def run_score_test(trait_data: TraitData,
     annot: Annot,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Run score test for hypothesis testing of new annotation or functional category.
 
@@ -288,13 +336,10 @@ def run_score_test(trait_data: TraitData,
         annot: Annot object (VariantAnnot or GeneAnnot) containing annotations to test
 
     Returns:
-        Tuple of (point_estimates, jackknife_estimates)
+        Tuple of (point_estimates, jackknife_estimates, enrichments, jackknife_enrichments)
     """
     # Merge trait data with annotations
-    grad, correction, test_annot, block_boundaries = annot.merge(trait_data)
-    
-    if correction is None:
-        raise ValueError("Hessian data is required for exact score test. Use run_approx_score_test instead.")
+    grad, hessian, annot, test_annot, block_boundaries = annot.merge(trait_data)
     
     noBlocks = len(block_boundaries) - 1
 
@@ -305,7 +350,9 @@ def run_score_test(trait_data: TraitData,
         block = range(block_boundaries[i], block_boundaries[i+1])
         Ui = grad[block].reshape(1,-1) @ test_annot[block, :]
         U_block.append(Ui)
-        Ji = correction[block, :].T @ test_annot[block, :]
+        # correction[i,j] = hessian[i] * annot[i,j]
+        correction = hessian[block].reshape(-1, 1) * annot[block, :]
+        Ji = correction.T @ test_annot[block, :]
         J_block.append(Ji)
     U_total = sum(U_block)
     J_total = sum(J_block)
@@ -322,7 +369,9 @@ def run_score_test(trait_data: TraitData,
         Ji = J_total - J_block[i]
         U_jackknife[i, :] += ((trait_data.jk_params[i,:] - trait_data.params).reshape(1,-1) @ Ji).ravel()
 
-    return U_total, U_jackknife
+    enrichment = _compute_enrichment(annot, test_annot, grad, hessian, trait_data.params)
+
+    return U_total, U_jackknife, enrichment
 
 def run_approx_score_test(trait_data: TraitData,
     annot: Annot,
@@ -340,7 +389,7 @@ def run_approx_score_test(trait_data: TraitData,
         Tuple of (point_estimates, jackknife_estimates)
     """
     # Merge trait data with annotations
-    grad, _, test_annot, block_boundaries = annot.merge(trait_data)
+    grad, _, _, test_annot, block_boundaries = annot.merge(trait_data)
     
     noBlocks = len(block_boundaries) - 1
 
@@ -360,7 +409,7 @@ def run_approx_score_test(trait_data: TraitData,
         # deduct the score contributed from one LD block
         U_jackknife[i, :] = U_total - U_block[i].ravel()
 
-    return U_total, U_jackknife
+    return U_total, U_jackknife, None
 
 
 def _setup_logging(output_fp: str | None, verbose: bool):
@@ -510,50 +559,47 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
             score_test = run_score_test
             logging.info(f"Using exact score test for trait: {trait}")
 
-        point_estimates, jackknife_estimates = score_test(
-            trait_data=trait_data,
-            annot=annot,
-        )
+        # Run score test - handle both exact and approximate versions
+        point_estimates, jackknife_estimates, enrichments = score_test(
+                trait_data=trait_data,
+                annot=annot,
+            )
         
         # Store for meta-analysis
         trait_results[trait] = (point_estimates, jackknife_estimates)
 
         # Compute Z-scores
         std_dev = np.std(jackknife_estimates, axis=0)
-        n = jackknife_estimates.shape[0] - 1
-        z_scores = point_estimates.ravel() / std_dev / np.sqrt(n)
-        results_dict[trait] = z_scores
+        z_col = f"{trait}_Z"
+        z_scores = point_estimates.ravel() / std_dev / np.sqrt(jackknife_estimates.shape[0] - 1)
+        results_dict[z_col] = z_scores
+        
+        # Add enrichments if available
+        if enrichments is not None:
+            enrichment_col = f"{trait}_enrichment"
+            results_dict[enrichment_col] = enrichments
     
     # Load trait groups and perform meta-analyses
     trait_groups = get_trait_groups(variant_stats_hdf5)
-    
-    if trait_groups:
-        # Perform meta-analysis for each defined group
-        for group_name, group_traits in trait_groups.items():
-            # Filter to traits that were actually processed
-            group_traits = [t for t in group_traits if t in trait_results]
-            
-            if len(group_traits) > 1:
-                meta = MetaAnalysis()
-                for trait in group_traits:
-                    point_est, jk_est = trait_results[trait]
-                    meta.update(point_est, jk_est)
-                results_dict[group_name] = meta.z_scores.ravel()
-                logging.info(f"Computed meta-analysis for group '{group_name}' with {len(group_traits)} traits")
-    else:
-        # Fallback: meta-analyze all traits if no groups defined and multiple traits
-        if len(trait_names) > 1 and 'meta_analysis' not in trait_names:
-            meta = MetaAnalysis()
-            for trait in trait_names:
-                point_est, jk_est = trait_results[trait]
-                meta.update(point_est, jk_est)
-            results_dict['meta_analysis'] = meta.z_scores.ravel()
-            logging.info(f"Computed default meta-analysis for all {len(trait_names)} traits")
+    for group_name, group_traits in trait_groups.items():
+        # Filter to traits that were actually processed
+        group_traits = [t for t in group_traits if t in trait_results]
+        meta = MetaAnalysis()
+        for trait in group_traits:
+            meta.update(*trait_results[trait])
+        z_col = f"{group_name}_Z"
+        results_dict[z_col] = meta.z_scores.ravel()
+        logging.info(f"Computed meta-analysis for group '{group_name}' with {len(group_traits)} traits")
 
     results_df = pl.DataFrame(results_dict)
     
     if verbose or not output_fp:
         print(results_df)
+
+    if random_genes or random_variants:
+        print("\nRoot mean squared Z-scores:")
+        for col in [c for c in results_df.columns if c.endswith('_Z')]:
+            print(f"{col}: {np.sqrt(np.mean(results_df[col].to_numpy()**2)):.4f}")
 
     if output_fp:
         results_df.write_csv(output_fp + ".txt", separator='\t')

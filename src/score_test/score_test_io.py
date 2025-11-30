@@ -27,6 +27,21 @@ def _load_hdf5_group(group: h5py.Group) -> dict:
         result['@' + attr_name] = attr_value
     return result
 
+def _decode_bytes_array(arr: np.ndarray) -> np.ndarray:
+    """Decode numpy array of bytes to strings."""
+    if not hasattr(arr, 'dtype'):
+        return arr
+        
+    if arr.dtype.kind == 'S':
+        return arr.astype(str)
+    elif arr.dtype.kind == 'O' and len(arr) > 0 and isinstance(arr[0], bytes):
+        try:
+            return np.array([x.decode('utf-8') for x in arr])
+        except Exception as e:
+            logging.warning(f"Failed to decode bytes array: {e}")
+            return arr
+    return arr
+
 def is_gene_level_hdf5(hdf5_path: str) -> bool:
     """Check if HDF5 file contains gene-level data.
     
@@ -76,9 +91,10 @@ def load_row_data(hdf5_path: str) -> pl.DataFrame:
                 # Flatten 2D arrays with single column
                 if len(arr.shape) == 2 and arr.shape[1] == 1:
                     data[key] = arr.ravel()
+                    arr = data[key] # update reference
+                
                 # Convert bytes to strings
-                if hasattr(arr, 'dtype') and arr.dtype.kind == 'S':
-                    data[key] = arr.astype(str)
+                data[key] = _decode_bytes_array(arr)
 
     return pl.DataFrame(data)
 
@@ -155,7 +171,8 @@ def load_trait_data(hdf5_path: str, trait_name: str, variant_table: pl.DataFrame
     new_columns = []
     for key_name, value in trait_hdf5.items():
         if isinstance(value, np.ndarray):
-            new_columns.append(pl.Series(name=key_name, values=value))
+            decoded_value = _decode_bytes_array(value)
+            new_columns.append(pl.Series(name=key_name, values=decoded_value))
     
     df = variant_table.with_columns(new_columns)
 
@@ -283,6 +300,7 @@ def load_gene_table(gene_table_path: str, chromosomes: list[int] | None = None) 
         .filter(pl.col('gene_id').is_not_null()) \
         .with_columns(pl.col('gene_name').fill_null('NA')) \
         .with_columns(((pl.col('start') + pl.col('end')) / 2).alias('midpoint')) \
+        .with_columns(pl.col('midpoint').alias('POS')) \
         .sort(pl.col('CHR').cast(pl.Int64), 'midpoint') \
         .collect()
     
