@@ -626,16 +626,16 @@ def load_annotations(annot_path: str,
 
         # Read all matching files for this chromosome
         dfs = []
-        cols_found = set()
+        seen_cols = set()
         for file_path in matching_files:
-            df = pl.scan_csv(
-                file_path,
-                separator='\t',
-                infer_schema_length=infer_schema_length
-            )
-            df = df.select([col for col in df.columns if col not in cols_found])
-            cols_found.update(df.columns)
-            dfs.append(df)
+            df = pl.scan_csv(file_path, separator='\t', infer_schema_length=infer_schema_length)
+            # Drop columns that were already seen in previous files to avoid duplicates
+            schema_names = df.collect_schema().names()
+            cols_to_keep = [col for col in schema_names if col not in seen_cols]
+            if cols_to_keep:
+                df = df.select(cols_to_keep)
+                seen_cols.update(cols_to_keep)
+                dfs.append(df)
 
         # Horizontally concatenate all dataframes for this chromosome
         if dfs:
@@ -648,8 +648,8 @@ def load_annotations(annot_path: str,
             f"No annotation files found in {annot_path} matching pattern {file_pattern}"
         )
 
-    # Concatenate all chromosome dataframes vertically
-    annotations = pl.concat(annotations, how="vertical").collect()
+    # Concatenate all chromosome dataframes and handle different schemas
+    annotations = pl.concat(annotations, how="diagonal_relaxed").collect()
 
     # Convert binary columns to boolean to save memory
     numeric_types = (pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.Float32, pl.Float64)
