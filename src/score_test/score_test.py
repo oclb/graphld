@@ -132,6 +132,36 @@ class VariantAnnot(Annot):
         super().__init__(annot_names, other_key='RSID')
         self.df = df
     
+    def perturb(self, fraction: float, seed: int | None = None):
+        """Perturb binary annotations."""
+
+        def _perturb_binary_vector(vals: np.ndarray, fraction: float, rng: np.random.Generator) -> np.ndarray:
+            p = np.mean(vals)
+            assert 0 <= p <= 1, f"p must be between 0 and 1, got {p}"
+            perturb_mask = (rng.random(len(vals)) < fraction)
+            vals[perturb_mask] = rng.binomial(1, p, np.sum(perturb_mask)).astype(vals.dtype)
+            return vals
+
+        rng = np.random.default_rng(seed)
+        new_cols = []
+        kept_names = []
+        for col in self.annot_names:
+            vals = self.df[col].to_numpy().copy()
+            
+            if np.any(np.isnan(vals)):
+                raise ValueError(f"Annotation '{col}' contains NaNs")
+
+            unique = np.unique(vals)
+            if np.all(np.isin(unique, [0, 1])):
+                vals = _perturb_binary_vector(vals, fraction, rng)
+                new_cols.append(pl.Series(col, vals))
+                kept_names.append(col)
+                 
+        if new_cols:
+            self.df = self.df.with_columns(new_cols)
+            
+        self.annot_names = kept_names
+
     def merge(self, trait_data: TraitData) -> tuple[np.ndarray, np.ndarray | None, np.ndarray, np.ndarray]:
         """Merge variant annotations with TraitData.
         
@@ -334,8 +364,10 @@ def _setup_logging(output_fp: str | None, verbose: bool):
               help='Enable verbose output (log messages and results to console).')
 @click.option('--seed', type=int, default=None,
               help='Seed for generating random annotations.')
+@click.option('--perturb-annot', type=float, default=0,
+              help='Fraction of variants to perturb for calibration testing.')
 def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, random_genes, 
-         random_variants, gene_table, nearest_weights, annotations, trait_name, verbose, seed):
+         random_variants, gene_table, nearest_weights, annotations, trait_name, verbose, seed, perturb_annot):
     """Run score test for annotation enrichment."""
     
     _setup_logging(output_fp, verbose)
@@ -417,6 +449,14 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
             "--gene-annot-dir, --random-genes, --random-variants"
         raise click.UsageError(msg)
 
+    # Apply perturbation if requested
+    if perturb_annot > 0:
+        if isinstance(annot, VariantAnnot):
+             logging.info(f"Perturbing annotations with fraction {perturb_annot}")
+             annot.perturb(perturb_annot, seed)
+        else:
+             logging.warning("Perturbation only supported for VariantAnnot")
+
     # Run the score test
     results_dict = {'annotation' : annot.annot_names}
     trait_names = get_trait_names(variant_stats_hdf5, trait_name)
@@ -456,9 +496,10 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
     results_df = pl.DataFrame(results_dict)
     
     if verbose or not output_fp:
-        print(results_df)
+        with pl.Config(tbl_rows=-1, tbl_cols=-1):
+            print(results_df)
 
-    if random_genes or random_variants:
+    if random_genes or random_variants or perturb_annot > 0:
         print("\nRoot mean squared Z-scores:")
         for col in [c for c in results_df.columns if c.endswith('_Z')]:
             print(f"{col}: {np.sqrt(np.mean(results_df[col].to_numpy()**2)):.4f}")
