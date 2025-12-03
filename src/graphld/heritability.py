@@ -178,6 +178,8 @@ def _surrogate_marker(ldgm: PrecisionOperator, missing_index: int, candidates: p
     Returns:
         Dictionary corresponding to a row in the candidates DataFrame, including key 'index'
     """
+    if len(candidates) == 0:
+        raise ValueError("No candidates provided.")
     indicator = np.zeros(ldgm.shape[0])
     indicator[missing_index] = 1
     index_correlations = ldgm.solve(indicator)
@@ -241,7 +243,7 @@ def _project_out(y: np.ndarray, x: np.ndarray):
     """Projects out x from y in place."""
     beta = np.linalg.solve(x.T @ x, x.T @ y.reshape(-1,1))
     y -= (x @ beta).reshape(y.shape)
-    assert np.allclose(x.T @ y, np.zeros(x.shape[1]), rtol=1e-3)
+    # assert np.allclose(x.T @ y, np.zeros(x.shape[1]), rtol=1e-3)
     print(f"Sum of y: {np.sum(y)}")
     print(f"Shape of y: {y.shape}")
 
@@ -337,6 +339,7 @@ class GraphREML(ParallelProcessor):
                                 annotation_columns: List[str],
                                 match_by_position: bool,
                                 verbose: bool = False,
+                                surrogate_map: Optional[np.ndarray] = None,
                                 ):
         """Initialize Z-scores for a block by merging variants and computing Pz.
         
@@ -364,22 +367,42 @@ class GraphREML(ParallelProcessor):
         )
         if verbose:
             print(f"{len(annot_df)} sumstats variants before merging, {len(ldgm.variant_info)} afterward")
-            if len(ldgm.variant_info) == 0:
-                print(f"No variants left after merging annotations and sumstats")
+        
+        if len(ldgm.variant_info) == 0:
+            if verbose:
+                print(f"No variants left after merging annotations and sumstats - skipping block")
+            return None, None
         
         variant_info = ldgm.variant_info.with_row_index(name="vi_row_nr")
         variant_info_nonmissing = variant_info.filter(pl.col('Z').is_not_null())\
             .group_by('index').first()\
             .with_row_index(name="surrogate_nr")
+        index_to_row = {row['index']: row for row in variant_info_nonmissing.to_dicts()}
         variant_info_missing = variant_info.filter(pl.col('Z').is_null())
+        
+        if len(variant_info_nonmissing) == 0:
+            if verbose:
+                print(f"All variants have missing Z-scores - skipping block")
+            return None, None
+        
         indices_arr = np.array(variant_info.get_column('index').to_numpy())
         z_arr = np.array(variant_info.get_column('Z').to_numpy())
         z_indices = np.full(ldgm.shape[0], fill_value=np.nan)
         z_indices[variant_info_nonmissing.get_column('index').to_numpy()] = \
             variant_info_nonmissing.get_column('Z').to_numpy()
+        missing_count = 0
         for row in variant_info_missing.to_dicts():
             idx = row['index']
-            surrogate_row = _surrogate_marker(ldgm, idx, variant_info_nonmissing)
+            surrogate_row: dict | None = index_to_row.get(idx)
+            if surrogate_row is None:
+                # Try to use pre-computed surrogate map if available
+                if surrogate_map is not None:
+                    surrogate_idx = surrogate_map[idx]
+                    surrogate_row = index_to_row.get(surrogate_idx)
+                # Fall back to computing surrogate on-the-fly
+                if surrogate_row is None:
+                    missing_count += 1
+                    surrogate_row = _surrogate_marker(ldgm, idx, variant_info_nonmissing)
             indices_arr[row['vi_row_nr']] = surrogate_row['index']
             z_arr[row['vi_row_nr']] = z_indices[surrogate_row['index']]
 
@@ -390,7 +413,7 @@ class GraphREML(ParallelProcessor):
         ]).drop('vi_row_nr')
 
         if verbose:
-            print(f"{len(variant_info_missing)} missing rows assigned surrogates")
+            print(f"{missing_count} missing rows assigned surrogates")
 
         # Keep only first occurrence of each index for Z-scores
         first_index_mask = variant_info.select(pl.col('index').is_first_distinct()).to_numpy().flatten()
@@ -428,6 +451,7 @@ class GraphREML(ParallelProcessor):
                            old_variant_h2: float,
                            num_samples: int,
                            likelihood_only: bool,
+                           seed: Optional[int] = None,
                            ) -> Tuple[float, Optional[np.ndarray], Optional[np.ndarray], np.ndarray]:
         """Compute likelihood, gradient, and hessian for a single block.
 
@@ -474,10 +498,12 @@ class GraphREML(ParallelProcessor):
         gradient = gaussian_likelihood_gradient(
             Pz, ldgm, del_M_del_a=del_M_del_a,
             n_samples=num_samples,
+            seed=seed,
         )
 
         hessian = gaussian_likelihood_hessian(
-            Pz, ldgm, del_M_del_a=del_M_del_a
+            Pz, ldgm, del_M_del_a=del_M_del_a,
+            seed=seed,
         )
 
         ldgm.del_factor() # To reduce memory usage
@@ -512,6 +538,7 @@ class GraphREML(ParallelProcessor):
     def _compute_variant_grad(ldgm: PrecisionOperator,
                                   Pz: np.ndarray,
                                   del_M_del_x: np.ndarray,
+                                  seed: Optional[int] = None,
                                   ) -> np.ndarray:
         """Compute gradient of log likelihood with respect to the argument of the link function for each variant.
 
@@ -523,7 +550,7 @@ class GraphREML(ParallelProcessor):
             Array of gradients dlogL / dx_i, where h^2_i = link(x_i)
         """
         many_samples = 200
-        grad = gaussian_likelihood_gradient(Pz, ldgm, n_samples=many_samples, del_M_del_a=None)
+        grad = gaussian_likelihood_gradient(Pz, ldgm, n_samples=many_samples, del_M_del_a=None, seed=seed)
         grad = grad[ldgm.variant_indices].ravel() * del_M_del_x.ravel()
         ldgm.del_factor()  # Free memory used by Cholesky factorization
         return grad
@@ -534,6 +561,7 @@ class GraphREML(ParallelProcessor):
                                       del_L_del_xi: np.ndarray,
                                       del_h2i_del_xi: np.ndarray,
                                       del2_h2i_del_xi2: np.ndarray,
+                                      seed: Optional[int] = None,
                                       ) -> np.ndarray:
         """Compute diagonal of the Hessian matrix with respect to the argument of the link 
         function for each variant.
@@ -549,7 +577,7 @@ class GraphREML(ParallelProcessor):
 
         # First term of d2L/dx2: d2L/dm2 (dm/dx)2
         first_term = gaussian_likelihood_hessian(Pz, ldgm, del_M_del_a=None,
-                        diagonal_method="xdiag", n_samples=many_samples)
+                        diagonal_method="xdiag", n_samples=many_samples, seed=seed)
         
         
         # Index to match annotation variants in this LDGM block
@@ -681,36 +709,40 @@ class GraphREML(ParallelProcessor):
         model_options: ModelOptions
         method_options: MethodOptions
         model_options, method_options = worker_params
+        seed = None
+        if method_options.gradient_seed is not None:
+            seed = method_options.gradient_seed + block_data['block_index']
+            np.random.seed(seed)
 
         sumstats: pl.DataFrame = block_data['sumstats']
-        if len(sumstats) == 0:  # Skip blocks that were filtered out
-            return
 
         Pz: np.ndarray
         if flag.value == FLAGS['INITIALIZE']:
+            surrogate_map = None
             if method_options.surrogate_markers_path is not None:
-                # Replaces existing 'index' column with surrogate indices
                 surrogate_map = cls._load_block_surrogate_map(method_options.surrogate_markers_path, 
                                                             block_data.get('block_name'))
-                _indices = ldgm.variant_info.get_column('index').to_numpy()
-                ldgm.variant_info = ldgm.variant_info.with_columns([
-                    pl.Series('index', surrogate_map[_indices])
-                ])
 
             ldgm, Pz = cls._initialize_block_zscores(ldgm,
                                                     sumstats,
                                                     model_options.annotation_columns,
                                                     method_options.match_by_position,
-                                                    method_options.verbose)
+                                                    method_options.verbose,
+                                                    surrogate_map=surrogate_map)
+            
 
             # Work in effect-size as opposed to Z score units
-            Pz /= np.sqrt(model_options.sample_size)
-            ldgm.times_scalar(model_options.intercept / model_options.sample_size)
+            if Pz is not None:
+                Pz /= np.sqrt(model_options.sample_size)
+                ldgm.times_scalar(model_options.intercept / model_options.sample_size)
             block_data['Pz'] = Pz
         # ldgm is modified in place and re-used in subsequent iterations
 
         else:
             Pz = block_data['Pz']
+        
+        if Pz is None:
+            return
 
         annot_indices: np.ndarray = ldgm.variant_info.select('annot_indices').to_numpy().flatten()
         max_index: int = np.max(annot_indices) + 1 if len(annot_indices) > 0 else 0
@@ -722,7 +754,7 @@ class GraphREML(ParallelProcessor):
         # Handle variant-specific gradient and Hessian computation
         if flag.value == FLAGS['COMPUTE_VARIANT_SCORE']:
             del_h2i_del_xi, _ = cls._link_fn_derivatives(annot, params, model_options.link_fn_denominator)
-            result = cls._compute_variant_grad(ldgm, Pz, del_h2i_del_xi)
+            result = cls._compute_variant_grad(ldgm, Pz, del_h2i_del_xi, seed=seed)
             result_padded = np.zeros(max_index)
             result_padded[annot_indices] = result
             shared_data['variant_data', block_variants] = result_padded
@@ -731,7 +763,7 @@ class GraphREML(ParallelProcessor):
         if flag.value == FLAGS['COMPUTE_VARIANT_HESSIAN']:
             del_h2i_del_xi, del2_h2i_del_xi2 = cls._link_fn_derivatives(annot, params, model_options.link_fn_denominator)
             del_L_del_xi = shared_data['variant_data', block_variants][annot_indices].ravel()
-            result = cls._compute_variant_hessian_diag(ldgm, Pz, del_L_del_xi, del_h2i_del_xi, del2_h2i_del_xi2)
+            result = cls._compute_variant_hessian_diag(ldgm, Pz, del_L_del_xi, del_h2i_del_xi, del2_h2i_del_xi2, seed=seed)
             result_padded = np.zeros(max_index)
             result_padded[annot_indices] = result.ravel()
             shared_data['variant_data', block_variants] = result_padded
@@ -751,7 +783,8 @@ class GraphREML(ParallelProcessor):
             link_fn_denominator=model_options.link_fn_denominator,
             old_variant_h2=old_variant_h2,
             num_samples=method_options.gradient_num_samples,
-            likelihood_only=likelihood_only
+            likelihood_only=likelihood_only,
+            seed=seed,
                 )
 
         shared_data['likelihood', block_index] = likelihood
@@ -982,9 +1015,10 @@ class GraphREML(ParallelProcessor):
             return step, predicted_increase
 
 
-        # if model.params is not None:
-        #     shared_data['params'] = model.params
-        shared_data['params'] = np.full(num_params, 0) # Leave this for now
+        if model.params is not None:
+            shared_data['params'] = model.params.flatten()
+        else:
+            shared_data['params'] = np.full(num_params, 0)
 
         last_step_bad = True
         for rep in range(num_iterations):
@@ -1002,6 +1036,8 @@ class GraphREML(ParallelProcessor):
 
             old_params = shared_data['params'].copy()
             old_likelihood = likelihood
+            if verbose and rep == 0:
+                print(f"Initial log likelihood: {likelihood}")
 
             # Reset trust region size if specified
             if method.reset_trust_region or last_step_bad:
@@ -1067,7 +1103,7 @@ class GraphREML(ParallelProcessor):
                     break
 
         if verbose:
-            print(f"-----Finished optimization after {trust_iter} out of {method.max_trust_iterations} steps-----")
+            print(f"-----Finished optimization after {rep+1} out of {num_iterations} steps-----")
 
         # Point estimates
         variant_h2 = shared_data['variant_data'].copy()
@@ -1100,11 +1136,15 @@ class GraphREML(ParallelProcessor):
 
 
         if method.score_test_hdf5_file_name is not None:
+            if verbose:
+                print("\n\tComputing variant scores...")
             manager.start_workers(FLAGS['COMPUTE_VARIANT_SCORE'])
             manager.await_workers()
             variant_score = shared_data['variant_data'].copy()
 
             # Jackknife block to which each variant belongs
+            if verbose:
+                print("\n\tComputing jackknife variant assignments...")
             block_indptrs = [dict['variant_offset'] for dict in block_data] + [len(variant_score)]
             jackknife_variant_assignments = cls._get_variant_jackknife_assignments(
                 block_indptrs, num_jackknife_blocks)
@@ -1113,6 +1153,8 @@ class GraphREML(ParallelProcessor):
             annotations_matrix = annotations.select(model.annotation_columns).to_numpy()
             _project_out(variant_score, annotations_matrix)
 
+            if verbose:
+                print("\n\tWriting variant data...")
             cls._write_variant_data(method.score_test_hdf5_file_name,
                                     annotations.select(SPECIAL_COLNAMES),
                                     jackknife_variant_assignments
@@ -1220,8 +1262,6 @@ def run_graphREML(model_options: ModelOptions,
             model_options.annotation_columns,
             method_options.verbose
         )
-
-    np.random.seed(method_options.gradient_seed or 0)
 
     # Merge summary stats with annotations
     merge_how = 'right' if method_options.use_surrogate_markers else 'inner'

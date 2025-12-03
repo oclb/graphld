@@ -27,7 +27,7 @@ import h5py
 from filelock import FileLock
 
 from .heritability import _surrogate_marker
-from .io import partition_variants
+from .io import merge_snplists, partition_variants
 from .multiprocessing_template import ParallelProcessor, SharedData, WorkerManager
 
 
@@ -73,35 +73,42 @@ class Surrogates(ParallelProcessor):
         worker_params: dict,
     ):
         """Compute surrogate markers and save to file."""
-        df = (block_data['df']
-            .with_columns(pl.lit(True).alias('is_nonmissing'))
-            .group_by('SNP')
-            .first()
-            .join(
-                ldgm.variant_info,
-                left_on='SNP',
-                right_on='site_ids',
-                how='right',
-                maintain_order='right'
-            )
-            .with_columns(pl.col('is_nonmissing').fill_null(False))
+        # Use merge_snplists to match the merge logic in heritability.py
+        # This ensures allele matching is applied consistently
+        sumstats_df = block_data['df']
+        match_by_position = worker_params.get('match_by_position', False)
+        
+        # Don't modify ldgm in place - we need to preserve original indices
+        merged_ldgm, _ = merge_snplists(
+            ldgm, sumstats_df,
+            match_by_position=match_by_position,
+            pos_col='POS',
+            ref_allele_col='REF',
+            alt_allele_col='ALT',
+            modify_in_place=False
         )
+        
+        # After merge_snplists, merged_ldgm.variant_info contains only variants that 
+        # matched sumstats (with allele checking). Get their unique indices.
         # Work at index-level: length equals number of unique LDGM indices in this block
         num_indices = ldgm.shape[0]
         mapping = np.arange(num_indices, dtype=np.int32)
 
-        # Candidates are unique indices among non-missing rows
+        # Candidates are unique indices among non-missing rows (those that survived the merge)
         candidates = (
-            df.filter(pl.col('is_nonmissing'))
+            merged_ldgm.variant_info
               .select('index')
               .unique()
               .with_row_index(name='surrogate_nr')
         )
 
-        missing_indices = np.setdiff1d(np.arange(num_indices), candidates['index'].to_numpy())
-        for mi in missing_indices:
-            surrogate = _surrogate_marker(ldgm, mi, candidates)
-            mapping[mi] = int(surrogate['index'])
+        if len(candidates) > 0:
+            missing_indices = np.setdiff1d(np.arange(num_indices), candidates['index'].to_numpy())
+            for mi in missing_indices:
+                surrogate = _surrogate_marker(ldgm, mi, candidates)
+                mapping[mi] = int(surrogate['index'])
+        else:
+            print(f"No non-missing variants found in block {block_data['block_name']}. Skipping.")
 
         # Persist to HDF5: one dataset per block named by metadata 'name'
         out_path = worker_params['output_path']
