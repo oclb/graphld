@@ -7,6 +7,43 @@ import polars as pl
 
 POSITIONS_FILE = 'data/rsid_position.csv'
 
+def _add_positions_to_df(df: pl.DataFrame, positions_file: str) -> pl.DataFrame:
+    """Helper to merge DataFrame with positions file."""
+    positions = pl.read_csv(
+        positions_file,
+        separator=',',
+        columns=['chrom', 'site_ids', 'position']
+    )
+
+    return df.join(
+        positions.rename({
+            'chrom': 'CHR',
+            'site_ids': 'SNP',
+            'position': 'POS'
+        }),
+        on='SNP',
+        how='inner'
+    )
+
+def read_ldsc_snplist(
+    file: Union[str, Path],
+    add_positions: bool = True,
+    positions_file: str = POSITIONS_FILE,
+) -> pl.DataFrame:
+    """Read LDSC snplist file format."""
+    print(f"Reading LDSC snplist file: {file}")
+    df = pl.read_csv(
+        file,
+        separator='\t',
+        columns=['SNP', 'A1', 'A2'],
+        has_header=True,
+    )
+    
+    if add_positions:
+        df = _add_positions_to_df(df, positions_file)
+
+    return df
+
 def read_ldsc_sumstats(
     file: Union[str, Path],
     add_positions: bool = True,
@@ -66,28 +103,11 @@ def read_ldsc_sumstats(
     ).drop(['A1', 'A2'])
 
     if add_positions:
-        # Read positions file
-        positions = pl.read_csv(
-            positions_file,
-            separator=',',
-            columns=['chrom', 'site_ids', 'position']
-        )
-
-        # Merge with positions
-        df = df.join(
-            positions.rename({
-                'chrom': 'CHR',
-                'site_ids': 'SNP',
-                'position': 'POS'
-            }),
-            on='SNP',
-            how='inner'
-        )
+        df = _add_positions_to_df(df, positions_file)
 
     # Drop variants with N < (1 - maximum_missingness) * max(N)
     print(f"Num variants before filtering by missingness: {len(df)}")
     df = df.filter(pl.col('N') >= (1 - maximum_missingness) * pl.col('N').max())
     print(f"Num variants after filtering by missingness: {len(df)}")
-
 
     return df
