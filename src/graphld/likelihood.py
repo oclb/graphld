@@ -92,6 +92,7 @@ def gaussian_likelihood_hessian(
     del_M_del_a: Optional[np.ndarray] = None,
     diagonal_method: Optional[str]=None,
     n_samples: int=100,
+    seed: Optional[int] = None,
 ) -> np.ndarray:
     """Computes the average information matrix of the Gaussian log-likelihood.
 
@@ -109,6 +110,7 @@ def gaussian_likelihood_hessian(
         diagonal_method: Method for computing the diagonal of the Hessian.
             Options: "exact", "hutchinson", "xdiag", None (default)
         n_samples: Number of probe vectors for Hutchinson's method or xdiag
+        seed: Random seed for generating probe vectors
 
     Returns:
         Matrix of second derivatives wrt parameters a, or array of diagonal elements
@@ -122,7 +124,7 @@ def gaussian_likelihood_hessian(
 
     # If del_M_del_a is None, compute only the diagonal of the Hessian
     if del_M_del_a is None:
-        minv_diag = M.inverse_diagonal(method=diagonal_method, n_samples=n_samples)
+        minv_diag = M.inverse_diagonal(method=diagonal_method, n_samples=n_samples, seed=seed)
         hess_diag = -0.5 * minv_diag.flatten() * b.flatten()**2
         return hess_diag
 

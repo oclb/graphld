@@ -10,7 +10,7 @@ import numpy as np
 import polars as pl
 
 import graphld as gld
-from graphld.ldsc_io import read_ldsc_sumstats
+from graphld.ldsc_io import read_ldsc_sumstats, read_ldsc_snplist
 from graphld.vcf_io import read_gwas_vcf
 
 from .heritability import MethodOptions, ModelOptions, run_graphREML
@@ -241,10 +241,12 @@ def _surrogates(
     # Read summary statistics
     if sumstats.endswith('.vcf'):
         sumstats_df = read_gwas_vcf(sumstats)
+    elif sumstats.endswith('.snplist'):
+        sumstats_df = read_ldsc_snplist(sumstats)
     elif sumstats.endswith('.sumstats'):
         sumstats_df = read_ldsc_sumstats(sumstats)
     else:
-        raise ValueError("Input file must end in .vcf or .sumstats")
+        raise ValueError("Input file must end in .vcf, .sumstats or .snplist")
 
     # Run surrogate marker identification -> writes an HDF5 file and returns its path
     out_path = get_surrogate_markers(
@@ -522,12 +524,21 @@ def _reml(args):
         annotation_columns = [col for col in annotations.columns if col not in excluded_cols]
 
     # Create model and method options
+    # Handle initial parameters
+    initial_params = None
+    if args.initial_params is not None:
+        num_params = len(annotation_columns)
+        initial_params = np.zeros((num_params, 1))
+        for i, val in enumerate(args.initial_params[:num_params]):
+            initial_params[i, 0] = val
+
     model_options = ModelOptions(
         sample_size=args.num_samples,
         intercept=args.intercept,
         annotation_columns=annotation_columns,
         link_fn_denominator=num_snps_annot,
-        binary_annotations_only=args.binary_annotations_only
+        binary_annotations_only=args.binary_annotations_only,
+        params=initial_params
     )
 
     method_options = MethodOptions(
@@ -899,6 +910,12 @@ def _add_reml_parser(subparsers):
         type=str,
         default=None,
         help="Path to surrogate markers HDF5 file to use during GraphREML"
+    )
+    parser.add_argument(
+        "--initial-params",
+        type=lambda s: [float(x) for x in s.split(',')],
+        default=None,
+        help="Initial parameter values (comma-separated). If fewer than num_params, remaining are set to 0."
     )
 
     parser.set_defaults(func=_reml)
