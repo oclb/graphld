@@ -58,6 +58,7 @@ except ImportError:
         create_random_variant_annotations,
     )
     from genesets import convert_gene_to_variant_annotations
+    from meta_analysis import MetaAnalysis
 
 
 def get_block_boundaries(blocks: np.ndarray) -> np.ndarray:
