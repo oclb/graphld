@@ -20,15 +20,15 @@ from score_test.meta_analysis import MetaAnalysis
 @pytest.fixture
 def test_hdf5_path():
     """Path to test HDF5 file."""
-    return Path(__file__).parent / "score_test_data" / "test.scores.h5"
+    return Path(__file__).parent.parent / "data" / "test" / "test.scores.h5"
 
 
 @pytest.fixture
 def setup_trait_groups(test_hdf5_path):
     """Setup trait groups in test HDF5 file."""
     groups = {
-        'body': ['height', 'bmi'],
-        'cancer': ['brca', 'prca'],
+        'body': ['bmi'],
+        'cancer': ['prca'],
     }
     save_trait_groups(str(test_hdf5_path), groups)
     return groups
@@ -38,8 +38,8 @@ def test_save_and_load_trait_groups(test_hdf5_path):
     """Test saving and loading trait groups."""
     # Define test groups
     groups = {
-        'body': ['height', 'bmi'],
-        'cancer': ['brca', 'prca'],
+        'body': ['bmi'],
+        'cancer': ['prca'],
     }
     
     # Save groups
@@ -51,8 +51,8 @@ def test_save_and_load_trait_groups(test_hdf5_path):
     # Verify
     assert 'body' in loaded_groups
     assert 'cancer' in loaded_groups
-    assert set(loaded_groups['body']) == {'height', 'bmi'}
-    assert set(loaded_groups['cancer']) == {'brca', 'prca'}
+    assert set(loaded_groups['body']) == {'bmi'}
+    assert set(loaded_groups['cancer']) == {'prca'}
 
 
 def test_overwrite_trait_groups(test_hdf5_path):
@@ -65,8 +65,8 @@ def test_overwrite_trait_groups(test_hdf5_path):
     
     # Save different groups
     groups2 = {
-        'body': ['height', 'bmi'],
-        'cancer': ['brca', 'prca'],
+        'body': ['bmi'],
+        'cancer': ['prca'],
     }
     save_trait_groups(str(test_hdf5_path), groups2)
     
@@ -115,14 +115,14 @@ def test_meta_analysis_with_random_variants(test_hdf5_path, setup_trait_groups):
 
 
 def test_meta_analysis_body_group(test_hdf5_path, setup_trait_groups):
-    """Test meta-analysis specifically for body group (height, bmi)."""
+    """Test meta-analysis specifically for body group (bmi)."""
     variant_table = load_variant_data(str(test_hdf5_path))
     probs = [0.15]
     annot = create_random_variant_annotations(variant_table, probs)
     
     # Meta-analyze body traits
     meta = MetaAnalysis()
-    for trait_name in ['height', 'bmi']:
+    for trait_name in ['bmi']:
         trait_data = load_trait_data(str(test_hdf5_path), trait_name, variant_table)
         point_estimates, jackknife_estimates = run_score_test(
             trait_data=trait_data,
@@ -136,14 +136,14 @@ def test_meta_analysis_body_group(test_hdf5_path, setup_trait_groups):
 
 
 def test_meta_analysis_cancer_group(test_hdf5_path, setup_trait_groups):
-    """Test meta-analysis specifically for cancer group (brca, prca)."""
+    """Test meta-analysis specifically for cancer group (prca)."""
     variant_table = load_variant_data(str(test_hdf5_path))
     probs = [0.15]
     annot = create_random_variant_annotations(variant_table, probs)
     
     # Meta-analyze cancer traits
     meta = MetaAnalysis()
-    for trait_name in ['brca', 'prca']:
+    for trait_name in ['prca']:
         trait_data = load_trait_data(str(test_hdf5_path), trait_name, variant_table)
         point_estimates, jackknife_estimates = run_score_test(
             trait_data=trait_data,
@@ -205,14 +205,14 @@ def test_single_trait_group(test_hdf5_path):
 def test_trait_groups_with_nonexistent_traits(test_hdf5_path):
     """Test that groups can contain trait names that don't exist (they'll be filtered)."""
     groups = {
-        'mixed': ['bmi', 'nonexistent_trait', 'height'],
+        'mixed': ['bmi', 'nonexistent_trait', 'prca'],
     }
     save_trait_groups(str(test_hdf5_path), groups)
     
     loaded_groups = get_trait_groups(str(test_hdf5_path))
     assert 'mixed' in loaded_groups
     # The group is saved as-is; filtering happens during score test execution
-    assert set(loaded_groups['mixed']) == {'bmi', 'nonexistent_trait', 'height'}
+    assert set(loaded_groups['mixed']) == {'bmi', 'nonexistent_trait', 'prca'}
 
 
 def test_meta_analysis_precision_weighting(test_hdf5_path, setup_trait_groups):
@@ -223,7 +223,7 @@ def test_meta_analysis_precision_weighting(test_hdf5_path, setup_trait_groups):
     
     # Get results for individual traits
     trait_results = {}
-    for trait_name in ['height', 'bmi']:
+    for trait_name in ['bmi', 'prca']:
         trait_data = load_trait_data(str(test_hdf5_path), trait_name, variant_table)
         point_est, jk_est = run_score_test(trait_data=trait_data, annot=annot)
         
@@ -241,13 +241,13 @@ def test_meta_analysis_precision_weighting(test_hdf5_path, setup_trait_groups):
     
     # Compute meta-analysis
     meta = MetaAnalysis()
-    for trait_name in ['height', 'bmi']:
+    for trait_name in ['bmi', 'prca']:
         meta.update(trait_results[trait_name]['point'], trait_results[trait_name]['jackknife'])
     
     meta_z = meta.z_scores.ravel()[0]
     
     # Meta-analysis z-score should be different from simple average
-    avg_z = np.mean([trait_results['height']['z_score'][0], trait_results['bmi']['z_score'][0]])
+    avg_z = np.mean([trait_results['bmi']['z_score'][0], trait_results['prca']['z_score'][0]])
     
     # They should be different (unless by chance the precisions are equal)
     # Just verify meta-analysis produces a valid result

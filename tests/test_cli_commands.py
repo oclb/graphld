@@ -27,10 +27,10 @@ def test_show_command(temp_hdf5):
     assert result.returncode == 0
     assert "Traits (6):" in result.stdout
     assert "bmi" in result.stdout
-    assert "height" in result.stdout
+    assert "prca" in result.stdout
     assert "Meta-analyses (2):" in result.stdout
-    assert "body: height, bmi" in result.stdout
-    assert "cancer: brca, prca" in result.stdout
+    assert "body: bmi" in result.stdout
+    assert "cancer: prca" in result.stdout
     assert "Variant datasets:" in result.stdout
 
 
@@ -49,7 +49,7 @@ def test_show_command_verbose(temp_hdf5):
 def test_add_meta_command(temp_hdf5):
     """Test adding a meta-analysis group."""
     result = subprocess.run(
-        ["uv", "run", "estest", "add-meta", temp_hdf5, "test_group", "bmi", "height"],
+        ["uv", "run", "estest", "add-meta", temp_hdf5, "test_group", "bmi", "t2d"],
         capture_output=True,
         text=True,
     )
@@ -63,13 +63,13 @@ def test_add_meta_command(temp_hdf5):
         capture_output=True,
         text=True,
     )
-    assert "test_group: bmi, height" in result.stdout
+    assert "test_group: bmi, t2d" in result.stdout
 
 
 def test_add_meta_duplicate_trait_name(temp_hdf5):
     """Test that adding a meta-analysis with a trait name fails."""
     result = subprocess.run(
-        ["uv", "run", "estest", "add-meta", temp_hdf5, "bmi", "height", "cad"],
+        ["uv", "run", "estest", "add-meta", temp_hdf5, "bmi", "t2d", "scz"],
         capture_output=True,
         text=True,
     )
@@ -107,7 +107,7 @@ def test_rm_meta_command(temp_hdf5):
     """Test removing a meta-analysis group."""
     # First add a group
     subprocess.run(
-        ["uv", "run", "estest", "add-meta", temp_hdf5, "test_group", "bmi", "height"],
+        ["uv", "run", "estest", "add-meta", temp_hdf5, "test_group", "bmi", "t2d"],
         capture_output=True,
     )
     
@@ -134,7 +134,7 @@ def test_rm_meta_default(temp_hdf5):
     """Test that rm defaults to removing meta-analysis."""
     # Add a group
     subprocess.run(
-        ["uv", "run", "estest", "add-meta", temp_hdf5, "test_group", "bmi", "height"],
+        ["uv", "run", "estest", "add-meta", temp_hdf5, "test_group", "bmi", "t2d"],
         capture_output=True,
     )
     
@@ -164,13 +164,13 @@ def test_rm_nonexistent_meta(temp_hdf5):
 def test_rm_trait_command(temp_hdf5):
     """Test removing a trait."""
     result = subprocess.run(
-        ["uv", "run", "estest", "rm", temp_hdf5, "edu", "-f"],
+        ["uv", "run", "estest", "rm", temp_hdf5, "scz", "-f"],
         capture_output=True,
         text=True,
     )
     
     assert result.returncode == 0
-    assert "Removed 1 trait(s): edu" in result.stdout
+    assert "Removed 1 trait(s): scz" in result.stdout
     
     # Verify it was removed
     result = subprocess.run(
@@ -179,20 +179,20 @@ def test_rm_trait_command(temp_hdf5):
         text=True,
     )
     assert "Traits (5):" in result.stdout
-    assert "edu" not in result.stdout
+    assert "scz" not in result.stdout
 
 
 def test_rm_trait_updates_meta_analyses(temp_hdf5):
     """Test that removing a trait updates meta-analyses."""
-    # Remove height (part of body meta-analysis)
+    # Remove bmi (part of body meta-analysis)
     result = subprocess.run(
-        ["uv", "run", "estest", "rm", temp_hdf5, "height", "-f"],
+        ["uv", "run", "estest", "rm", temp_hdf5, "bmi", "-f"],
         capture_output=True,
         text=True,
     )
     
     assert result.returncode == 0
-    assert "Removed 1 trait(s): height" in result.stdout
+    assert "Removed 1 trait(s): bmi" in result.stdout
     # Body meta-analysis should be removed (only 1 trait left) but message suppressed with -f
     
     # Verify
@@ -202,7 +202,7 @@ def test_rm_trait_updates_meta_analyses(temp_hdf5):
         text=True,
     )
     assert "body" not in result.stdout
-    assert "height" not in result.stdout
+    assert "bmi" not in result.stdout
 
 
 def test_rm_nonexistent_trait(temp_hdf5):

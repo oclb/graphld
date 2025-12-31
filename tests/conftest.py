@@ -64,7 +64,7 @@ def metadata_path(test_data_dir):
 @pytest.fixture
 def test_annotations_path(test_data_dir):
     """Fixture for the test annotations path."""
-    return test_data_dir / "baselineLD.22.annot"
+    return test_data_dir / "3_annotations.22.annot"
 
 @pytest.fixture
 def create_annotations():

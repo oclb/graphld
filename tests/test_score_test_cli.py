@@ -28,7 +28,7 @@ def test_score_test_cli_random_variants():
     
     # Check we have some expected traits (not all are visible due to truncation)
     assert "bmi" in result.stdout
-    assert "brca" in result.stdout
+    assert "prca" in result.stdout
     
     # Check we have 2 random variants with 9 columns 
     # (annotation + 6 traits_z + 2 groups)
@@ -67,7 +67,7 @@ def test_score_test_cli_random_variants_with_output(tmp_path):
     assert len(df) == 2
     
     # Check traits are present (with _Z suffix)
-    for trait in ["bmi", "brca", "cad", "edu", "height", "prca"]:
+    for trait in ["bmi", "prca", "scz", "stroke", "t1d", "t2d"]:
         assert f"{trait}_Z" in df.columns
     
     # Check that group columns are present (with _Z suffix)
@@ -124,8 +124,8 @@ def test_trait_groups_io():
     assert 'cancer' in groups
     
     # Verify group contents
-    assert set(groups['body']) == {'height', 'bmi'}
-    assert set(groups['cancer']) == {'brca', 'prca'}
+    assert set(groups['body']) == {'bmi'}
+    assert set(groups['cancer']) == {'prca'}
 
 
 def test_score_test_with_trait_groups(tmp_path):
@@ -153,7 +153,7 @@ def test_score_test_with_trait_groups(tmp_path):
     
     # Check individual trait columns are also present (with _Z suffix)
     assert 'bmi_Z' in df.columns
-    assert 'height_Z' in df.columns
+    assert 'prca_Z' in df.columns
 
 
 if __name__ == '__main__':

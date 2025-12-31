@@ -784,7 +784,7 @@ class GraphREML(ParallelProcessor):
                     "gradient",
                     data=score,
                     compression=VARIANT_INFO_COMPRESSION_TYPE,
-                    chunks=(CHUNK_SIZE,),
+                    chunks=(min(CHUNK_SIZE, len(score)),),
                 )
                 print(f"Gradient shape: {score.shape}")
 
