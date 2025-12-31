@@ -1,6 +1,6 @@
 # GraphLD
 
-This repository implements the graphREML method described in:
+This repository implements the graphREML and graphREML-ST methods described in:
 > Hui Li, Tushar Kamath, Rahul Mazumder, Xihong Lin, & Luke J. O'Connor (2024). _Improved heritability partitioning and enrichment analyses using summary statistics with graphREML_. medRxiv, 2024-11. DOI: [10.1101/2024.11.04.24316716](https://doi.org/10.1101/2024.11.04.24316716)
 
 and provides a Python API for computationally efficient linkage disequilibrium (LD) matrix operations with [LD graphical models](https://github.com/awohns/ldgm) (LDGMs), described in:
@@ -8,211 +8,33 @@ and provides a Python API for computationally efficient linkage disequilibrium (
 
 It also provides very fast utilities for simulating GWAS summary statistics, performing LD clumping, and computing polygenic risk scores.
 
-## Table of Contents
-- [Installation](#installation)
-- [Command Line Interface](#command-line-interface)
-- [Enrichment Score Test](#enrichment-score-test)
-- [Python API](#python-api)
-- [File Formats](#file-formats)
-- [See also](#see-also)
-
 ## Installation
+Using [uv](https://docs.astral.sh/uv/getting-started/installation/) (recommended):
+
+```bash
+git clone https://github.com/oclb/graphld.git
+cd graphld && uv venv && uv sync
+```
+
+To download data (20GB; smaller options exist):
+
+```bash
+cd data && make download_all
+```
 
 `graphld` requires [SuiteSparse](https://github.com/DrTimothyAldenDavis/SuiteSparse). On Mac, install with `brew install suitesparse`. On Ubuntu/Debian, use `sudo apt-get install libsuitesparse-dev`. SuiteSparse is wrapped in [scikit-sparse](https://scikit-sparse.readthedocs.io/en/latest/). For users with Intel chips, it is highly recommended to install Intel MKL, which can produce a 100x speedup with SuiteSparse vs. OpenBLAS (your likely default BLAS library). See Giulio Genovese's documentation [here](https://github.com/freeseek/score?tab=readme-ov-file#intel-mkl).
 
 If you are only using the [heritability enrichment score test](#enrichment-score-test), no installation is needed; you can run the source file as a standalone script. With `uv` installed, run `uv run src/score_test/score_test.py --help`, or:
 
-```bash
-chmod +x src/score_test/score_test.py
-./src/score_test/score_test.py --help
-```
-
-### Using uv (recommended)
-
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/) if needed. In the repo directory:
-```bash
-uv venv && uv sync
-```
-
-For development installation:
-```bash
-uv venv && uv sync --dev --extra dev # editable with pytest dependencies
-uv run pytest # tests will fail if you haven't run `make download` (see below)
-```
-
-### Using conda and pip install
-Although we recommend moving away from `conda`, it does have the advantage that you can `conda install` SuiteSparse. Example codes are based on the O2 cluster in the Harvard Medical School computing system. 
-
-Create a conda `env` for `suitesparse` and activate it: you may need to revert or reinstall some Python packages
-
-```bash
-module load miniconda3/4.10.3
-conda create -n suitesparse conda-forge::suitesparse python=3.11.0
-conda activate suitesparse
-```
-You may need to revert or reinstall some Python packages, if prompted. For example, to install the correct version of `numpy`, use:
-
-```bash
-pip install numpy==1.26.4
-```
-Install `scikit-sparse`: you may need to add some `conda` channels (see below)
-
-```bash
-conda config --add channels conda-forge
-conda config --set channel_priority strict
-conda install scikit-sparse
-```
-Install and run graphLD
-```bash
-cd graphld && pip install .
-```
-Test if it works
-```bash
-graphld -h
-```
-
-### Downloading LDGMs
-Pre-computed LDGMs for the 1000 Genomes Project data are available at [Zenodo](https://zenodo.org/records/8157131). You can download them using the provided Makefile in the `data/` directory:
-
-```bash
-cd data && make download
-```
-
-The download should take 5-30 minutes. By default, this will download and extract LDGM precision matrices, baselineLD annotation files for heritability partitioning with graphREML, and precomputed score test statistics for the heritability enrichment score test. If you only want precision matrices, use `make download_precision`. If you only want enrichment score test statistics, use `make download_scorestats`. If you want to download GWAS summary statistics from Li et al. 2025, additionally run `make download_sumstats`. 
-
 ## Command Line Interface
 
 The CLI has commands for:
-- `blup`, which computes best linear unbiased predictor weights
-- `clump`, which performs p-value thresholding and LD-based pruning
-- `simulate`, which simulates GWAS summary statistics
-- `reml`, which runs graphREML
-
-The commands largely follow a common interface. Use `uv run graphld <command> -h` to see usage for a specific command. If you downloaded LDGMs using the Makefile, they will be located automatically.
-
-There is a separate command for the [enrichment score test](#enrichment-score-test): `uv run estest -h`.
-
-### Heritability Estimation
-
-To run graphREML:
-
-```bash
-uv run graphld reml \
-    /path/to/sumstats/file.sumstats \
-    output_files_prefix \
-    --annot-dir /directory/containing/annotation/files/ \
-```
-The summary statistics can be in VCF (`.vcf`) or  LDSC (`.sumstats`) format. The annotation directory should contain per-chromosome annotation files in [LDSC (`.annot`) format](https://github.com/bulik/ldsc/wiki/LD-File-Formats#annot). There can be multiple `.annot` files per chromosome, including some in the [`thin-annot` format]((https://github.com/bulik/ldsc/wiki/LD-Score-Estimation-Tutorial#partitioned-ld-scores)) (i.e., without variant IDs). It can additionally contain UCSC `.bed` files, not stratified per-chromosome; for each `.bed` file, a new binary annotation will be created with a `1` for variants whose GRCh38 coordinates match the `.bed` file.
-
-There will be two output files: `output_files_prefix.tall.csv`, which contains heritability, enrichment, and coefficient estimates for each annotation; and `output_files_prefix.convergence.csv`, which contains information about the optimization process. If you specify the `--alt-output` flag, the `tall.csv` file will be replaced with three files, `.heritability.csv`, `.enrichment.csv`, and `.parameters.csv`, containing heritability, enrichment, and coefficient estimates for each annotation, respectively; these files have one line per model run and three columns per annotation, so that you can store the results of multiple runs or traits in one file. (Use it with `--name` to keep track of which line is which run.)
-
-The `--intercept` flag specifies the expected inflation in the test statistics. It is recommended to (1) run LD score regression and estimate the intercept and (2) specify that value with the `--intercept` flag. Not doing this leads to upward bias in the heritability estimates and downward bias (i.e., toward 1) in the enrichment estimates. You can skip this if you are OK with some downward bias.
-
-If some variants are missing from your GWAS summary statistics, graphREML automatically assigns 'surrogate markers' in high LD with those variants. This is a majority of variants if your summary statistics include HapMap3 SNPs only (~1.1M SNPs). This step can be very slow, but you can use precomputed surrogates to avoid re-doing it each time. To precompute surrogates, run `graphld surrogates` on your summary statistics. This creates a file with cached surrogate markers which can be passed to `graphREML` with the `--surrogates` flag. These should match your summary statistics approximately but do not need to match exactly; you can use the same surrogates across different sumstats files with slightly different SNPs.
-
-## Enrichment Score Test
-
-The enrichment score test is a fast way to test a large number of genomic or gene annotations for heritability enrichment conditional upon some null model. 
-
-The test produces Z scores, where a positive score indicates a heritability enrichment, a negative score depletion. These enrichments are conditional upon the null model, similar to the `tau` parameter in `S-LDSC`. The test does not produce point estimates (for this, run graphREML). 
-
-You will need a file containing precomputed derivatives for each trait that is being tested. This can be downloaded from Zenodo via the Makefile, or you can run graphREML as described above and supply the `--score-test-filename` flag to create this file for your own summary statistics.
-
-It supports annotations in the following formats:
-- [LDSC `.annot` files](#ldsc-format-annotations-annot) containing variant annotations
-- [UCSC `.bed` files](#bed-format-annotations-bed) containing genomic regions
-- [Gene matrix transposed (`.gmt`) files](#gmt-format-annotations-gmt) including either gene symbols or gene IDs.
-
-### Basic Usage
-
-```bash
-# See what traits are in the derivatives file
-uv run estest show path/to/precomputed/derivatives.h5
-
-# Test variant annotations
-uv run estest \
-    path/to/precomputed/derivatives.h5 \
-    path/to/output/file/prefix \
-    --variant-annot-dir /directory/containing/dot-annot/files/ \
-
-# Test genomic regions
-uv run estest \
-    path/to/precomputed/derivatives.h5 \
-    path/to/output/file/prefix \
-    --variant-annot-dir /directory/containing/dot-bed/files/ \
-
-# Test gene annotations
-uv run estest \
-    path/to/precomputed/derivatives.h5 \
-    path/to/output/file/prefix \
-    --gene-annot-dir /directory/containing/gmt/files/ \
-```
-
-### Random Annotations
-
-You can test random annotations to verify the null distribution. This can be done in three ways:
-
-```bash
-# Create random variant annotations with 10%, 20%, and 30% variants
-uv run estest \
-    path/to/precomputed/derivatives.h5 \
-    path/to/output/file/prefix \
-    --random-variants 0.1,0.2,0.3 \ 
-
-# Create random gene annotations with 10%, 20%, and 30% genes
-uv run estest \
-    path/to/precomputed/derivatives.h5 \
-    path/to/output/file/prefix \
-    --random-genes 0.1,0.2,0.3 \
-
-# Perturb binary variant annotations
-uv run estest \
-    path/to/precomputed/derivatives.h5 \
-    path/to/output/file/prefix \
-    --variant-annot-dir /directory/containing/dot-annot/files/ \
-    --perturb-annot .5 # 50% of annotation values are sampled randomly
-```
-
-### Gene set testing
-A set of genes can be tested for heritability enrichment under the Abstract Mediation Model (AMM; Weiner et al. 2022 AJHG). This effectively tests whether variants in proximity to genes belonging to the gene set are enriched for heritability. You can simply supply a gene matrix transposed (`.gmt`) file to the `--gene-annot-dir` flag; alternatively, you can make this run much faster by converting variant-level score statistics to gene-level score statistics:
-
-```bash
-uv run estest convert variant_statistics.h5  gene_statistics.h5
-```
-
-This will create a gene-level score statistics file `gene_statistics.h5` from your variant-level score statistics file `variant_statistics.h5`. It requires a file containing the position of each gene; such a file is provided in data/genes.tsv if you have run the Makefile and will be located automatically.
-
-Then, run the enrichment score test as normal:
-
-```bash
-uv run estest \
-    gene_statistics.h5 output_prefix \
-    --gene-annot-dir /directory/containing/gmt/files/
-```
-
-This will produce nearly-identical results as the variant-level test.
-
-### Meta-analysis across traits
-You can test whether an annotation is enriched for heritability across multiple traits by adding those traits as a meta-analysis:
-
-```bash
-# Add all traits as a meta-analysis
-uv run estest add-meta statistics.h5 all_traits '*'
-
-# Add specific traits as a meta-analysis
-uv run estest add-meta statistics.h5 body_traits height bmi
-```
-
-Then, run the score test as normal, and the meta-analysis will be included as a column in the output table.
-
-The meta-analysis is implemented by performing a precision-weighted linear combination of the score statistics for each trait, and then computing the jackknife standard error. Non-independence across traits will cause a loss of power, but not false positives.
-
-### Renaming traits and meta-analyses
-Rename traits or meta-analyses with `mv` (automatically detects which):
-
-```bash
-uv run estest mv statistics.h5 old_name new_name
-```
+- `estest`, which runs the enrichment score test
+- `graphld reml`, which runs graphREML
+- `graphld blup`, which computes best linear unbiased predictor weights
+- `graphld clump`, which performs p-value thresholding and LD-based pruning
+- `graphld simulate`, which simulates GWAS summary statistics
+Use `uv run <command> -h` to see usage for a specific command. If you downloaded LDGMs using the Makefile, they will be located automatically.
 
 ## Python API
 
@@ -295,13 +117,13 @@ for ldgm in merged_ldgms:
 
 The likelihood of GWAS summary statistics under an infinitesimal model is:
 
-$$\beta \sim N(0, D)$$
+> β ~ N(0, D)
+>
+> z|β ~ N(n^(1/2) R β, R)
 
-$$z|\beta \sim N(n^{1/2}R\beta, R)$$
+where β is the effect-size vector in s.d-per-s.d. units, D is a diagonal matrix of per-variant heritabilities, z is the GWAS summary statistic vector, R is the LD correlation matrix, and n is the sample size. Our likelihood functions operate on precision-premultiplied GWAS summary statistics:
 
-where $\beta$ is the effect-size vector in s.d-per-s.d. units, $D$ is a diagonal matrix of per-variant heritabilities, $z$ is the GWAS summary statistic vector, $R$ is the LD correlation matrix, and $n$ is the sample size. Our likelihood functions operate on precision-premultiplied GWAS summary statistics:
-
-$$pz = n^{-1/2} R^{-1}z \sim N(0, M), \quad M = D + n^{-1}R^{-1}$$
+> pz = n^(-1/2) R^(-1) z ~ N(0, M),  where M = D + n^(-1) R^(-1)
 
 The following functions are available:
 - `gaussian_likelihood(pz, M)`: Computes the log-likelihood
