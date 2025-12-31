@@ -1,0 +1,1581 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Graph-based linkage disequilibrium matrix operations and heritability estimation">
+      
+      
+      
+        <link rel="canonical" href="https://github.com/oclb/graphld/REVIEW_NOTES/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>Code Review Notes for Release - GraphLD v1.2.0</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#code-review-notes-for-release" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="GraphLD v1.2.0" class="md-header__button md-logo" aria-label="GraphLD v1.2.0" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            GraphLD v1.2.0
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Code Review Notes for Release
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/oclb/graphld" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    oclb/graphld
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../installation/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Installation
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../cli/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../api/graphld/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../see_also/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  See Also
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="GraphLD v1.2.0" class="md-nav__button md-logo" aria-label="GraphLD v1.2.0" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    GraphLD v1.2.0
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/oclb/graphld" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    oclb/graphld
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command Line Interface
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../score_test/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enrichment Score Test
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../file_formats/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    File Formats
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/graphld/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    graphld
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/precision/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    graphld.precision
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/likelihood/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    graphld.likelihood
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/heritability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    graphld.heritability
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    graphld.io
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/ldsc_io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    graphld.ldsc_io
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/vcf_io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    graphld.vcf_io
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/parquet_io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    graphld.parquet_io
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/simulate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    graphld.simulate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/clumping/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    graphld.clumping
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/blup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    graphld.blup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/surrogates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    graphld.surrogates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/genesets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    graphld.genesets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/multiprocessing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    graphld.multiprocessing_template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/score_test/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    score_test
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../see_also/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    See Also
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#coverage-gaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Coverage Gaps
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Coverage Gaps">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#modules-with-0-coverage-need-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Modules with 0% Coverage (Need Tests)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#modules-with-low-coverage-50" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Modules with Low Coverage (&lt;50%)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#potential-issues-to-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Potential Issues to Review
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Potential Issues to Review">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#graphld-package" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        graphld package
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="graphld package">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#star-imports-heritabilitypy-heritability_testingpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Star Imports (heritability.py, heritability_testing.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#undefined-name-references-iopy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Undefined Name References (io.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#unused-variable-ldsc_iopy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unused Variable (ldsc_io.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#score_test-package" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        score_test package
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="score_test package">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#potential-logic-bug-score_test_iopy-lines-292-293" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Potential Logic Bug (score_test_io.py, lines 292-293)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#incorrect-docstring-score_testpy-run_score_test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Incorrect Docstring (score_test.py, run_score_test)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#type-mismatch-in-metaanalysis-meta_analysispy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Type Mismatch in MetaAnalysis (meta_analysis.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dead-code-genomeannot-class-score_testpy-lines-266-280" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dead Code: GenomeAnnot Class (score_test.py, lines 266-280)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#unused-function-parameters-score_test_iopy-load_gene_annotations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unused Function Parameters (score_test_io.py, load_gene_annotations)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recommended-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended Changes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Recommended Changes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#high-priority-potential-bugs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        High Priority (Potential Bugs)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#medium-priority-code-quality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Medium Priority (Code Quality)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#low-priority-nice-to-have" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Low Priority / Nice to Have
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#notes-on-specific-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notes on Specific Files
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Notes on Specific Files">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#heritabilitypy-heritability_testingpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        heritability.py / heritability_testing.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#genesetspy-genesets_gene_hdf5py" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        genesets.py / genesets_gene_hdf5.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#multiprocessing_templatepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        multiprocessing_template.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clipy-both-packages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        cli.py (both packages)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#files-already-fixed-linting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Files Already Fixed (Linting)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="code-review-notes-for-release">Code Review Notes for Release<a class="headerlink" href="#code-review-notes-for-release" title="Permanent link">&para;</a></h1>
+<p>This document tracks issues found during code review that require careful consideration before fixing. These are NOT simple linting fixes - they represent potential logic changes or architectural decisions.</p>
+<h2 id="coverage-gaps">Coverage Gaps<a class="headerlink" href="#coverage-gaps" title="Permanent link">&para;</a></h2>
+<h3 id="modules-with-0-coverage-need-tests">Modules with 0% Coverage (Need Tests)<a class="headerlink" href="#modules-with-0-coverage-need-tests" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>graphld/genesets.py</strong> (88 statements) - Gene set annotation utilities</li>
+<li><strong>graphld/genesets_gene_hdf5.py</strong> (207 statements) - Gene-level HDF5 operations  </li>
+<li><strong>graphld/heritability_testing.py</strong> (509 statements) - Heritability testing module</li>
+</ol>
+<h3 id="modules-with-low-coverage-50">Modules with Low Coverage (&lt;50%)<a class="headerlink" href="#modules-with-low-coverage-50" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>graphld/cli.py</strong> (47%) - Command line interface; many branches untested</li>
+<li><strong>score_test/convert_scores.py</strong> (38%) - Score conversion utilities</li>
+</ol>
+<h2 id="potential-issues-to-review">Potential Issues to Review<a class="headerlink" href="#potential-issues-to-review" title="Permanent link">&para;</a></h2>
+<h3 id="graphld-package">graphld package<a class="headerlink" href="#graphld-package" title="Permanent link">&para;</a></h3>
+<h4 id="star-imports-heritabilitypy-heritability_testingpy">Star Imports (heritability.py, heritability_testing.py)<a class="headerlink" href="#star-imports-heritabilitypy-heritability_testingpy" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Lines 8, 16, 17 in heritability.py: <code>from typing import *</code>, <code>from .io import *</code>, <code>from .likelihood import *</code></li>
+<li>This causes F403/F405 linting errors and makes the code harder to understand</li>
+<li><strong>Decision needed</strong>: Replace with explicit imports (may require significant refactoring)</li>
+</ul>
+<h4 id="undefined-name-references-iopy">Undefined Name References (io.py)<a class="headerlink" href="#undefined-name-references-iopy" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Line 15: <code>PrecisionOperator</code> referenced before it's imported</li>
+<li>This is a forward reference issue that may cause runtime errors in some contexts</li>
+<li><strong>Decision needed</strong>: Add proper TYPE_CHECKING import or restructure</li>
+</ul>
+<h4 id="unused-variable-ldsc_iopy">Unused Variable (ldsc_io.py)<a class="headerlink" href="#unused-variable-ldsc_iopy" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Line 77: <code>columns_to_read</code> is assigned but never used</li>
+<li><strong>Decision needed</strong>: Remove or use the variable</li>
+</ul>
+<h3 id="score_test-package">score_test package<a class="headerlink" href="#score_test-package" title="Permanent link">&para;</a></h3>
+<h4 id="potential-logic-bug-score_test_iopy-lines-292-293">Potential Logic Bug (score_test_io.py, lines 292-293)<a class="headerlink" href="#potential-logic-bug-score_test_iopy-lines-292-293" title="Permanent link">&para;</a></h4>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">if</span> <span class="ow">not</span> <span class="n">add_positions</span><span class="p">:</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">annotations</span> <span class="o">=</span> <span class="n">annotations</span><span class="o">.</span><span class="n">rename</span><span class="p">({</span><span class="s2">&quot;BP&quot;</span><span class="p">:</span> <span class="s2">&quot;POS&quot;</span><span class="p">})</span>
+</code></pre></div>
+The logic appears inverted. The docstring says "If True, rename BP to POS" but the code renames when <code>add_positions=False</code>.
+- <strong>Decision needed</strong>: Verify intended behavior and fix if necessary</p>
+<h4 id="incorrect-docstring-score_testpy-run_score_test">Incorrect Docstring (score_test.py, run_score_test)<a class="headerlink" href="#incorrect-docstring-score_testpy-run_score_test" title="Permanent link">&para;</a></h4>
+<p>The docstring says "Unlike run_score_test, this function does not adjust..." but this IS <code>run_score_test</code>. Copy-paste error.
+- <strong>Decision needed</strong>: Update docstring</p>
+<h4 id="type-mismatch-in-metaanalysis-meta_analysispy">Type Mismatch in MetaAnalysis (meta_analysis.py)<a class="headerlink" href="#type-mismatch-in-metaanalysis-meta_analysispy" title="Permanent link">&para;</a></h4>
+<p>Class attributes are declared as <code>np.ndarray</code> but <code>__init__</code> sets them to integers (<code>0</code>).
+- <strong>Decision needed</strong>: Initialize as empty arrays or change type hints</p>
+<h4 id="dead-code-genomeannot-class-score_testpy-lines-266-280">Dead Code: GenomeAnnot Class (score_test.py, lines 266-280)<a class="headerlink" href="#dead-code-genomeannot-class-score_testpy-lines-266-280" title="Permanent link">&para;</a></h4>
+<p>Class only raises <code>NotImplementedError</code>. 
+- <strong>Decision needed</strong>: Remove or implement</p>
+<h4 id="unused-function-parameters-score_test_iopy-load_gene_annotations">Unused Function Parameters (score_test_io.py, load_gene_annotations)<a class="headerlink" href="#unused-function-parameters-score_test_iopy-load_gene_annotations" title="Permanent link">&para;</a></h4>
+<p>Parameters <code>gene_table_path</code> and <code>nearest_weights</code> are passed in but the loaded <code>gene_table</code> is never used.
+- <strong>Decision needed</strong>: Review if these should be used or removed</p>
+<h2 id="recommended-changes">Recommended Changes<a class="headerlink" href="#recommended-changes" title="Permanent link">&para;</a></h2>
+<h3 id="high-priority-potential-bugs">High Priority (Potential Bugs)<a class="headerlink" href="#high-priority-potential-bugs" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Fix inverted logic in <code>load_annotations</code> (<code>add_positions</code> parameter) in score_test_io.py</li>
+<li>Fix docstring in <code>run_score_test</code> that references itself incorrectly</li>
+<li>Add <code>Optional</code> to nullable dataclass fields in <code>TraitData</code></li>
+<li>Fix forward reference for <code>PrecisionOperator</code> in io.py</li>
+</ol>
+<h3 id="medium-priority-code-quality">Medium Priority (Code Quality)<a class="headerlink" href="#medium-priority-code-quality" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Replace star imports in heritability.py and heritability_testing.py with explicit imports</li>
+<li>Add missing type annotations, especially in meta_analysis.py</li>
+<li>Standardize on Python 3.10+ style type hints (<code>list[str]</code> instead of <code>List[str]</code>)</li>
+<li>Refactor the <code>main()</code> function in score_test.py (143 lines) into smaller functions</li>
+<li>Remove or properly implement <code>GenomeAnnot</code> class</li>
+</ol>
+<h3 id="low-priority-nice-to-have">Low Priority / Nice to Have<a class="headerlink" href="#low-priority-nice-to-have" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Fix naming conventions (<code>noBlocks</code> -&gt; <code>num_blocks</code> in score_test.py)</li>
+<li>Remove unused imports across all files (already partially done with ruff --fix)</li>
+<li>Consolidate duplicate import try/except patterns across score_test modules</li>
+<li>Add tests for 0% coverage modules</li>
+</ol>
+<h2 id="notes-on-specific-files">Notes on Specific Files<a class="headerlink" href="#notes-on-specific-files" title="Permanent link">&para;</a></h2>
+<h3 id="heritabilitypy-heritability_testingpy">heritability.py / heritability_testing.py<a class="headerlink" href="#heritabilitypy-heritability_testingpy" title="Permanent link">&para;</a></h3>
+<p>These files are near-duplicates with substantial shared code. Consider:
+- Why are there two versions?
+- Should they be merged or one deprecated?
+- The <code>_testing</code> version appears to be a variant for score test output</p>
+<h3 id="genesetspy-genesets_gene_hdf5py">genesets.py / genesets_gene_hdf5.py<a class="headerlink" href="#genesetspy-genesets_gene_hdf5py" title="Permanent link">&para;</a></h3>
+<p>Both deal with gene sets but have different approaches:
+- genesets.py: Basic gene set utilities
+- genesets_gene_hdf5.py: HDF5-based storage for gene-level data
+Both have 0% test coverage and need review.</p>
+<h3 id="multiprocessing_templatepy">multiprocessing_template.py<a class="headerlink" href="#multiprocessing_templatepy" title="Permanent link">&para;</a></h3>
+<p>Complex multiprocessing framework. The <code>ParallelProcessor</code> base class is well-designed but:
+- Documentation could be improved
+- Some methods have <code>**kwargs</code> without clear documentation of expected parameters</p>
+<h3 id="clipy-both-packages">cli.py (both packages)<a class="headerlink" href="#clipy-both-packages" title="Permanent link">&para;</a></h3>
+<p>Both CLI modules have low coverage and complex argument handling:
+- graphld/cli.py: 47% coverage, 1124 lines
+- score_test/cli.py: 65% coverage, 478 lines
+Consider integration tests for CLI commands.</p>
+<h2 id="files-already-fixed-linting">Files Already Fixed (Linting)<a class="headerlink" href="#files-already-fixed-linting" title="Permanent link">&para;</a></h2>
+<p>The following were automatically fixed with <code>ruff --fix</code>:
+- Trailing whitespace (W291)
+- Blank lines with whitespace (W293)<br />
+- Missing newline at end of file (W292)
+- f-strings without placeholders (F541)
+- Some unused imports (F401)</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": "1.2.0"}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
