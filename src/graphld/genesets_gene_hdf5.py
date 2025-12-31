@@ -9,9 +9,9 @@ COMPRESSION_TYPE = 'lzf'
 CHUNK_SIZE = 1000
 POSITION_SCALE = 1e9  # Scale factor for chromosome positions
 
-def get_nearest_genes(var_pos: np.ndarray, 
-                        gene_pos: np.ndarray, 
-                        num_nearest: int, 
+def get_nearest_genes(var_pos: np.ndarray,
+                        gene_pos: np.ndarray,
+                        num_nearest: int,
                         ) -> np.ndarray:
 
     # Ensure 1D inputs (HDF5 may store as Nx1)
@@ -22,7 +22,7 @@ def get_nearest_genes(var_pos: np.ndarray,
     if not np.array_equal(gene_pos, np.sort(gene_pos)):
         raise ValueError("Gene positions must be sorted")
     nvar, ngene = var_pos.size, gene_pos.size
-    
+
     # how many genes come before each variant?
     order = np.argsort(np.concatenate((var_pos, gene_pos)))
     perm = np.empty(nvar + ngene)
@@ -35,7 +35,7 @@ def get_nearest_genes(var_pos: np.ndarray,
         # fancy indexing + wraparound
         genes_k_flanking[:,k] = (num_genes_before + k) % ngene
         dist_k_flanking[:,k] = abs(var_pos - gene_pos[genes_k_flanking[:,k]])
-    
+
     dist_k_flanking = dist_k_flanking.ravel()
     genes_k_flanking = genes_k_flanking.ravel()
 
@@ -49,7 +49,7 @@ def get_nearest_genes(var_pos: np.ndarray,
         result[left_wins,k] = genes_k_flanking[left_contestant[left_wins]]
         right_contestant -= right_wins
         left_contestant += left_wins
-    
+
     return result
 
 def get_gene_variant_matrix(
@@ -103,7 +103,7 @@ def compute_gene_jackknife_blocks(M: csr_matrix, variant_blocks: pl.Series) -> n
     gene_blocks = np.rint(mean_blocks).astype(np.int32)
     gene_blocks[denom == 0] = -1
     return gene_blocks
-    
+
 def compute_variant_positions(variant_data: pl.DataFrame) -> np.ndarray:
     """Compute global positions for variants (CHR * POSITION_SCALE + POS)."""
     return (variant_data['POS'] + variant_data['CHR'] * POSITION_SCALE).to_numpy().astype(np.int64)
@@ -176,14 +176,14 @@ def compute_gene_level_data(variant_data: pl.DataFrame,
     """
     # Get chromosomes present in variant data
     variant_chrs = variant_data['CHR'].unique().sort().to_list()
-    
+
     # Filter genes to only those on chromosomes present in variant data
     gene_table = gene_table.filter(pl.col('CHR').cast(pl.Int64).is_in(variant_chrs))
-    
+
     # Compute gene-variant matrix using canonical function
     gene_variant_matrix = compute_gene_variant_matrix_from_data(variant_data, gene_table, nearest_weights)
     gene_blocks = compute_gene_jackknife_blocks(gene_variant_matrix, variant_data['jackknife_blocks'])
-    
+
     # Assert that gene blocks are contiguous
     unique_blocks = len(np.unique(gene_blocks[gene_blocks >= 0]))
     transitions = np.sum(np.diff(gene_blocks) != 0)
@@ -193,9 +193,9 @@ def compute_gene_level_data(variant_data: pl.DataFrame,
     return gene_variant_matrix, gene_blocks
 
 
-def convert_variant_to_gene_hdf5(variant_hdf5: str, 
-                                gene_table_path: str, 
-                                gene_hdf5: str, 
+def convert_variant_to_gene_hdf5(variant_hdf5: str,
+                                gene_table_path: str,
+                                gene_hdf5: str,
                                 nearest_weights: np.ndarray) -> None:
     """Convert variant-level HDF5 to gene-level HDF5.
     
@@ -213,37 +213,37 @@ def convert_variant_to_gene_hdf5(variant_hdf5: str,
     # Load data
     variant_data = load_variant_data(variant_hdf5)
     gene_table = read_genes_tsv(gene_table_path)
-    
+
     # Get chromosomes present in variant data
     variant_chrs = variant_data['CHR'].unique().sort().to_list()
     print(f"Chromosomes in variant data: {variant_chrs}")
-    
+
     # Filter gene table to chromosomes present in variant data
     gene_table = gene_table.filter(pl.col('CHR').cast(pl.Int64).is_in(variant_chrs))
     print(f"Filtered to {len(gene_table)} genes on chromosomes {variant_chrs}")
-    
+
     # Compute gene-level data
     gene_variant_matrix, gene_blocks = compute_gene_level_data(
         variant_data, gene_table, nearest_weights
     )
 
     # Load a trait to get hessian for computing gene-level annotations
-    # We need to compute J = X^T @ diag(H) @ W where X is variant annotations, 
+    # We need to compute J = X^T @ diag(H) @ W where X is variant annotations,
     # H is variant hessian, W is gene-variant matrix
     with h5py.File(variant_hdf5, 'r') as vf:
         trait_names = list(vf['traits'].keys())
     # Use first trait's hessian to compute gene annotations
     first_trait_data = load_trait_data(variant_hdf5, trait_name=trait_names[0])
-    gene_annotations = (variant_data['annotations'].to_numpy().T @ 
+    gene_annotations = (variant_data['annotations'].to_numpy().T @
                        (first_trait_data['hessian'].reshape(-1,1) * gene_variant_matrix.toarray())).T
-    
+
     print(gene_table.head())
-    
+
     # TEST: Compute score for arbitrary test gene set
     test_gene_set = get_test_gene_set(gene_table)
-    print(f"\n=== TEST GENE SET (convert_variant_to_gene_hdf5) ===")
+    print("\n=== TEST GENE SET (convert_variant_to_gene_hdf5) ===")
     print(f"Test gene set size: {len(test_gene_set)}")
-    gene_indicator = np.array([1.0 if name in test_gene_set else 0.0 
+    gene_indicator = np.array([1.0 if name in test_gene_set else 0.0
                                for name in gene_table['gene_name'].to_list()], dtype=np.float64)
     variant_annot = gene_variant_matrix @ gene_indicator.reshape(-1, 1)
     trait_data = load_trait_data(variant_hdf5, trait_name='data_sumstats_sumstats_body_BMIz.sumstats')
@@ -254,7 +254,7 @@ def convert_variant_to_gene_hdf5(variant_hdf5: str,
     print(f"Gene-level score: {gene_score:.10f}")
     print(f"Difference: {abs(variant_score - gene_score):.2e}")
     print("=" * 50)
-    
+
     # Compute gene positions for saving to HDF5
     gene_positions = compute_gene_positions(gene_table)
 
@@ -323,37 +323,37 @@ def convert_variant_to_gene_hdf5(variant_hdf5: str,
                                         compression=COMPRESSION_TYPE,
                                         dtype=np.float64,
                                         )
-                                        
-                                    
-        
-def create_variant_annot_internal(variant_hdf5: str, env_dir: str, gene_list: str, add_random_float: float | None, 
+
+
+
+def create_variant_annot_internal(variant_hdf5: str, env_dir: str, gene_list: str, add_random_float: float | None,
                     chromosome: str, nearest_weights: tuple[float, ...], output_prefix: str):
     """Internal function to create variant and gene annotations for a gene set."""
     import os
-    
+
     # Find gene table in env_dir
     gene_table_path = os.path.join(env_dir, "genes.tsv")
     if not os.path.exists(gene_table_path):
         raise FileNotFoundError(f"genes.tsv not found in {env_dir}")
-    
+
     # Load variant data
     variant_data = load_variant_data(variant_hdf5)
-    
+
     # Get chromosomes present in variant data
     variant_chrs = variant_data['CHR'].unique().sort().to_list()
     print(f"Chromosomes in variant data: {variant_chrs}")
-    
+
     # Load and filter gene table
     gene_table = read_genes_tsv(gene_table_path)
     gene_table = gene_table.filter(pl.col('CHR').cast(pl.Int64).is_in(variant_chrs))
-    
+
     # Apply chromosome filter if specified
     if chromosome is not None:
         gene_table = gene_table.filter(pl.col('CHR') == str(chromosome))
         print(f"Filtered to chromosome {chromosome}")
-    
+
     print(f"Total genes available: {len(gene_table)}")
-    
+
     # Get gene names to test
     if add_random_float is not None:
         # Randomly sample genes
@@ -370,20 +370,20 @@ def create_variant_annot_internal(variant_hdf5: str, env_dir: str, gene_list: st
         with open(gene_list, 'r') as f:
             gene_names_in_set = set(line.strip() for line in f if line.strip())
         print(f"Loaded {len(gene_names_in_set)} genes from {gene_list}")
-    
+
     # Get gene-variant matrix using canonical function
     weights = np.array(nearest_weights, dtype=np.float64)
     gene_variant_matrix = compute_gene_variant_matrix_from_data(variant_data, gene_table, weights)
-    
+
     print(f"\nGene-variant matrix shape: {gene_variant_matrix.shape}")
     print(f"Number of non-zero entries: {gene_variant_matrix.nnz}")
     print(f"Sparsity: {gene_variant_matrix.nnz / (gene_variant_matrix.shape[0] * gene_variant_matrix.shape[1]):.4f}")
-    
+
     # TEST: Compute score for arbitrary test gene set
     test_gene_set = get_test_gene_set(gene_table)
-    print(f"\n=== TEST GENE SET (create_variant_annot_internal) ===")
+    print("\n=== TEST GENE SET (create_variant_annot_internal) ===")
     print(f"Test gene set size: {len(test_gene_set)}")
-    test_gene_indicator = np.array([1.0 if name in test_gene_set else 0.0 
+    test_gene_indicator = np.array([1.0 if name in test_gene_set else 0.0
                                     for name in gene_table['gene_name'].to_list()], dtype=np.float64)
     test_variant_annot = gene_variant_matrix @ test_gene_indicator.reshape(-1, 1)
     trait_data = load_trait_data(variant_hdf5, trait_name='data_sumstats_sumstats_body_BMIz.sumstats')
@@ -394,22 +394,22 @@ def create_variant_annot_internal(variant_hdf5: str, env_dir: str, gene_list: st
     print(f"Gene-level score: {test_gene_score:.10f}")
     print(f"Difference: {abs(test_variant_score - test_gene_score):.2e}")
     print("=" * 50)
-    
+
     # Create indicator vector for genes in the set
     all_gene_names = gene_table['gene_name'].to_list()
-    gene_indicator = np.array([1.0 if name in gene_names_in_set else 0.0 
+    gene_indicator = np.array([1.0 if name in gene_names_in_set else 0.0
                                 for name in all_gene_names], dtype=np.float64)
     print(f"Genes in set: {gene_indicator.sum():.0f} out of {len(gene_indicator)}")
-    
+
     # Check for duplicate gene names
     unique_all_genes = len(set(all_gene_names))
     if unique_all_genes != len(all_gene_names):
         print(f"WARNING: Gene table has {len(all_gene_names) - unique_all_genes} duplicate gene names")
-    
+
     # Compute variant annotation by dotting gene_variant_matrix with indicator
     variant_annot = gene_variant_matrix @ gene_indicator.reshape(-1, 1)
     print(f"Variant annotation mean: {variant_annot.mean():.6f}")
-    
+
     # Save variant annotations in LDSC format
     variant_annot_df = pl.DataFrame({
         'CHR': variant_data['CHR'],
@@ -418,11 +418,11 @@ def create_variant_annot_internal(variant_hdf5: str, env_dir: str, gene_list: st
         'CM': pl.Series([0.0] * len(variant_data)),  # Placeholder
         'gene_set': variant_annot.ravel()
     })
-    
+
     variant_output = f"{output_prefix}.variant.annot"
     variant_annot_df.write_csv(variant_output, separator='\t')
     print(f"Saved variant annotations to {variant_output}")
-    
+
     # Create gene annotations (indicator for genes in set)
     gene_annot_df = pl.DataFrame({
         'gene_id': gene_table['gene_id'],
@@ -432,11 +432,11 @@ def create_variant_annot_internal(variant_hdf5: str, env_dir: str, gene_list: st
         'end': gene_table['end'],
         'in_gene_set': gene_indicator
     })
-    
+
     gene_output = f"{output_prefix}.gene.annot"
     gene_annot_df.write_csv(gene_output, separator='\t')
     print(f"Saved gene annotations to {gene_output}")
-    
+
     return variant_output, gene_output
 
 
@@ -466,7 +466,7 @@ def create_variant_annot_internal(variant_hdf5: str, env_dir: str, gene_list: st
     default=[.5,.2,.1,.1,.1],
     help="Repeat to specify weights for the k-nearest genes (e.g., --nearest-weight 1 --nearest-weight 0.5).",
 )
-def create_variant_annot(variant_hdf5: str, env_dir: str, output_prefix: str, gene_list: str, 
+def create_variant_annot(variant_hdf5: str, env_dir: str, output_prefix: str, gene_list: str,
                          add_random_float: float, chromosome: str, nearest_weights: tuple[float, ...]):
     """Create variant and gene annotations for a gene set.
     
@@ -476,7 +476,7 @@ def create_variant_annot(variant_hdf5: str, env_dir: str, output_prefix: str, ge
     GENE_LIST: Optional file with gene names (one per line)
     """
     weights = tuple(nearest_weights)
-    create_variant_annot_internal(variant_hdf5, env_dir, gene_list, add_random_float, 
+    create_variant_annot_internal(variant_hdf5, env_dir, gene_list, add_random_float,
                                    chromosome, weights, output_prefix)
 
 

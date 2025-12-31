@@ -146,13 +146,13 @@ class TestLoadAnnotations:
         df.write_csv(annot_file, separator='\t')
         
         # Load annotations
-        result = load_annotations(str(annot_dir), chromosome=22, add_positions=False)
+        result = load_annotations(str(annot_dir), chromosome=22, add_positions=True)
         
         # Assertions
         assert isinstance(result, pl.DataFrame)
         assert len(result) == 3
         assert 'CHR' in result.columns
-        assert 'POS' in result.columns  # BP renamed to POS when add_positions=False
+        assert 'POS' in result.columns  # BP renamed to POS when add_positions=True
         assert 'SNP' in result.columns
         assert 'annot1' in result.columns
         assert 'annot2' in result.columns

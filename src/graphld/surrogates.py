@@ -77,7 +77,7 @@ class Surrogates(ParallelProcessor):
         # This ensures allele matching is applied consistently
         sumstats_df = block_data['df']
         match_by_position = worker_params.get('match_by_position', False)
-        
+
         # Don't modify ldgm in place - we need to preserve original indices
         merged_ldgm, _ = merge_snplists(
             ldgm, sumstats_df,
@@ -87,8 +87,8 @@ class Surrogates(ParallelProcessor):
             alt_allele_col='ALT',
             modify_in_place=False
         )
-        
-        # After merge_snplists, merged_ldgm.variant_info contains only variants that 
+
+        # After merge_snplists, merged_ldgm.variant_info contains only variants that
         # matched sumstats (with allele checking). Get their unique indices.
         # Work at index-level: length equals number of unique LDGM indices in this block
         num_indices = ldgm.shape[0]
@@ -124,7 +124,7 @@ class Surrogates(ParallelProcessor):
                 if dset_name in h5:
                     raise ValueError(f"Dataset {dset_name} already exists in {out_path}")
                 h5.create_dataset(dset_name, data=mapping, compression='lzf', chunks=True)
-        
+
 
 def get_surrogate_markers(
     metadata_path: Union[str, os.PathLike],

@@ -11,6 +11,7 @@ import polars as pl
 
 import graphld as gld
 from graphld.ldsc_io import read_ldsc_sumstats, read_ldsc_snplist
+from graphld.parquet_io import get_parquet_traits, read_parquet_sumstats
 from graphld.vcf_io import read_gwas_vcf
 
 from .heritability import MethodOptions, ModelOptions, run_graphREML
@@ -81,12 +82,16 @@ def _blup(
         sumstats = read_gwas_vcf(sumstats)
         match_by_position = True
         sample_size_col = 'NS'
+    elif sumstats.endswith('.parquet'):
+        sumstats = read_parquet_sumstats(sumstats)
+        match_by_position = False
+        sample_size_col = 'N'
     elif sumstats.endswith('.sumstats'):
         sumstats = read_ldsc_sumstats(sumstats)
         match_by_position = False
         sample_size_col = 'N'
     else:
-        raise ValueError("Input file must end in .vcf or .sumstats")
+        raise ValueError("Input file must end in .vcf, .parquet, or .sumstats")
 
     # Get sample size
     sample_size = num_samples
@@ -171,10 +176,12 @@ def _clump(
     # Read summary statistics
     if sumstats.endswith('.vcf'):
         sumstats_df = read_gwas_vcf(sumstats)
+    elif sumstats.endswith('.parquet'):
+        sumstats_df = read_parquet_sumstats(sumstats)
     elif sumstats.endswith('.sumstats'):
         sumstats_df = read_ldsc_sumstats(sumstats)
     else:
-        raise ValueError("Input file must end in .vcf or .sumstats")
+        raise ValueError("Input file must end in .vcf, .parquet, or .sumstats")
 
     # Run LD clumping
     clumped = gld.LDClumper.clump(
@@ -241,12 +248,14 @@ def _surrogates(
     # Read summary statistics
     if sumstats.endswith('.vcf'):
         sumstats_df = read_gwas_vcf(sumstats)
+    elif sumstats.endswith('.parquet'):
+        sumstats_df = read_parquet_sumstats(sumstats)
     elif sumstats.endswith('.snplist'):
         sumstats_df = read_ldsc_snplist(sumstats)
     elif sumstats.endswith('.sumstats'):
         sumstats_df = read_ldsc_sumstats(sumstats)
     else:
-        raise ValueError("Input file must end in .vcf, .sumstats or .snplist")
+        raise ValueError("Input file must end in .vcf, .parquet, .sumstats, or .snplist")
 
     # Run surrogate marker identification -> writes an HDF5 file and returns its path
     out_path = get_surrogate_markers(
@@ -366,9 +375,19 @@ def _simulate(
         sys.stdout.write(f"Completed in {end_time - start_time:.2f} s\n")
         sys.stdout.flush()
 
-def _detect_sumstats_type(sumstats_path: str, maximum_missingness: float = 1):
-    """Detect summary statistics file type based on file extension."""
+def _detect_sumstats_type(sumstats_path: str, maximum_missingness: float = 1, trait: Optional[str] = None):
+    """Detect summary statistics file type based on file extension.
+    
+    Args:
+        sumstats_path: Path to summary statistics file
+        maximum_missingness: Maximum fraction of missing samples allowed
+        trait: For parquet files with multiple traits, which trait to extract
+        
+    Returns:
+        DataFrame with summary statistics
+    """
     from graphld.ldsc_io import read_ldsc_sumstats
+    from graphld.parquet_io import read_parquet_sumstats
     from graphld.vcf_io import read_gwas_vcf
 
     # Lowercase extension for case-insensitive matching
@@ -376,6 +395,8 @@ def _detect_sumstats_type(sumstats_path: str, maximum_missingness: float = 1):
 
     if ext in ['.vcf', '.vcf.gz']:
         return read_gwas_vcf(sumstats_path, maximum_missingness=maximum_missingness)
+    elif ext == '.parquet':
+        return read_parquet_sumstats(sumstats_path, trait=trait, maximum_missingness=maximum_missingness)
     else:
         return read_ldsc_sumstats(sumstats_path, maximum_missingness=maximum_missingness)
 
@@ -482,48 +503,27 @@ def write_convergence_results(filename: str, results: dict):
         for i, (change, trust_lambda) in enumerate(zip(log['likelihood_changes'], log['trust_region_lambdas'], strict=False)):
             f.write(f"{i+1},{change},{trust_lambda}\n")
 
-def _reml(args):
-    """Run GraphREML command."""
-    # Check for output filename requirement
-    if not args.out and not args.no_save:
-        raise ValueError("Output filename is required unless --no-save is specified.")
-
-    # Check for existing output files
-    if args.out:
-        # Create output directory if it doesn't exist
-        out_dir = os.path.dirname(args.out)
-        if out_dir and not os.path.exists(out_dir):
-            os.makedirs(out_dir, exist_ok=True)
-
-        if not args.no_save:
-            tall_output = args.out + '.tall.csv'
-            if not args.alt_output:
-                if os.path.exists(tall_output):
-                    raise FileExistsError(f"Output file {tall_output} already exists")
-
-    start_time = time.time()
-
-    if not args.quiet:
-        if args.verbose:
-            print('Loading summary statistics from', args.sumstats)
-    sumstats = _detect_sumstats_type(args.sumstats, args.maximum_missingness)
-
-    if args.verbose:
-        print('Loading annotations from', args.annot_dir)
-    annotations = load_annotations(args.annot_dir, chromosome=args.chromosome, add_positions=False)
+def _run_reml_single_trait(
+    args,
+    sumstats: pl.DataFrame,
+    annotations: pl.DataFrame,
+    annotation_columns: list,
+    trait_name: str,
+) -> dict:
+    """Run GraphREML for a single trait.
+    
+    Args:
+        args: Parsed command line arguments
+        sumstats: Summary statistics DataFrame
+        annotations: Annotations DataFrame
+        annotation_columns: List of annotation column names
+        trait_name: Name of the trait being analyzed
+        
+    Returns:
+        Dictionary containing REML results
+    """
     num_snps_annot = len(annotations)
 
-    # Get annotation columns
-    if args.annotation_columns:
-        annotation_columns = args.annotation_columns
-        for col in annotation_columns:
-            if col not in annotations.columns:
-                raise ValueError(f"Column {col} not found in annotations")
-    else:
-        excluded_cols = {'SNP', 'CM', 'BP', 'CHR', 'POS', 'A1', 'A2'}
-        annotation_columns = [col for col in annotations.columns if col not in excluded_cols]
-
-    # Create model and method options
     # Handle initial parameters
     initial_params = None
     if args.initial_params is not None:
@@ -554,13 +554,9 @@ def _reml(args):
         gradient_num_samples=args.xtrace_num_samples,
         max_chisq_threshold=args.max_chisq_threshold,
         score_test_hdf5_file_name=args.score_test_filename,
-        score_test_hdf5_trait_name=args.name or args.sumstats,
+        score_test_hdf5_trait_name=trait_name,
         surrogate_markers_path=args.surrogates,
     )
-
-    # Run GraphREML
-    if not args.quiet:
-        print('Running GraphREML...')
 
     results = run_graphREML(
         model_options=model_options,
@@ -572,46 +568,187 @@ def _reml(args):
         chromosomes=[args.chromosome] if args.chromosome else None,
     )
 
-    runtime = time.time() - start_time
-    if not args.quiet:
-        print(f"Time to run GraphREML: {runtime:.3f}s")
-    if args.verbose:
-        print(f"Likelihood changes: {np.diff(np.array(results['likelihood_history']))}")
+    return results, model_options
 
-    # Write output files only if out is specified
+
+def _reml(args):
+    """Run GraphREML command."""
+    # Check for output filename requirement
+    if not args.out and not args.no_save:
+        raise ValueError("Output filename is required unless --no-save is specified.")
+
+    # Check for existing output files
     if args.out:
-        # Prepare output files
-        convergence_file = args.out + '.convergence.csv'
-        write_convergence_results(convergence_file, results)
+        # Create output directory if it doesn't exist
+        out_dir = os.path.dirname(args.out)
+        if out_dir and not os.path.exists(out_dir):
+            os.makedirs(out_dir, exist_ok=True)
 
         if not args.no_save:
-            if args.alt_output:
-                heritability_file = args.out + '.heritability.csv'
-                write_results(heritability_file,
-                                results['heritability'],
-                                results['heritability_se'],
-                                results['heritability_log10pval'],
-                                model_options.annotation_columns,
-                                args.name or args.sumstats)
+            tall_output = args.out + '.tall.csv'
+            if not args.alt_output:
+                if os.path.exists(tall_output):
+                    raise FileExistsError(f"Output file {tall_output} already exists")
 
-                enrichment_file = args.out + '.enrichment.csv'
-                write_results(enrichment_file,
-                                results['enrichment'],
-                                results['enrichment_se'],
-                                results['enrichment_log10pval'],
-                                model_options.annotation_columns,
-                                args.name or args.sumstats)
+    start_time = time.time()
 
-                parameters_file = args.out + '.parameters.csv'
-                write_results(parameters_file,
-                                results['parameters'],
-                                results['parameters_se'],
-                                results['parameters_log10pval'],
-                                model_options.annotation_columns,
-                                args.name or args.sumstats)
-            else:
-                tall_output = args.out + '.tall.csv'
-                write_tall_results(tall_output, model_options, results)
+    # Determine traits to process for parquet files
+    ext = os.path.splitext(args.sumstats)[1].lower()
+    is_parquet = ext == '.parquet'
+
+    if is_parquet:
+        available_traits = get_parquet_traits(args.sumstats)
+        if not available_traits:
+            raise ValueError(f"No traits found in parquet file {args.sumstats}")
+
+        # Parse --name argument for trait selection
+        if args.name:
+            requested_traits = [t.strip() for t in args.name.split(',')]
+            # Validate all requested traits exist
+            missing = set(requested_traits) - set(available_traits)
+            if missing:
+                raise ValueError(f"Traits not found in parquet file: {missing}. "
+                               f"Available traits: {available_traits}")
+            traits_to_process = requested_traits
+        else:
+            # Process all traits
+            traits_to_process = available_traits
+
+        if not args.quiet:
+            print(f"Found {len(available_traits)} traits in parquet file, processing {len(traits_to_process)}: {traits_to_process}")
+    else:
+        # For non-parquet files, use a single trait with the provided name
+        traits_to_process = [args.name or args.sumstats]
+
+    # Load annotations once (shared across all traits)
+    # Check that exactly one of annot_dir or gene_annot_dir is provided
+    has_variant_annot = args.annot_dir is not None
+    has_gene_annot = args.gene_annot_dir is not None
+
+    if has_variant_annot and has_gene_annot:
+        raise ValueError("Cannot specify both --annot-dir and --gene-annot-dir. Choose one annotation source.")
+    if not has_variant_annot and not has_gene_annot:
+        raise ValueError("Must specify either --annot-dir (variant annotations) or --gene-annot-dir (gene annotations).")
+
+    if has_gene_annot:
+        # Load gene annotations from GMT files and convert to variant-level
+        from .genesets import load_gene_annotations, load_gene_table
+
+        if args.verbose:
+            print(f'Loading gene annotations from {args.gene_annot_dir}')
+
+        # Parse nearest weights
+        nearest_weights = np.array([float(w) for w in args.nearest_weights.split(',')], dtype=np.float64)
+
+        # We need to load a reference variant table first to get positions
+        # Load from the first sumstats file to get variant positions
+        first_sumstats = _detect_sumstats_type(args.sumstats, args.maximum_missingness,
+                                                trait=traits_to_process[0] if is_parquet else None)
+
+        # Create variant table with required columns
+        variant_table = first_sumstats.select([
+            pl.col('CHR').cast(pl.Int64) if 'CHR' in first_sumstats.columns else pl.lit(0).alias('CHR'),
+            pl.col('POS').cast(pl.Int64) if 'POS' in first_sumstats.columns else pl.col('BP').cast(pl.Int64).alias('POS'),
+            pl.col('SNP') if 'SNP' in first_sumstats.columns else pl.col('RSID').alias('SNP'),
+        ])
+
+        # Filter by chromosome if specified
+        if args.chromosome:
+            variant_table = variant_table.filter(pl.col('CHR') == args.chromosome)
+
+        annotations = load_gene_annotations(
+            gene_annot_dir=args.gene_annot_dir,
+            variant_table=variant_table,
+            gene_table_path=args.gene_table,
+            nearest_weights=nearest_weights,
+            annot_names=args.annotation_columns,
+        )
+
+        if args.verbose:
+            gene_annot_cols = [c for c in annotations.columns if c not in {'CHR', 'BP', 'SNP', 'CM'}]
+            print(f'Loaded {len(gene_annot_cols)} gene annotations: {gene_annot_cols[:5]}...' if len(gene_annot_cols) > 5 else f'Loaded {len(gene_annot_cols)} gene annotations: {gene_annot_cols}')
+    else:
+        # Load variant-level annotations
+        if args.verbose:
+            print('Loading annotations from', args.annot_dir)
+        annotations = load_annotations(args.annot_dir, chromosome=args.chromosome, add_positions=False)
+
+    # Get annotation columns
+    if args.annotation_columns:
+        annotation_columns = args.annotation_columns
+        for col in annotation_columns:
+            if col not in annotations.columns:
+                raise ValueError(f"Column {col} not found in annotations")
+    else:
+        excluded_cols = {'SNP', 'CM', 'BP', 'CHR', 'POS', 'A1', 'A2'}
+        annotation_columns = [col for col in annotations.columns if col not in excluded_cols]
+
+    # Process each trait
+    for trait_name in traits_to_process:
+        trait_start_time = time.time()
+
+        if not args.quiet:
+            if args.verbose:
+                print(f'Loading summary statistics for trait: {trait_name}')
+
+        # Load summary statistics for this trait
+        if is_parquet:
+            sumstats = _detect_sumstats_type(args.sumstats, args.maximum_missingness, trait=trait_name)
+        else:
+            sumstats = _detect_sumstats_type(args.sumstats, args.maximum_missingness)
+
+        # Run GraphREML
+        if not args.quiet:
+            print(f'Running GraphREML for {trait_name}...')
+
+        results, model_options = _run_reml_single_trait(
+            args, sumstats, annotations, annotation_columns, trait_name
+        )
+
+        trait_runtime = time.time() - trait_start_time
+        if not args.quiet:
+            print(f"Time to run GraphREML for {trait_name}: {trait_runtime:.3f}s")
+        if args.verbose:
+            print(f"Likelihood changes: {np.diff(np.array(results['likelihood_history']))}")
+
+        # Write output files only if out is specified
+        if args.out:
+            # Prepare output files
+            convergence_file = args.out + '.convergence.csv'
+            write_convergence_results(convergence_file, results)
+
+            if not args.no_save:
+                if args.alt_output:
+                    heritability_file = args.out + '.heritability.csv'
+                    write_results(heritability_file,
+                                    results['heritability'],
+                                    results['heritability_se'],
+                                    results['heritability_log10pval'],
+                                    model_options.annotation_columns,
+                                    trait_name)
+
+                    enrichment_file = args.out + '.enrichment.csv'
+                    write_results(enrichment_file,
+                                    results['enrichment'],
+                                    results['enrichment_se'],
+                                    results['enrichment_log10pval'],
+                                    model_options.annotation_columns,
+                                    trait_name)
+
+                    parameters_file = args.out + '.parameters.csv'
+                    write_results(parameters_file,
+                                    results['parameters'],
+                                    results['parameters_se'],
+                                    results['parameters_log10pval'],
+                                    model_options.annotation_columns,
+                                    trait_name)
+                else:
+                    tall_output = args.out + '.tall.csv'
+                    write_tall_results(tall_output, model_options, results)
+
+    total_runtime = time.time() - start_time
+    if not args.quiet and len(traits_to_process) > 1:
+        print(f"Total time for all {len(traits_to_process)} traits: {total_runtime:.3f}s")
 
 def _add_common_arguments(parser):
     """Add arguments that are common to all subcommands."""
@@ -804,11 +941,12 @@ def _add_reml_parser(subparsers):
     # Add common I/O arguments (out is optional for reml)
     _add_io_arguments(parser, out_required=False)
 
-    # Required arguments
+    # Annotation arguments (one of these is required)
     parser.add_argument(
         "-a", '--annot-dir',
-        help='Path to annotation directory. Must contain per-chromosome .annot files, can also contain .bed files',
-        required="data/annot/",
+        help='Path to annotation directory. Must contain per-chromosome .annot files, can also contain .bed files. '
+             'Either --annot-dir or --gene-annot-dir must be provided.',
+        default=None,
     )
 
     # Add common arguments
@@ -916,6 +1054,29 @@ def _add_reml_parser(subparsers):
         type=lambda s: [float(x) for x in s.split(',')],
         default=None,
         help="Initial parameter values (comma-separated). If fewer than num_params, remaining are set to 0."
+    )
+
+    # Gene-level annotation options
+    parser.add_argument(
+        "-g", "--gene-annot-dir",
+        type=str,
+        default=None,
+        help="Directory containing gene-level annotation files (.gmt format). "
+             "Gene sets will be converted to variant-level annotations using nearest-gene weighting."
+    )
+    parser.add_argument(
+        "--gene-table",
+        type=str,
+        default="data/genes.tsv",
+        help="Path to gene table TSV file with columns: gene_id, gene_name, start, end, CHR. "
+             "Required when using --gene-annot-dir."
+    )
+    parser.add_argument(
+        "--nearest-weights",
+        type=str,
+        default="0.4,0.2,0.1,0.1,0.1,0.05,0.05",
+        help="Comma-separated weights for k-nearest genes when converting gene annotations to variant annotations. "
+             "Default assigns decreasing weights to the 7 nearest genes."
     )
 
     parser.set_defaults(func=_reml)

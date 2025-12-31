@@ -2,11 +2,9 @@
 
 import logging
 import sys
-from pathlib import Path
 
 import click
 import h5py
-import numpy as np
 
 try:
     from .convert_scores import convert_hdf5
@@ -22,7 +20,6 @@ except ImportError:
     from score_test_io import (
         get_trait_groups,
         get_trait_names,
-        load_variant_data,
         save_trait_groups,
     )
 
@@ -101,11 +98,6 @@ def cli():
 @click.option(
     "--seed", type=int, default=None, help="Seed for generating random annotations."
 )
-@click.option(
-    "--approximate",
-    is_flag=True,
-    help="Use approximate score test that does not correct for uncertainty in model parameters.",
-)
 def test(
     variant_stats_hdf5,
     output_fp,
@@ -119,7 +111,6 @@ def test(
     trait_name,
     verbose,
     seed,
-    approximate,
 ):
     """Run score test for annotation enrichment (default command)."""
     # Call the original main function with all arguments
@@ -137,7 +128,6 @@ def test(
         "trait_name": trait_name,
         "verbose": verbose,
         "seed": seed,
-        "approximate": approximate,
     }
     ctx.invoke(score_test_main, **ctx.params)
 
@@ -199,7 +189,7 @@ def show(hdf5_file, verbose):
             "row_data" if "row_data" in f else "variants" if "variants" in f else None
         )
         if data_group:
-            click.echo(f"\nVariant datasets:")
+            click.echo("\nVariant datasets:")
             for dataset_name in sorted(f[data_group].keys()):
                 dataset = f[data_group][dataset_name]
                 if hasattr(dataset, "shape"):
@@ -211,7 +201,7 @@ def show(hdf5_file, verbose):
 
         # Show detailed trait information if verbose
         if verbose and "traits" in f:
-            click.echo(f"\nDetailed trait information:")
+            click.echo("\nDetailed trait information:")
             for trait_name in sorted(trait_names):
                 trait_group = f["traits"][trait_name]
                 click.echo(f"\n  {trait_name}:")

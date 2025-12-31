@@ -420,7 +420,7 @@ class GraphREML(ParallelProcessor):
         if len(ldgm.variant_info) == 0:
             if verbose:
                 print(
-                    f"No variants left after merging annotations and sumstats - skipping block"
+                    "No variants left after merging annotations and sumstats - skipping block"
                 )
             return None, None
 
@@ -436,7 +436,7 @@ class GraphREML(ParallelProcessor):
 
         if len(variant_info_nonmissing) == 0:
             if verbose:
-                print(f"All variants have missing Z-scores - skipping block")
+                print("All variants have missing Z-scores - skipping block")
             return None, None
 
         indices_arr = np.array(variant_info.get_column("index").to_numpy())

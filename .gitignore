@@ -93,3 +93,7 @@ notebooks/*.ipynb
 
 # windsurf rules
 .windsurfrules
+/scoretest
+output/baseline_oe5_results.txt
+/text
+/scripts

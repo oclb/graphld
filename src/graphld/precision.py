@@ -287,7 +287,7 @@ class PrecisionOperator(LinearOperator):
         """Copy the current LDGM instance."""
         which_indices = self._which_indices.copy() if self._which_indices is not None else None
         solver = self._solver if self._solver is not None else None
-        return PrecisionOperator(self._matrix.copy(), self.variant_info.clone(), 
+        return PrecisionOperator(self._matrix.copy(), self.variant_info.clone(),
                                 which_indices, solver, self._cholesky_is_up_to_date)
 
     def __getitem__(self, key: Union[list, slice, np.ndarray]) -> 'PrecisionOperator':
@@ -356,7 +356,7 @@ class PrecisionOperator(LinearOperator):
                 indices = np.array([key])
         else:
             raise TypeError("Invalid key type. Use integer, list, slice, or numpy array.")
-        
+
         self._which_indices = indices
 
 
@@ -456,11 +456,11 @@ class PrecisionOperator(LinearOperator):
 
         y = np.zeros(self.shape[0])
         np.add.at(y, self.variant_indices, b)
-        
+
         y = self.solve(y)
-        
+
         return y[self.variant_indices]
-        
+
     @property
     def inv(self) -> LinearOperator:
         """

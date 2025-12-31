@@ -1,23 +1,24 @@
 # GraphLD
 
-This repository provides an implementation of the graphREML method described in:
+This repository implements the graphREML method described in:
 > Hui Li, Tushar Kamath, Rahul Mazumder, Xihong Lin, & Luke J. O'Connor (2024). _Improved heritability partitioning and enrichment analyses using summary statistics with graphREML_. medRxiv, 2024-11. DOI: [10.1101/2024.11.04.24316716](https://doi.org/10.1101/2024.11.04.24316716)
 
-and a Python API for computationally efficient linkage disequilibrium (LD) matrix operations with [LD graphical models](https://github.com/awohns/ldgm) (LDGMs), described in:
+and provides a Python API for computationally efficient linkage disequilibrium (LD) matrix operations with [LD graphical models](https://github.com/awohns/ldgm) (LDGMs), described in:
 > Pouria Salehi Nowbandegani, Anthony Wilder Wohns, Jenna L. Ballard, Eric S. Lander, Alex Bloemendal, Benjamin M. Neale, and Luke J. O’Connor (2023) _Extremely sparse models of linkage disequilibrium in ancestrally diverse association studies_. Nat Genet. DOI: [10.1038/s41588-023-01487-8](https://pubmed.ncbi.nlm.nih.gov/37640881/)
 
-It also provides very fast utilities for simulating GWAS summary statistics and computing polygenic risk scores.
+It also provides very fast utilities for simulating GWAS summary statistics, performing LD clumping, and computing polygenic risk scores.
 
 ## Table of Contents
 - [Installation](#installation)
 - [Command Line Interface](#command-line-interface)
-- [API](#api)
+- [Enrichment Score Test](#enrichment-score-test)
+- [Python API](#python-api)
 - [File Formats](#file-formats)
 - [See also](#see-also)
 
 ## Installation
 
-`graphld` and `reml` require [SuiteSparse](https://github.com/DrTimothyAldenDavis/SuiteSparse). On Mac, install with `brew install suitesparse`. SuiteSparse is wrapped in [scikit-sparse](https://scikit-sparse.readthedocs.io/en/latest/). For users with Intel chips, it his highly recommended to install IntelMKL, which can produce a 100x speedup with SuiteSparse vs. OpenBLAS, which is likely your default BLAS library. See Giulio Genovese's documentation [here](https://github.com/freeseek/score?tab=readme-ov-file#intel-mkl).
+`graphld` requires [SuiteSparse](https://github.com/DrTimothyAldenDavis/SuiteSparse). On Mac, install with `brew install suitesparse`. On Ubuntu/Debian, use `sudo apt-get install libsuitesparse-dev`. SuiteSparse is wrapped in [scikit-sparse](https://scikit-sparse.readthedocs.io/en/latest/). For users with Intel chips, it is highly recommended to install Intel MKL, which can produce a 100x speedup with SuiteSparse vs. OpenBLAS (your likely default BLAS library). See Giulio Genovese's documentation [here](https://github.com/freeseek/score?tab=readme-ov-file#intel-mkl).
 
 If you are only using the [heritability enrichment score test](#enrichment-score-test), no installation is needed; you can run the source file as a standalone script. With `uv` installed, run `uv run src/score_test/score_test.py --help`, or:
 
@@ -26,44 +27,46 @@ chmod +x src/score_test/score_test.py
 ./src/score_test/score_test.py --help
 ```
 
-### Installing with uv (recommended)
+### Using uv (recommended)
 
-In the repo directory:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) if needed. In the repo directory:
 ```bash
-uv venv
-source .venv/bin/activate
-uv sync
+uv venv && uv sync
 ```
 
 For development installation:
 ```bash
-uv sync --dev --extra dev # editable with pytest dependencies
+uv venv && uv sync --dev --extra dev # editable with pytest dependencies
 uv run pytest # tests will fail if you haven't run `make download` (see below)
 ```
+
 ### Using conda and pip install
 Although we recommend moving away from `conda`, it does have the advantage that you can `conda install` SuiteSparse. Example codes are based on the O2 cluster in the Harvard Medical School computing system. 
 
-- Create a conda `env` for `suitesparse` and activate it: you may need to revert or reinstall some Python packages
+Create a conda `env` for `suitesparse` and activate it: you may need to revert or reinstall some Python packages
+
 ```bash
 module load miniconda3/4.10.3
 conda create -n suitesparse conda-forge::suitesparse python=3.11.0
 conda activate suitesparse
 ```
-- You may need to revert or reinstall some Python packages, if prompted. For example, to install the correct version of `numpy`, use:
+You may need to revert or reinstall some Python packages, if prompted. For example, to install the correct version of `numpy`, use:
+
 ```bash
 pip install numpy==1.26.4
 ```
-- Install `scikit-sparse`: you may need to add some `conda` channels (see below)
+Install `scikit-sparse`: you may need to add some `conda` channels (see below)
+
 ```bash
 conda config --add channels conda-forge
 conda config --set channel_priority strict
 conda install scikit-sparse
 ```
-- Install and run graphLD
+Install and run graphLD
 ```bash
 cd graphld && pip install .
 ```
-- Test if it works
+Test if it works
 ```bash
 graphld -h
 ```
@@ -81,7 +84,7 @@ The download should take 5-30 minutes. By default, this will download and extrac
 
 The CLI has commands for:
 - `blup`, which computes best linear unbiased predictor weights
-- `clump`, which p-value thresholding and LD-based pruning
+- `clump`, which performs p-value thresholding and LD-based pruning
 - `simulate`, which simulates GWAS summary statistics
 - `reml`, which runs graphREML
 
@@ -103,43 +106,53 @@ The summary statistics can be in VCF (`.vcf`) or  LDSC (`.sumstats`) format. The
 
 There will be two output files: `output_files_prefix.tall.csv`, which contains heritability, enrichment, and coefficient estimates for each annotation; and `output_files_prefix.convergence.csv`, which contains information about the optimization process. If you specify the `--alt-output` flag, the `tall.csv` file will be replaced with three files, `.heritability.csv`, `.enrichment.csv`, and `.parameters.csv`, containing heritability, enrichment, and coefficient estimates for each annotation, respectively; these files have one line per model run and three columns per annotation, so that you can store the results of multiple runs or traits in one file. (Use it with `--name` to keep track of which line is which run.)
 
-An important flag is `--intercept`, which specifies the expected inflation in the $\chi^2$ statistics and which cannot be estimated using graphREML. It is recommended to (1) run LD score regression and estimate the intercept and (2) specify that value with the `--intercept` flag. Not doing this leads to upward bias in the heritability estimates and downward bias (i.e., toward 1) in the enrichment estimates. For example, UK Biobank height has an intercept of around 1.5, and specifying this value changes the coding variant enrichment estimate from around 7 to around 11. Most traits will have smaller intercepts. You can skip this if you are OK with some downward bias.
+The `--intercept` flag specifies the expected inflation in the test statistics. It is recommended to (1) run LD score regression and estimate the intercept and (2) specify that value with the `--intercept` flag. Not doing this leads to upward bias in the heritability estimates and downward bias (i.e., toward 1) in the enrichment estimates. You can skip this if you are OK with some downward bias.
 
-Non-convergence can be an issue in this kind of algorithm. We've tried to ensure that the trust region procedure is robust, but you should inspect the `convergence.csv` file and check the log-likelihood changes. If these abruptly go from some large value (e.g., 10) to nearly zero (e.g., 1e-4), it indicates a problem with convergence. Try (1) increasing the number of samples in the stochastic trace estimator with  `--xtrace-num-samples 200`, (2) resetting the trust region at each iteration with `--reset-trust-region`, and (3) as a last resort, discarding LD blocks containing large-effect variants using `--max-chisq-threshold`, e.g., `--max-chisq-threshold 300`.
+If some variants are missing from your GWAS summary statistics, graphREML automatically assigns 'surrogate markers' in high LD with those variants. This is a majority of variants if your summary statistics include HapMap3 SNPs only (~1.1M SNPs). This step can be very slow, but you can use precomputed surrogates to avoid re-doing it each time. To precompute surrogates, run `graphld surrogates` on your summary statistics. This creates a file with cached surrogate markers which can be passed to `graphREML` with the `--surrogates` flag. These should match your summary statistics approximately but do not need to match exactly; you can use the same surrogates across different sumstats files with slightly different SNPs.
 
-If some variants are missing from your GWAS summary statistics, graphREML automatically assigns 'surrogate markers' in high LD with those variants. This is a majority of variants if your summary statitics include HapMap3 SNPs only (~1.1M SNPs). This step can be very slow, but you can use precomputed surrogates to avoid re-doing it each time. To precompute surrogates, run `graphld surrogates` on your summary statistics. This creates a file with cached surrogate markers which can be passed to `graphREML` with the `--surrogates` flag. These should match your summary statistics approximately but do not need to match exactly; you can use the same surrogates across different sumstats files with slightly different SNPs.
+## Enrichment Score Test
 
-### Enrichment Score Test
+The enrichment score test is a fast way to test a large number of genomic or gene annotations for heritability enrichment conditional upon some null model. 
 
-The enrichment score test is a fast way to test a large number of genomic or gene annotations for heritability enrichment conditional upon some null model. It supports annotations in the following formats:
+The test produces Z scores, where a positive score indicates a heritability enrichment, a negative score depletion. These enrichments are conditional upon the null model, similar to the `tau` parameter in `S-LDSC`. The test does not produce point estimates (for this, run graphREML). 
+
+You will need a file containing precomputed derivatives for each trait that is being tested. This can be downloaded from Zenodo via the Makefile, or you can run graphREML as described above and supply the `--score-test-filename` flag to create this file for your own summary statistics.
+
+It supports annotations in the following formats:
 - [LDSC `.annot` files](#ldsc-format-annotations-annot) containing variant annotations
 - [UCSC `.bed` files](#bed-format-annotations-bed) containing genomic regions
 - [Gene matrix transposed (`.gmt`) files](#gmt-format-annotations-gmt) including either gene symbols or gene IDs.
 
-The test produces Z scores, but not point estimates; a positive score indicates an enrichment, a negative score depletion. These enrichments are conditional upon the null model, similar to the `tau` parameter in `S-LDSC`. You will need a file containing precomputed derivatives for each trait that is being tested. This can be downloaded from Zenodo via the Makefile, or you can run graphREML as described above and supply the `--score-test-filename` flag. The file also includes all the annotations in the null model, which will make it somewhat large (>1GB). Data for multiple traits can be added to the same file, but they must share the same annotations.
-
-Running the test on a set of genes requires a file containing the position of each gene, and such a file is provided in [data/genes.tsv](https://github.com/awohns/graphREML/blob/main/data/genes.tsv). If you do not move this file, then the script will find it automatically. The gene-level annotation will be converted into a variant-level annotation using variant-to-gene proximity and the weights specified with the `--nearest-weights` flag. The default weights are `0.4,0.2,0.1,0.1,0.1,.05,.05`: a variant gets an annotation value of `0.4` if its closest gene belongs to the gene set, `0.2` if its second-closest gene belongs to the gene set, and so on. This approach is based on the [Abstract Mediation Model](https://pubmed.ncbi.nlm.nih.gov/35143757/). Only binary gene annotations are supported.
-
-You can also create random annotations with the `--random-variants` and `--random-genes` flags. If you have created your own scores, you are encouraged to use this feature to verify that the test statistics are calibrated under the null.
-
-Usage:
+### Basic Usage
 
 ```bash
+# See what traits are in the derivatives file
+uv run estest show path/to/precomputed/derivatives.h5
+
+# Test variant annotations
 uv run estest \
     path/to/precomputed/derivatives.h5 \
     path/to/output/file/prefix \
     --variant-annot-dir /directory/containing/dot-annot/files/ \
 
+# Test genomic regions
 uv run estest \
     path/to/precomputed/derivatives.h5 \
     path/to/output/file/prefix \
     --variant-annot-dir /directory/containing/dot-bed/files/ \
 
+# Test gene annotations
 uv run estest \
     path/to/precomputed/derivatives.h5 \
     path/to/output/file/prefix \
     --gene-annot-dir /directory/containing/gmt/files/ \
+```
 
+### Random Annotations
+
+You can test random annotations to verify the null distribution. This can be done in three ways:
+
+```bash
 # Create random variant annotations with 10%, 20%, and 30% variants
 uv run estest \
     path/to/precomputed/derivatives.h5 \
@@ -152,23 +165,56 @@ uv run estest \
     path/to/output/file/prefix \
     --random-genes 0.1,0.2,0.3 \
 
+# Perturb binary variant annotations
+uv run estest \
+    path/to/precomputed/derivatives.h5 \
+    path/to/output/file/prefix \
+    --variant-annot-dir /directory/containing/dot-annot/files/ \
+    --perturb-annot .5 # 50% of annotation values are sampled randomly
 ```
 
-Alternatively, use `uv run src/score_test/score_test.py` with the same arguments.
+### Gene set testing
+A set of genes can be tested for heritability enrichment under the Abstract Mediation Model (AMM; Weiner et al. 2022 AJHG). This effectively tests whether variants in proximity to genes belonging to the gene set are enriched for heritability. You can simply supply a gene matrix transposed (`.gmt`) file to the `--gene-annot-dir` flag; alternatively, you can make this run much faster by converting variant-level score statistics to gene-level score statistics:
 
-A file will be saved called `output_prefix.txt` containing one row per annotation and one column per trait, plus one additional column named `meta_analysis` (if there is >1 trait). Each entry is a Z score.
+```bash
+uv run estest convert variant_statistics.h5  gene_statistics.h5
+```
 
-Additional optional arguments:
--   `--annotations` TEXT:  comma-separated list with a subset of annotation names to be tested (header names in the `.annot` files).
--   `--trait_name` TEXT:  name of a single trait to be tested (specified with `--name` in the `graphld reml` run). If unspecified, all traits are tested and a meta-analysis is performed.
-- `--nearest-weights` TEXT: comma-separated list of weights for variant-to-gene proximity (default: `0.4,0.2,0.1,0.1,0.1,.05,.05`).
-- `--name`, `-n` TEXT: Specific trait name to process from HDF5 file. If omitted, all traits are processed.
-- `--seed` INTEGER: seed for random number generator, used for creating random annotations.
-- `--gene-table` PATH: gene table TSV file (required for gene-level options), default: `data/genes.tsv`.
-- `--verbose`, `-v`
-- `--help`, `-h`
+This will create a gene-level score statistics file `gene_statistics.h5` from your variant-level score statistics file `variant_statistics.h5`. It requires a file containing the position of each gene; such a file is provided in data/genes.tsv if you have run the Makefile and will be located automatically.
 
-## API
+Then, run the enrichment score test as normal:
+
+```bash
+uv run estest \
+    gene_statistics.h5 output_prefix \
+    --gene-annot-dir /directory/containing/gmt/files/
+```
+
+This will produce nearly-identical results as the variant-level test.
+
+### Meta-analysis across traits
+You can test whether an annotation is enriched for heritability across multiple traits by adding those traits as a meta-analysis:
+
+```bash
+# Add all traits as a meta-analysis
+uv run estest add-meta statistics.h5 all_traits '*'
+
+# Add specific traits as a meta-analysis
+uv run estest add-meta statistics.h5 body_traits height bmi
+```
+
+Then, run the score test as normal, and the meta-analysis will be included as a column in the output table.
+
+The meta-analysis is implemented by performing a precision-weighted linear combination of the score statistics for each trait, and then computing the jackknife standard error. Non-independence across traits will cause a loss of power, but not false positives.
+
+### Renaming traits and meta-analyses
+Rename traits or meta-analyses with `mv` (automatically detects which):
+
+```bash
+uv run estest mv statistics.h5 old_name new_name
+```
+
+## Python API
 
 ### Heritability Estimation
 
@@ -207,7 +253,7 @@ ldgm: PrecisionOperator = gld.load_ldgm(
 
 vector = np.random.randn(ldgm.shape[0])
 precision_times_vector = ldgm @ vector
-correlation_times_vector = ldgm.solve(result)
+correlation_times_vector = ldgm.solve(precision_times_vector)
 assert np.allclose(correlation_times_vector, vector)
 ```
 
@@ -225,7 +271,6 @@ partitioned_sumstats: List[pl.DataFrame] = gld.partition_variants(ldgm_metadata,
 ```
 
 You can now load LDGMs and merge them with summary statistics:
-chrom,chromStart,chromEnd,name,snplistName,population,numVariants,numIndices,numEntries,info
 
 ```python
 merged_ldgms = []
@@ -322,7 +367,7 @@ sumstats_with_weights: pl.DataFrame = gld.run_blup(
 ```
 This function assumes that heritability is equally distributed among all variants with Z scores provided, i.e., with $D=m^{-1}h^2 I$.
 
-### Multiprocessing
+### Parallel Processing
 
 `ParallelProcessor` is a base class which can be used to implement parallel algorithms with LDGMs, wrapping Python's `multiprocessing` module. It splits work among processes, each of which loads a subset of LD blocks. The advantage of using this is that it handles for you the loading of LDGMs within worker processes. An example can be found in `tests/test_multiprocessing.py`.
 
@@ -331,12 +376,25 @@ This function assumes that heritability is equally distributed among all variant
 ### LDSC Format Summary Statistics (.sumstats)
 See [LDSC summary statistics file format](https://github.com/bulik/ldsc/wiki/Summary-Statistics-File-Format). Read with `read_ldsc_sumstats`.
 
-### GWAS-VCF Summary Statistics(.vcf)
+### GWAS-VCF Summary Statistics (.vcf)
 The [GWAS-VCF specification](https://github.com/MRCIEU/gwasvcf) is supported via the `read_gwas_vcf` function. It is a VCF file with the following mandatory FORMAT fields:
 
 - `ES`: Effect size estimate
 - `SE`: Standard error of effect size
 - `LP`: -log10 p-value
+
+### Parquet Summary Statistics (.parquet)
+Parquet files produced by [kodama](https://github.com/quattro/linear-dag) are supported via `read_parquet_sumstats`. The format stores per-trait columns as `{trait}_BETA` and `{trait}_SE`, allowing multiple traits per file. Variant info columns (`site_ids`/`SNP`, `chrom`/`CHR`, `position`/`POS`, `ref`/`REF`, `alt`/`ALT`) are detected automatically.
+
+When using `graphld reml` with a parquet file containing multiple traits, use `--name` to specify which traits to process:
+
+```bash
+# Process specific traits
+uv run graphld reml sumstats.parquet output --name height,bmi ...
+
+# Process all traits (omit --name)
+uv run graphld reml sumstats.parquet output ...
+```
 
 ### LDSC Format Annotations (.annot)
 You can download BaselineLD model annotation files with GRCh38 coordinates from the Price lab Google Cloud bucket: https://console.cloud.google.com/storage/browser/broad-alkesgroup-public-requester-pays/LDSCORE/GRCh38
@@ -355,4 +413,4 @@ GMT files are tab-separated with one row per gene set and no header. The first e
 - Original graphREML repository, with a MATLAB implementation: [https://github.com/huilisabrina/graphREML](https://github.com/huilisabrina/graphREML) (we recommend using the Python implementation, which is much faster)
 - LD score regression repository: [https://github.com/bulik/ldsc](https://github.com/bulik/ldsc)
 - Giulio Genovese has implemented a LDGM-VCF file format specification and a bcftools plugin written in C with partially overlapping features, available [here](https://github.com/freeseek/score).
-- All of these rely heavily on sparse matrix operations implemented in [SuiteSparse](https://github.com/DrTimothyAldenDavis/SuiteSparse).
+- `graphld` relies on sparse matrix operations implemented in [SuiteSparse](https://github.com/DrTimothyAldenDavis/SuiteSparse).

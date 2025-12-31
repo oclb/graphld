@@ -1,3 +1,30 @@
+"""GraphLD: Graph-based linkage disequilibrium matrix operations.
+
+This package provides efficient LD matrix operations using LDGM precision matrices,
+heritability estimation with graphREML, and utilities for GWAS analysis.
+
+Main Features:
+    - Heritability estimation with graphREML
+    - Efficient LD matrix operations via precision matrices
+    - GWAS summary statistics simulation
+    - LD clumping for polygenic scores
+    - BLUP effect size estimation
+
+Example::
+
+    import graphld as gld
+
+    sumstats = gld.read_ldsc_sumstats("path/to/sumstats.sumstats")
+    results = gld.run_graphREML(
+        model_options=gld.ModelOptions(),
+        method_options=gld.MethodOptions(),
+        summary_stats=sumstats,
+        annotation_data=gld.load_annotations("path/to/annot/", chromosome=1),
+        ldgm_metadata_path="path/to/metadata.csv",
+        populations="EUR"
+    )
+"""
+
 # Globally silence numerical runtime warnings (e.g., divide by zero, invalid value)
 from numpy import seterr
 seterr(divide="ignore", invalid="ignore", over="warn", under="ignore")
@@ -6,6 +33,7 @@ from graphld.blup import BLUP, run_blup
 from graphld.clumping import LDClumper, run_clump
 from graphld.io import load_annotations, load_ldgm, merge_snplists, read_ldgm_metadata, partition_variants
 from graphld.ldsc_io import read_ldsc_sumstats
+from graphld.parquet_io import get_parquet_traits, read_parquet_sumstats
 from graphld.likelihood import (
     gaussian_likelihood,
     gaussian_likelihood_gradient,
@@ -23,6 +51,8 @@ __all__ = [
     'load_annotations',
     'read_gwas_vcf',
     'read_ldsc_sumstats',
+    'read_parquet_sumstats',
+    'get_parquet_traits',
     'merge_snplists',
     'partition_variants',
     'PrecisionOperator',

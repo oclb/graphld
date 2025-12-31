@@ -100,7 +100,7 @@ class Annot:
     """Base class for annotations that can be merged with TraitData."""
     annot_names: List[str]
     other_key: str
-    
+
     def __init__(self, annot_names: List[str], other_key: str):
         """
         Args:
@@ -109,10 +109,10 @@ class Annot:
         """
         self.annot_names = annot_names
         self.other_key = other_key
-    
+
     def merge(self, trait_data: TraitData) -> tuple[pl.DataFrame, np.ndarray, np.ndarray, np.ndarray]:
         """Merge with TraitData and return extracted arrays.
-        
+
         Returns:
             Tuple of (merged_df, test_annot, model_annot, block_boundaries)
         """
@@ -122,7 +122,7 @@ class Annot:
 class VariantAnnot(Annot):
     """Variant-level annotations."""
     df: pl.DataFrame
-    
+
     def __init__(self, df: pl.DataFrame, annot_names: List[str]):
         """
         Args:
@@ -131,7 +131,7 @@ class VariantAnnot(Annot):
         """
         super().__init__(annot_names, other_key='RSID')
         self.df = df
-    
+
     def perturb(self, fraction: float, seed: int | None = None):
         """Perturb binary annotations."""
 
@@ -147,7 +147,7 @@ class VariantAnnot(Annot):
         kept_names = []
         for col in self.annot_names:
             vals = self.df[col].to_numpy().copy()
-            
+
             if np.any(np.isnan(vals)):
                 raise ValueError(f"Annotation '{col}' contains NaNs")
 
@@ -156,15 +156,15 @@ class VariantAnnot(Annot):
                 vals = _perturb_binary_vector(vals, fraction, rng)
                 new_cols.append(pl.Series(col, vals))
                 kept_names.append(col)
-                 
+
         if new_cols:
             self.df = self.df.with_columns(new_cols)
-            
+
         self.annot_names = kept_names
 
     def merge(self, trait_data: TraitData) -> tuple[np.ndarray, np.ndarray | None, np.ndarray, np.ndarray]:
         """Merge variant annotations with TraitData.
-        
+
         Returns:
             Tuple of (grad, correction, test_annot, block_boundaries)
             Note: correction is None if hessian is not available
@@ -172,12 +172,12 @@ class VariantAnnot(Annot):
         # Check if trait_data has the required key
         if self.other_key not in trait_data.keys:
             raise ValueError(f"TraitData does not have required key '{self.other_key}'. Available keys: {trait_data.keys}")
-        
+
         # Verify merge key exists in annotation DataFrame
         if self.other_key not in self.df.columns:
             raise ValueError(f"Merge key '{self.other_key}' not found in annotation DataFrame. "
                            f"Available columns: {self.df.columns}")
-        
+
         df_merged = trait_data.df.join(
             self.df,
             left_on=self.other_key,
@@ -199,32 +199,32 @@ class VariantAnnot(Annot):
 class GeneAnnot(Annot):
     """Gene-level annotations."""
     gene_sets: dict[str, list[str]]
-    
+
     def __init__(self, gene_sets: dict[str, list[str]]):
         """
         Args:
             gene_sets: Dictionary mapping set names to lists of genes
         """
         self.gene_sets = gene_sets
-        
+
         # Determine gene key from first gene in first set
         # Import helper function
         try:
             from .genesets import _is_gene_id
         except ImportError:
             from genesets import _is_gene_id
-        
+
         first_gene = next(iter(next(iter(gene_sets.values()))))
         self.other_key = 'gene_id' if _is_gene_id(first_gene) else 'gene_name'
-        
+
         super().__init__(list(gene_sets.keys()), self.other_key)
-    
+
     def merge(self, trait_data: TraitData) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Merge gene annotations with gene-level TraitData.
-        
+
         Creates one-hot encodings for each gene set and returns unmodified grad/correction
         from the TraitData.
-        
+
         Returns:
             Tuple of (grad, correction, test_annot, block_boundaries)
         """
@@ -234,14 +234,14 @@ class GeneAnnot(Annot):
         # Use the appropriate key for merging (gene_id or gene_name)
         # For gene-level data, we need to match using the same identifier type as the gene sets
         merge_key = self.other_key
-        
+
         # Verify merge key exists in trait_data
         if merge_key not in trait_data.df.columns:
             raise ValueError(f"Merge key '{merge_key}' not found in trait_data.df")
-        
+
         # Get gene identifiers from trait_data
         gene_ids = trait_data.df[merge_key].to_list()
-        
+
         # Create one-hot encoding for each gene set
         # TODO vectorize
         test_annot_dict = {}
@@ -249,30 +249,30 @@ class GeneAnnot(Annot):
             # Create binary indicator: 1 if gene is in set, 0 otherwise
             gene_set = set(gene_list)
             test_annot_dict[set_name] = [1.0 if gene in gene_set else 0.0 for gene in gene_ids]
-        
+
         # Create DataFrame with one-hot encodings
         test_annot_df = pl.DataFrame(test_annot_dict)
         test_annot = test_annot_df.to_numpy().astype(np.float64)
-        
+
         # Extract grad and correction (unmodified from TraitData)
         grad = trait_data.df['gradient'].to_numpy().astype(np.float64)
-        
+
         # Get block boundaries
         block_boundaries = get_block_boundaries(trait_data.df['jackknife_blocks'].to_numpy())
-        
+
         return grad, None, None, test_annot, block_boundaries
 
 
 class GenomeAnnot(Annot):
     """Genome region annotations (from BED files)."""
-    
+
     def __init__(self):
         """TODO: Implement GenomeAnnot for BED file annotations."""
         raise NotImplementedError("GenomeAnnot not yet implemented")
-    
+
     def merge(self, trait_data: TraitData) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Merge genome region annotations with TraitData.
-        
+
         Returns:
             Tuple of (grad, correction, test_annot, block_boundaries)
         """
@@ -285,7 +285,7 @@ def run_score_test(trait_data: TraitData,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Run approximate score test for hypothesis testing of new annotation or functional category.
-    
+
     Unlike run_score_test, this function does not adjust for uncertainty in the fitted model parameters.
 
     Args:
@@ -297,7 +297,7 @@ def run_score_test(trait_data: TraitData,
     """
     # Merge trait data with annotations
     grad, _, _, test_annot, block_boundaries = annot.merge(trait_data)
-    
+
     noBlocks = len(block_boundaries) - 1
 
     # Compute single-block derivatives
@@ -366,10 +366,11 @@ def _setup_logging(output_fp: str | None, verbose: bool):
               help='Seed for generating random annotations.')
 @click.option('--perturb-annot', type=float, default=0,
               help='Fraction of variants to perturb for calibration testing.')
-def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, random_genes, 
-         random_variants, gene_table, nearest_weights, annotations, trait_name, verbose, seed, perturb_annot):
+def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, random_genes,
+         random_variants, gene_table, nearest_weights, annotations, trait_name, verbose,
+         seed, perturb_annot):
     """Run score test for annotation enrichment."""
-    
+
     _setup_logging(output_fp, verbose)
     logging.info(f"{time.strftime('%Y-%m-%d %H:%M:%S')}")
     logging.info(f"Command: {' '.join(sys.argv)}")
@@ -378,31 +379,31 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
     # Set random seed if provided
     if seed:
         np.random.seed(seed)
-    
+
     # Parse annotation names if provided
     annot_names_filter = [a.strip() for a in annotations.split(',')] if annotations else None
 
     # Detect if this is gene-level or variant-level data
     is_gene_level = is_gene_level_hdf5(variant_stats_hdf5)
     data_type = "gene" if is_gene_level else "variant"
-    
+
     # Load row data (variants or genes)
     data_table = load_row_data(variant_stats_hdf5)
     logging.info(f"Loaded {len(data_table)} {data_type}s from {variant_stats_hdf5}")
-    
+
     # Load annotations based on source type
     weights = np.array([float(w) for w in nearest_weights.split(',')], dtype=np.float64)
-    
+
     num_provided = 0
     annot = None
-    
+
     if variant_annot_dir:
         if is_gene_level:
             raise click.UsageError("Cannot use --variant-annot-dir with gene-level HDF5 file")
         annot = load_variant_annotations(variant_annot_dir, annot_names_filter)
         logging.info(f"Loaded {len(annot.annot_names)} variant annotations from {variant_annot_dir}")
         num_provided += 1
-    
+
     if gene_annot_dir:
         gene_annot: GeneAnnot = load_gene_annotations(
             gene_annot_dir, data_table, gene_table, weights, annot_names_filter
@@ -418,7 +419,7 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
             annot = convert_gene_to_variant_annotations(gene_annot, data_table, gene_table_df, weights)
             logging.info(f"Loaded {len(annot.annot_names)} gene annotations from {gene_annot_dir}")
         num_provided += 1
-    
+
     if random_genes:
         probs = _parse_probs(random_genes)
         gene_annot: GeneAnnot = create_random_gene_annotations(
@@ -435,7 +436,7 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
             annot = convert_gene_to_variant_annotations(gene_annot, data_table, gene_table_df, weights)
             logging.info(f"Created {len(annot.annot_names)} random gene annotations")
         num_provided += 1
-    
+
     if random_variants:
         if is_gene_level:
             raise click.UsageError("Cannot use --random-variants with gene-level HDF5 file")
@@ -460,10 +461,10 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
     # Run the score test
     results_dict = {'annotation' : annot.annot_names}
     trait_names = get_trait_names(variant_stats_hdf5, trait_name)
-    
+
     # Store results for each trait for meta-analysis
     trait_results = {}
-    
+
     for trait in trait_names:
         trait_data = load_trait_data(variant_stats_hdf5, trait_name=trait, variant_table=data_table)
 
@@ -471,7 +472,7 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
                 trait_data=trait_data,
                 annot=annot,
             )
-        
+
         # Store for meta-analysis
         trait_results[trait] = (point_estimates, jackknife_estimates)
 
@@ -480,7 +481,7 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
         z_col = f"{trait}_Z"
         z_scores = point_estimates.ravel() / std_dev / np.sqrt(jackknife_estimates.shape[0] - 1)
         results_dict[z_col] = z_scores
-        
+
     # Load trait groups and perform meta-analyses
     trait_groups = get_trait_groups(variant_stats_hdf5)
     for group_name, group_traits in trait_groups.items():
@@ -494,7 +495,7 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
         logging.info(f"Computed meta-analysis for group '{group_name}' with {len(group_traits)} traits")
 
     results_df = pl.DataFrame(results_dict)
-    
+
     if verbose or not output_fp:
         with pl.Config(tbl_rows=-1, tbl_cols=-1):
             print(results_df)

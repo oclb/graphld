@@ -8,7 +8,14 @@ import polars as pl
 POSITIONS_FILE = 'data/rsid_position.csv'
 
 def _add_positions_to_df(df: pl.DataFrame, positions_file: str) -> pl.DataFrame:
-    """Helper to merge DataFrame with positions file."""
+    """Helper to merge DataFrame with positions file.
+    
+    If CHR and POS columns already exist in the DataFrame, they are kept as-is.
+    """
+    # If CHR and POS already exist, no need to add them
+    if 'CHR' in df.columns and 'POS' in df.columns:
+        return df
+
     positions = pl.read_csv(
         positions_file,
         separator=',',
@@ -38,7 +45,7 @@ def read_ldsc_snplist(
         columns=['SNP', 'A1', 'A2'],
         has_header=True,
     )
-    
+
     if add_positions:
         df = _add_positions_to_df(df, positions_file)
 
@@ -66,22 +73,19 @@ def read_ldsc_sumstats(
     with open(file, 'r') as f:
         header = f.readline().strip().split('\t')
 
-    # Determine which columns to read
-    columns_to_read = []
+    # Determine schema overrides based on available columns
     if 'Z' in header:
-        columns_to_read = ['SNP', 'N', 'Z', 'A1', 'A2']
+        schema_overrides = {'SNP': pl.Utf8, 'N': pl.Float64, 'Z': pl.Float64, 'A1': pl.Utf8, 'A2': pl.Utf8}
     elif 'Beta' in header and 'se' in header:
-        columns_to_read = ['SNP', 'N', 'Beta', 'se', 'A1', 'A2']
+        schema_overrides = {'SNP': pl.Utf8, 'N': pl.Float64, 'Beta': pl.Float64, 'se': pl.Float64, 'A1': pl.Utf8, 'A2': pl.Utf8}
     else:
-        # If no Z or Beta/se, try to read all columns
-        columns_to_read = header
+        raise ValueError("Unsupported LDSC sumstats format")
 
     # Read the file using polars
     df = pl.read_csv(
         file,
         separator='\t',
-        columns=columns_to_read,
-        infer_schema_length=10000,
+        schema_overrides=schema_overrides,
     )
 
     # Compute Z score if needed

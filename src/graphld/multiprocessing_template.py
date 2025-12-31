@@ -172,7 +172,7 @@ class WorkerManager:
                 for p in self.processes:
                     p.join(timeout=0.5)
                 raise RuntimeError("Worker process crashed. Aborting.")
-            
+
             # Normal completion
             if all(flag.value < 1 for flag in self.flags):
                 break
@@ -327,12 +327,13 @@ class ParallelProcessor(ABC):
                 for ldgm, data in zip(ldgms, block_data, strict=False):
                     try:
                         cls.process_block(ldgm, flag, shared_data, block_offset, data, worker_params)
+                        # Check that process_block didn't modify the flag during normal execution
+                        assert flag.value == starting_flag, "process_block should not change flag"
                     except Exception:
                         # Ensure the flag is flipped so the supervisor doesn't spin forever
                         flag.value = -1
                         raise
                     block_offset += ldgm.shape[0]
-                assert flag.value == starting_flag, "process_block should not change flag"
                 # Signal completion
                 flag.value = 0
 

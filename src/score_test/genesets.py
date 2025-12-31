@@ -6,13 +6,13 @@ from scipy.sparse import csr_matrix
 try:
     from .score_test_io import load_variant_data
 except ImportError:
-    from score_test_io import load_variant_data
+    pass
 
 POSITION_SCALE = 1e9  # Scale factor for chromosome positions
 
-def _get_nearest_genes(var_pos: np.ndarray, 
-                        gene_pos: np.ndarray, 
-                        num_nearest: int, 
+def _get_nearest_genes(var_pos: np.ndarray,
+                        gene_pos: np.ndarray,
+                        num_nearest: int,
                         ) -> np.ndarray:
 
     # Ensure 1D inputs (HDF5 may store as Nx1)
@@ -23,7 +23,7 @@ def _get_nearest_genes(var_pos: np.ndarray,
     if not np.array_equal(gene_pos, np.sort(gene_pos)):
         raise ValueError("Gene positions must be sorted")
     nvar, ngene = var_pos.size, gene_pos.size
-    
+
     # how many genes come before each variant?
     order = np.argsort(np.concatenate((var_pos, gene_pos)))
     perm = np.empty(nvar + ngene)
@@ -36,7 +36,7 @@ def _get_nearest_genes(var_pos: np.ndarray,
         # fancy indexing + wraparound
         genes_k_flanking[:,k] = (num_genes_before + k) % ngene
         dist_k_flanking[:,k] = abs(var_pos - gene_pos[genes_k_flanking[:,k]])
-    
+
     dist_k_flanking = dist_k_flanking.ravel()
     genes_k_flanking = genes_k_flanking.ravel()
 
@@ -50,7 +50,7 @@ def _get_nearest_genes(var_pos: np.ndarray,
         result[left_wins,k] = genes_k_flanking[left_contestant[left_wins]]
         right_contestant -= right_wins
         left_contestant += left_wins
-    
+
     return result
 
 def _get_gene_variant_matrix(
@@ -98,7 +98,7 @@ def _compute_positions(table: pl.DataFrame) -> np.ndarray:
         raise ValueError(f"POS values must be less than POSITION_SCALE: {POSITION_SCALE}")
     return (table['POS'] + table['CHR'].cast(pl.Int64) * POSITION_SCALE).to_numpy().astype(np.int64)
 
-def gene_variant_matrix(variant_table: pl.DataFrame, gene_table: pl.DataFrame, 
+def gene_variant_matrix(variant_table: pl.DataFrame, gene_table: pl.DataFrame,
                         nearest_weights: np.ndarray) -> csr_matrix:
     """Compute gene-variant matrix from data.
     
@@ -120,7 +120,7 @@ def _is_gene_id(gene: str) -> bool:
     """Check if a gene identifier is an Ensembl ID (vs gene symbol)."""
     return 'ENSG' in gene
 
-def convert_gene_set_to_gene_annotations(gene_sets: dict[str, list[str]], 
+def convert_gene_set_to_gene_annotations(gene_sets: dict[str, list[str]],
                                          gene_table: pl.DataFrame,
                                          ) -> pl.DataFrame:
     """Convert gene sets to gene-level annotations.
@@ -132,10 +132,10 @@ def convert_gene_set_to_gene_annotations(gene_sets: dict[str, list[str]],
     first_gene = next(iter(next(iter(gene_sets.values()))))
     use_gene_id = _is_gene_id(first_gene)
     gene_key = 'gene_id' if use_gene_id else 'gene_name'
-    
+
     if gene_key in gene_sets:
         raise ValueError(f"The gene key '{gene_key}' is also the name of a gene set.")
-    
+
     columns: dict[str, np.ndarray] = {}
     columns[gene_key] = gene_table[gene_key].unique().to_numpy()
     gene_indices = {gene: i for i, gene in enumerate(columns[gene_key])}
@@ -146,11 +146,11 @@ def convert_gene_set_to_gene_annotations(gene_sets: dict[str, list[str]],
         for gene in genes:
             if gene in gene_indices:
                 columns[name][gene_indices[gene]] = 1.0
-    
-    return pl.DataFrame(columns)
-    
 
-def convert_gene_to_variant_annotations(gene_annot, 
+    return pl.DataFrame(columns)
+
+
+def convert_gene_to_variant_annotations(gene_annot,
                                         variant_table: pl.DataFrame,
                                         gene_table: pl.DataFrame,
                                         nearest_weights: np.ndarray):
@@ -175,7 +175,7 @@ def convert_gene_to_variant_annotations(gene_annot,
         from .score_test import VariantAnnot
     except ImportError:
         from score_test import VariantAnnot
-    
+
     # Handle both GeneAnnot objects and plain dicts
     if hasattr(gene_annot, 'gene_sets'):
         gene_sets = gene_annot.gene_sets
@@ -185,26 +185,26 @@ def convert_gene_to_variant_annotations(gene_annot,
         gene_sets = gene_annot
         annot_names = None
         return_variant_annot = False
-    
+
     # Determine if using gene IDs or symbols
     first_set = next(iter(gene_sets.values()))
     use_gene_id = _is_gene_id(first_set[0]) if first_set else False
     gene_key = 'gene_id' if use_gene_id else 'gene_name'
-    
+
     # Get gene-variant matrix
     gv_matrix = gene_variant_matrix(variant_table, gene_table, nearest_weights)
-    
+
     # Convert each gene set to variant-level annotation
     variant_annots = {}
     gene_identifiers = gene_table[gene_key].to_list()
-    
+
     for set_name, genes in gene_sets.items():
         gene_set = set(genes)
-        gene_values = np.array([1.0 if gene in gene_set else 0.0 
+        gene_values = np.array([1.0 if gene in gene_set else 0.0
                                 for gene in gene_identifiers], dtype=np.float64)
         variant_values = (gv_matrix @ gene_values.reshape(-1, 1)).ravel()
         variant_annots[set_name] = variant_values
-    
+
     # Create output DataFrame in LDSC format
     df_annot = pl.DataFrame({
         'CHR': variant_table['CHR'],
@@ -213,7 +213,7 @@ def convert_gene_to_variant_annotations(gene_annot,
         'CM': pl.Series([0.0] * len(variant_table)),
         **variant_annots
     })
-    
+
     if return_variant_annot:
         return VariantAnnot(df_annot, annot_names)
     else:

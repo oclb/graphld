@@ -1,0 +1,87 @@
+site_name: GraphLD
+site_description: Graph-based linkage disequilibrium matrix operations and heritability estimation
+site_url: https://github.com/oclb/graphld
+repo_url: https://github.com/oclb/graphld
+repo_name: oclb/graphld
+
+extra:
+  version: "1.2.0"  # Updated by hooks.py from pyproject.toml
+
+hooks:
+  - docs/hooks.py
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - content.code.copy
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            members_order: source
+            merge_init_into_class: true
+            show_signature_annotations: true
+            separate_signature: true
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - User Guide:
+      - Command Line Interface: cli.md
+      - Enrichment Score Test: score_test.md
+      - File Formats: file_formats.md
+  - API Reference:
+      - graphld: api/graphld.md
+      - graphld.precision: api/precision.md
+      - graphld.likelihood: api/likelihood.md
+      - graphld.heritability: api/heritability.md
+      - graphld.io: api/io.md
+      - graphld.ldsc_io: api/ldsc_io.md
+      - graphld.vcf_io: api/vcf_io.md
+      - graphld.parquet_io: api/parquet_io.md
+      - graphld.simulate: api/simulate.md
+      - graphld.clumping: api/clumping.md
+      - graphld.blup: api/blup.md
+      - graphld.surrogates: api/surrogates.md
+      - graphld.genesets: api/genesets.md
+      - graphld.multiprocessing_template: api/multiprocessing.md
+      - score_test: api/score_test.md
+  - See Also: see_also.md

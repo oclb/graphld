@@ -20,9 +20,9 @@ def convert_variant_to_gene_scores(trait_data: TraitData,
                                    ) -> TraitData:
     """Convert variant-level scores and annotations to gene level scores."""
     assert G.shape[0] == len(trait_data.df) == len(G.indptr) - 1
-    
+
     gradient = trait_data.df['gradient'].to_numpy() @ G
-    
+
     variant_block_boundaries = get_block_boundaries(trait_data.df['jackknife_blocks'].to_numpy())
     gene_jk_blocks = np.zeros(G.shape[1], dtype=int)  # Number of genes
     for i in range(1, len(variant_block_boundaries)-1):
@@ -50,20 +50,20 @@ def convert_hdf5(variant_stats_hdf5: str,
                  nearest_weights: List[float],
                  ):
     variant_table: pl.DataFrame = load_variant_data(variant_stats_hdf5)
-    
+
     # Only load genes from chromosomes present in variant data
     chromosomes = variant_table['CHR'].unique().sort().to_list()
     gene_table: pl.DataFrame = load_gene_table(genes_file, chromosomes=chromosomes)
-    
+
     G = gene_variant_matrix(variant_table, gene_table, np.array(nearest_weights))
     trait_names = get_trait_names(variant_stats_hdf5)
-    
+
     # Convert each trait
     for name in trait_names:
         trait_data: TraitData = load_trait_data(variant_stats_hdf5, trait_name=name, variant_table=variant_table)
         td = convert_variant_to_gene_scores(trait_data, G, gene_table)
         save_trait_data(td, gene_stats_hdf5, trait_name=name)
-    
+
     # Preserve trait groups from source file
     groups = get_trait_groups(variant_stats_hdf5)
     if groups:
@@ -83,7 +83,7 @@ def main(variant_stats_hdf5, gene_stats_hdf5, gene_table, nearest_weights, verbo
     """Convert variant-level statistics to gene-level statistics."""
     log_level = logging.INFO if verbose else logging.WARNING
     logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - %(message)s')
-    
+
     weights = [float(w) for w in nearest_weights.split(',')]
     convert_hdf5(variant_stats_hdf5, gene_stats_hdf5, gene_table, weights)
     logging.info("Conversion complete!")

@@ -113,13 +113,13 @@ def test_rm_meta_command(temp_hdf5):
     
     # Remove it
     result = subprocess.run(
-        ["uv", "run", "estest", "rm", temp_hdf5, "test_group", "--meta", "-f"],
+        ["uv", "run", "estest", "rm", temp_hdf5, "test_group", "-f"],
         capture_output=True,
         text=True,
     )
     
     assert result.returncode == 0
-    assert "Removed meta-analysis 'test_group'" in result.stdout
+    assert "Removed 1 meta-analysis(es): test_group" in result.stdout
     
     # Verify it was removed
     result = subprocess.run(
@@ -146,31 +146,31 @@ def test_rm_meta_default(temp_hdf5):
     )
     
     assert result.returncode == 0
-    assert "Removed meta-analysis 'test_group'" in result.stdout
+    assert "Removed 1 meta-analysis(es): test_group" in result.stdout
 
 
 def test_rm_nonexistent_meta(temp_hdf5):
     """Test removing a nonexistent meta-analysis fails."""
     result = subprocess.run(
-        ["uv", "run", "estest", "rm", temp_hdf5, "nonexistent", "--meta", "-f"],
+        ["uv", "run", "estest", "rm", temp_hdf5, "nonexistent", "-f"],
         capture_output=True,
         text=True,
     )
     
     assert result.returncode == 1
-    assert "not found" in result.stderr
+    assert "No traits or meta-analyses match pattern" in result.stderr
 
 
 def test_rm_trait_command(temp_hdf5):
     """Test removing a trait."""
     result = subprocess.run(
-        ["uv", "run", "estest", "rm", temp_hdf5, "edu", "--trait", "-f"],
+        ["uv", "run", "estest", "rm", temp_hdf5, "edu", "-f"],
         capture_output=True,
         text=True,
     )
     
     assert result.returncode == 0
-    assert "Removed trait 'edu'" in result.stdout
+    assert "Removed 1 trait(s): edu" in result.stdout
     
     # Verify it was removed
     result = subprocess.run(
@@ -186,15 +186,14 @@ def test_rm_trait_updates_meta_analyses(temp_hdf5):
     """Test that removing a trait updates meta-analyses."""
     # Remove height (part of body meta-analysis)
     result = subprocess.run(
-        ["uv", "run", "estest", "rm", temp_hdf5, "height", "--trait", "-f"],
+        ["uv", "run", "estest", "rm", temp_hdf5, "height", "-f"],
         capture_output=True,
         text=True,
     )
     
     assert result.returncode == 0
-    assert "Removed trait 'height'" in result.stdout
-    # Body meta-analysis should be removed (only 1 trait left)
-    assert "removed meta-analysis 'body'" in result.stdout.lower()
+    assert "Removed 1 trait(s): height" in result.stdout
+    # Body meta-analysis should be removed (only 1 trait left) but message suppressed with -f
     
     # Verify
     result = subprocess.run(
@@ -209,13 +208,13 @@ def test_rm_trait_updates_meta_analyses(temp_hdf5):
 def test_rm_nonexistent_trait(temp_hdf5):
     """Test removing a nonexistent trait fails."""
     result = subprocess.run(
-        ["uv", "run", "estest", "rm", temp_hdf5, "nonexistent", "--trait", "-f"],
+        ["uv", "run", "estest", "rm", temp_hdf5, "nonexistent", "-f"],
         capture_output=True,
         text=True,
     )
     
     assert result.returncode == 1
-    assert "not found" in result.stderr
+    assert "No traits or meta-analyses match pattern" in result.stderr
 
 
 def test_legacy_behavior_still_works(temp_hdf5):

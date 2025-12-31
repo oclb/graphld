@@ -371,7 +371,7 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
                     f"Define your link function at module level or use run_in_serial=True. "
                     f"Original error: {e}"
                 ) from e
-        
+
         run_fn = self.run_serial if run_in_serial else self.run
         result = run_fn(
             ldgm_metadata_path=ldgm_metadata_path,

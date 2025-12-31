@@ -1,6 +1,9 @@
+"""Tests for README.md examples."""
+
 from typing import List
 
 import numpy as np
+import pytest
 import polars as pl
 
 import graphld as gld
@@ -52,7 +55,7 @@ def test_heritability_snippet():
     )
 
     default_model_options = gld.ModelOptions()
-    default_method_options = gld.MethodOptions()
+    default_method_options = gld.MethodOptions(num_iterations=5)
 
     reml_results: dict = gld.run_graphREML(
         model_options=default_model_options,
@@ -93,3 +96,16 @@ def test_clumping_snippet() -> None:
         chisq_threshold=30.0,
     ).filter(pl.col('is_index'))
     assert isinstance(sumstats_clumped, pl.DataFrame)
+
+
+def test_parquet_snippet() -> None:
+    """Test the parquet reading snippet from README.md."""
+    # List available traits
+    traits = gld.get_parquet_traits("data/test/example_multi_trait.parquet")
+    assert isinstance(traits, list)
+    assert len(traits) > 0
+
+    # Read a specific trait
+    df = gld.read_parquet_sumstats("data/test/example_multi_trait.parquet", trait=traits[0])
+    assert isinstance(df, pl.DataFrame)
+    assert 'Z' in df.columns

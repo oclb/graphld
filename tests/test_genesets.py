@@ -1,245 +1,281 @@
-"""Tests for genesets module."""
+"""Tests for graphld.genesets module."""
 
+import tempfile
 from pathlib import Path
 
 import numpy as np
 import polars as pl
 import pytest
 
-from score_test.genesets import (
-    convert_gene_to_variant_annotations,
+from graphld.genesets import (
+    _compute_positions,
+    _get_gene_variant_matrix,
+    _get_nearest_genes,
     _is_gene_id,
-)
-from score_test.score_test_io import (
-    load_gene_table,
+    convert_gene_sets_to_variant_annotations,
     load_gene_sets_from_gmt,
+    load_gene_table,
 )
-
-
-TEST_DATA_DIR = Path(__file__).parent / "score_test_data"
 
 
 class TestIsGeneId:
     """Tests for _is_gene_id function."""
-    
+
     def test_ensembl_id(self):
-        """Test that Ensembl IDs are correctly identified."""
-        assert _is_gene_id("ENSG00000099985")
-        assert _is_gene_id("ENSG00000100365")
-    
+        assert _is_gene_id("ENSG00000139618") is True
+        assert _is_gene_id("ENSG00000141510.12") is True
+
     def test_gene_symbol(self):
-        """Test that gene symbols are not identified as IDs."""
-        assert not _is_gene_id("OSM")
-        assert not _is_gene_id("NCF4")
-        assert not _is_gene_id("CACNA1I")
-
-
-class TestLoadGeneTable:
-    """Tests for load_gene_table function."""
-    
-    def test_load_gene_table_basic(self):
-        """Test basic loading of gene table."""
-        gene_table_path = TEST_DATA_DIR / "genes_test.tsv"
-        
-        gene_table = load_gene_table(str(gene_table_path))
-        
-        # Assertions
-        assert isinstance(gene_table, pl.DataFrame)
-        assert 'gene_id' in gene_table.columns
-        assert 'gene_name' in gene_table.columns
-        assert 'CHR' in gene_table.columns
-        assert 'start' in gene_table.columns
-        assert 'end' in gene_table.columns
-        assert 'midpoint' in gene_table.columns
-        assert len(gene_table) > 0
-    
-    def test_load_gene_table_with_chromosome_filter(self):
-        """Test loading gene table with chromosome filter."""
-        gene_table_path = TEST_DATA_DIR / "genes_test.tsv"
-        
-        gene_table = load_gene_table(str(gene_table_path), chromosomes=[22])
-        
-        # Assertions
-        assert len(gene_table) > 0
-        assert all(gene_table['CHR'].cast(pl.Int64) == 22)
-    
-    def test_load_gene_table_midpoint_calculation(self):
-        """Test that midpoint is correctly calculated."""
-        gene_table_path = TEST_DATA_DIR / "genes_test.tsv"
-        
-        gene_table = load_gene_table(str(gene_table_path))
-        
-        # Check that midpoint is average of start and end
-        for row in gene_table.iter_rows(named=True):
-            expected_midpoint = (row['start'] + row['end']) / 2
-            assert abs(row['midpoint'] - expected_midpoint) < 0.1
+        assert _is_gene_id("BRCA2") is False
+        assert _is_gene_id("TP53") is False
+        assert _is_gene_id("MYC") is False
 
 
 class TestLoadGeneSetsFromGmt:
     """Tests for load_gene_sets_from_gmt function."""
-    
-    def test_load_gene_sets_symbols(self):
-        """Test loading gene sets with gene symbols."""
-        gmt_dir = TEST_DATA_DIR
-        
-        # Create a temporary directory with only the symbols GMT file
-        import tempfile
-        import shutil
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            shutil.copy(TEST_DATA_DIR / "test_symbols.gmt", tmp_dir)
-            
-            gene_sets = load_gene_sets_from_gmt(tmp_dir)
-            
-            # Assertions
-            assert isinstance(gene_sets, dict)
-            assert 'test_set_1' in gene_sets
-            assert 'test_set_2' in gene_sets
-            assert set(gene_sets['test_set_1']) == {'OSM', 'NCF4', 'CACNA1I'}
-            assert set(gene_sets['test_set_2']) == {'LIF', 'TRIOBP', 'SHISAL1'}
-    
-    def test_load_gene_sets_ids(self):
-        """Test loading gene sets with Ensembl IDs."""
-        import tempfile
-        import shutil
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            shutil.copy(TEST_DATA_DIR / "test_ids.gmt", tmp_dir)
-            
-            gene_sets = load_gene_sets_from_gmt(tmp_dir)
-            
-            # Assertions
-            assert isinstance(gene_sets, dict)
-            assert 'test_set_ids_1' in gene_sets
-            assert 'test_set_ids_2' in gene_sets
-            assert 'ENSG00000099985' in gene_sets['test_set_ids_1']
-            assert 'ENSG00000100365' in gene_sets['test_set_ids_1']
-    
-    def test_load_gene_sets_multiple_files(self):
-        """Test loading gene sets from multiple GMT files."""
-        gene_sets = load_gene_sets_from_gmt(str(TEST_DATA_DIR))
-        
-        # Should load from both test_symbols.gmt and test_ids.gmt
-        assert len(gene_sets) >= 4  # At least 2 from each file
-        assert 'test_set_1' in gene_sets
-        assert 'test_set_ids_1' in gene_sets
-    
-    def test_load_gene_sets_no_files(self, tmp_path):
-        """Test that FileNotFoundError is raised when no GMT files are found."""
+
+    def test_load_single_gmt(self, tmp_path):
+        """Test loading a single GMT file."""
+        gmt_content = "pathway1\tdescription1\tGENE1\tGENE2\tGENE3\n"
+        gmt_content += "pathway2\tdescription2\tGENE4\tGENE5\n"
+
+        gmt_file = tmp_path / "test.gmt"
+        gmt_file.write_text(gmt_content)
+
+        gene_sets = load_gene_sets_from_gmt(str(tmp_path))
+
+        assert len(gene_sets) == 2
+        assert gene_sets["pathway1"] == ["GENE1", "GENE2", "GENE3"]
+        assert gene_sets["pathway2"] == ["GENE4", "GENE5"]
+
+    def test_load_multiple_gmt_files(self, tmp_path):
+        """Test loading multiple GMT files from directory."""
+        gmt1 = tmp_path / "set1.gmt"
+        gmt1.write_text("pathway_a\tdesc\tGENE1\tGENE2\n")
+
+        gmt2 = tmp_path / "set2.gmt"
+        gmt2.write_text("pathway_b\tdesc\tGENE3\tGENE4\n")
+
+        gene_sets = load_gene_sets_from_gmt(str(tmp_path))
+
+        assert len(gene_sets) == 2
+        assert "pathway_a" in gene_sets
+        assert "pathway_b" in gene_sets
+
+    def test_no_gmt_files_raises(self, tmp_path):
+        """Test that FileNotFoundError is raised when no GMT files exist."""
         with pytest.raises(FileNotFoundError, match="No .gmt files found"):
             load_gene_sets_from_gmt(str(tmp_path))
 
+    def test_empty_lines_skipped(self, tmp_path):
+        """Test that empty lines and short lines are handled."""
+        gmt_content = "pathway1\tdesc\tGENE1\tGENE2\n"
+        gmt_content += "\n"  # Empty line
+        gmt_content += "short\tdesc\n"  # Too short (no genes)
+        gmt_content += "pathway2\tdesc\tGENE3\n"
 
-class TestConvertGeneToVariantAnnotations:
-    """Tests for convert_gene_to_variant_annotations function."""
-    
-    def test_convert_gene_sets_basic(self):
-        """Test basic conversion of gene sets to variant annotations."""
-        # Create simple test data
-        variant_data = pl.DataFrame({
-            'CHR': [22, 22, 22, 22],
-            'POS': [30000000, 30250000, 36870000, 39600000],
-            'RSID': ['rs1', 'rs2', 'rs3', 'rs4']
+        gmt_file = tmp_path / "test.gmt"
+        gmt_file.write_text(gmt_content)
+
+        gene_sets = load_gene_sets_from_gmt(str(tmp_path))
+
+        # Only pathways with genes should be loaded
+        assert len(gene_sets) == 2
+        assert "pathway1" in gene_sets
+        assert "pathway2" in gene_sets
+
+
+class TestGetNearestGenes:
+    """Tests for _get_nearest_genes function."""
+
+    def test_simple_case(self):
+        """Test with simple sorted positions."""
+        var_pos = np.array([100, 200, 300, 400])
+        gene_pos = np.array([150, 350])
+        num_nearest = 2
+
+        nearest = _get_nearest_genes(var_pos, gene_pos, num_nearest)
+
+        assert nearest.shape == (4, 2)
+        # Each variant should have indices of both genes (only 2 genes)
+        assert set(nearest[0].tolist()) == {0, 1}
+
+    def test_unsorted_raises(self):
+        """Test that unsorted positions raise ValueError."""
+        var_pos = np.array([200, 100, 300])
+        gene_pos = np.array([150, 350])
+
+        with pytest.raises(ValueError, match="Variant positions must be sorted"):
+            _get_nearest_genes(var_pos, gene_pos, 1)
+
+    def test_gene_unsorted_raises(self):
+        """Test that unsorted gene positions raise ValueError."""
+        var_pos = np.array([100, 200, 300])
+        gene_pos = np.array([350, 150])
+
+        with pytest.raises(ValueError, match="Gene positions must be sorted"):
+            _get_nearest_genes(var_pos, gene_pos, 1)
+
+
+class TestGetGeneVariantMatrix:
+    """Tests for _get_gene_variant_matrix function."""
+
+    def test_output_shape(self):
+        """Test that output matrix has correct shape."""
+        var_pos = np.array([100, 200, 300, 400, 500])
+        gene_pos = np.array([150, 350, 450])
+        weights = np.array([1.0, 0.5])
+
+        matrix = _get_gene_variant_matrix(var_pos, gene_pos, weights)
+
+        assert matrix.shape == (5, 3)
+
+    def test_weights_applied(self):
+        """Test that weights are correctly applied."""
+        var_pos = np.array([100, 200])
+        gene_pos = np.array([100, 200, 300])
+        weights = np.array([1.0, 0.5])
+
+        matrix = _get_gene_variant_matrix(var_pos, gene_pos, weights)
+
+        # First variant at 100 should have gene at 100 as nearest (weight 1.0)
+        # and gene at 200 as second nearest (weight 0.5)
+        row0 = matrix[0].toarray().ravel()
+        assert row0[0] == 1.0  # Gene at 100
+        assert row0[1] == 0.5  # Gene at 200
+
+
+class TestComputePositions:
+    """Tests for _compute_positions function."""
+
+    def test_single_chromosome(self):
+        """Test positions on a single chromosome."""
+        table = pl.DataFrame({
+            "CHR": [1, 1, 1],
+            "POS": [100, 200, 300],
         })
-        
-        gene_table = pl.DataFrame({
-            'gene_id': ['ENSG1', 'ENSG2', 'ENSG3'],
-            'gene_name': ['GENE1', 'GENE2', 'GENE3'],
-            'CHR': ['22', '22', '22'],
-            'start': [30000000, 30240000, 36860000],
-            'end': [30010000, 30250000, 36880000],
-            'midpoint': [30005000, 30245000, 36870000],
-            'POS': [30005000, 30245000, 36870000]  # Add POS for compatibility
+
+        positions = _compute_positions(table)
+
+        assert len(positions) == 3
+        assert positions[0] == 1e9 + 100
+        assert positions[1] == 1e9 + 200
+        assert positions[2] == 1e9 + 300
+
+    def test_multiple_chromosomes(self):
+        """Test positions across chromosomes."""
+        table = pl.DataFrame({
+            "CHR": [1, 2, 22],
+            "POS": [100, 200, 300],
         })
-        
+
+        positions = _compute_positions(table)
+
+        assert positions[0] == 1e9 + 100
+        assert positions[1] == 2e9 + 200
+        assert positions[2] == 22e9 + 300
+
+
+class TestConvertGeneSetsToVariantAnnotations:
+    """Tests for convert_gene_sets_to_variant_annotations function."""
+
+    def test_basic_conversion(self):
+        """Test basic gene set to variant annotation conversion."""
         gene_sets = {
-            'set1': ['GENE1', 'GENE2'],
-            'set2': ['GENE3']
+            "pathway1": ["GENE1", "GENE2"],
+            "pathway2": ["GENE3"],
         }
-        
-        nearest_weights = np.array([1.0])
-        
-        result = convert_gene_to_variant_annotations(
-            gene_sets, variant_data, gene_table, nearest_weights
+
+        variant_table = pl.DataFrame({
+            "CHR": [1, 1, 1, 1],
+            "POS": [100, 200, 300, 400],
+            "SNP": ["rs1", "rs2", "rs3", "rs4"],
+        })
+
+        gene_table = pl.DataFrame({
+            "CHR": [1, 1, 1],
+            "POS": [150, 250, 350],
+            "gene_name": ["GENE1", "GENE2", "GENE3"],
+            "gene_id": ["ENSG1", "ENSG2", "ENSG3"],
+        })
+
+        weights = np.array([1.0])
+
+        result = convert_gene_sets_to_variant_annotations(
+            gene_sets, variant_table, gene_table, weights
         )
-        
-        # Assertions
-        assert isinstance(result, pl.DataFrame)
+
+        # Check output structure
+        assert "CHR" in result.columns
+        assert "BP" in result.columns
+        assert "SNP" in result.columns
+        assert "CM" in result.columns
+        assert "pathway1" in result.columns
+        assert "pathway2" in result.columns
+
+        # Check that we have correct number of rows
         assert len(result) == 4
-        assert 'CHR' in result.columns
-        assert 'BP' in result.columns
-        assert 'RSID' in result.columns  # Changed from 'SNP' to 'RSID'
-        assert 'CM' in result.columns
-        assert 'set1' in result.columns
-        assert 'set2' in result.columns
-        
-        # Check that annotations are numeric
-        assert result['set1'].dtype in (pl.Float32, pl.Float64)
-        assert result['set2'].dtype in (pl.Float32, pl.Float64)
-    
-    def test_convert_gene_sets_with_ids(self):
-        """Test conversion using Ensembl IDs instead of symbols."""
-        variant_data = pl.DataFrame({
-            'CHR': [22, 22],
-            'POS': [30000000, 36870000],
-            'RSID': ['rs1', 'rs2']
-        })
-        
-        gene_table = pl.DataFrame({
-            'gene_id': ['ENSG00000001', 'ENSG00000002'],
-            'gene_name': ['GENE1', 'GENE2'],
-            'CHR': ['22', '22'],
-            'start': [30000000, 36860000],
-            'end': [30010000, 36880000],
-            'midpoint': [30005000, 36870000],
-            'POS': [30005000, 36870000]
-        })
-        
-        # Use Ensembl IDs in gene sets
+
+    def test_ensembl_id_gene_sets(self):
+        """Test with Ensembl ID gene sets."""
         gene_sets = {
-            'set_with_ids': ['ENSG00000001', 'ENSG00000002']
+            "pathway1": ["ENSG00000001", "ENSG00000002"],
         }
-        
-        nearest_weights = np.array([1.0])
-        
-        result = convert_gene_to_variant_annotations(
-            gene_sets, variant_data, gene_table, nearest_weights
+
+        variant_table = pl.DataFrame({
+            "CHR": [1, 1],
+            "POS": [100, 200],
+            "SNP": ["rs1", "rs2"],
+        })
+
+        gene_table = pl.DataFrame({
+            "CHR": [1, 1],
+            "POS": [150, 250],
+            "gene_name": ["GENE1", "GENE2"],
+            "gene_id": ["ENSG00000001", "ENSG00000002"],
+        })
+
+        weights = np.array([1.0])
+
+        result = convert_gene_sets_to_variant_annotations(
+            gene_sets, variant_table, gene_table, weights
         )
-        
-        # Assertions
-        assert 'set_with_ids' in result.columns
+
+        assert "pathway1" in result.columns
+
+
+class TestLoadGeneTable:
+    """Tests for load_gene_table function."""
+
+    def test_load_gene_table(self, tmp_path):
+        """Test loading a gene table TSV file."""
+        gene_table_content = "gene_id\tgene_id_version\tgene_name\tstart\tend\tCHR\n"
+        gene_table_content += "ENSG00000001\tENSG00000001.1\tGENE1\t1000\t2000\t1\n"
+        gene_table_content += "ENSG00000002\tENSG00000002.1\tGENE2\t3000\t4000\t1\n"
+        gene_table_content += "ENSG00000003\tENSG00000003.1\tGENE3\t5000\t6000\t2\n"
+
+        gene_file = tmp_path / "genes.tsv"
+        gene_file.write_text(gene_table_content)
+
+        result = load_gene_table(str(gene_file))
+
+        assert len(result) == 3
+        assert "gene_id" in result.columns
+        assert "gene_name" in result.columns
+        assert "POS" in result.columns  # Midpoint column
+
+    def test_filter_by_chromosome(self, tmp_path):
+        """Test filtering gene table by chromosome."""
+        gene_table_content = "gene_id\tgene_id_version\tgene_name\tstart\tend\tCHR\n"
+        gene_table_content += "ENSG00000001\tENSG00000001.1\tGENE1\t1000\t2000\t1\n"
+        gene_table_content += "ENSG00000002\tENSG00000002.1\tGENE2\t3000\t4000\t2\n"
+        gene_table_content += "ENSG00000003\tENSG00000003.1\tGENE3\t5000\t6000\t22\n"
+
+        gene_file = tmp_path / "genes.tsv"
+        gene_file.write_text(gene_table_content)
+
+        result = load_gene_table(str(gene_file), chromosomes=[1, 2])
+
         assert len(result) == 2
-    
-    def test_convert_gene_sets_empty_set(self):
-        """Test conversion with an empty gene set."""
-        variant_data = pl.DataFrame({
-            'CHR': [22],
-            'POS': [30000000],
-            'RSID': ['rs1']
-        })
-        
-        gene_table = pl.DataFrame({
-            'gene_id': ['ENSG1'],
-            'gene_name': ['GENE1'],
-            'CHR': ['22'],
-            'start': [30000000],
-            'end': [30010000],
-            'midpoint': [30005000],
-            'POS': [30005000]
-        })
-        
-        gene_sets = {
-            'empty_set': []
-        }
-        
-        nearest_weights = np.array([1.0])
-        
-        result = convert_gene_to_variant_annotations(
-            gene_sets, variant_data, gene_table, nearest_weights
-        )
-        
-        # Should still create the annotation column, but all zeros
-        assert 'empty_set' in result.columns
-        assert all(result['empty_set'] == 0.0)
-
-
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+        chrs = result["CHR"].unique().to_list()
+        assert "22" not in chrs
