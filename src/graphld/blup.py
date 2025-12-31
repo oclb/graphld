@@ -89,9 +89,9 @@ class BLUP(ParallelProcessor):
         ldgm.del_factor()
 
         # Store results for variants that were successfully merged
-        beta_reshaped = np.zeros((num_variants,1))
+        beta_reshaped = np.zeros(num_variants)
         # Get indices of variants that were actually merged
-        beta_reshaped[sumstat_indices, 0] = beta.flatten()
+        beta_reshaped[sumstat_indices] = beta.flatten()
 
         # Update the shared memory array
         block_slice = slice(variant_offset, variant_offset + num_variants)

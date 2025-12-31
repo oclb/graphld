@@ -278,14 +278,14 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
         noise = _simulate_noise_block(ldgm, random_seed=block_random_seed)
 
         # Create zero-filled arrays for all variants in sumstats
-        beta_reshaped = np.zeros((num_variants, 1))
-        alpha_reshaped = np.zeros((num_variants, 1))
-        noise_reshaped = np.zeros((num_variants, 1))
+        beta_reshaped = np.zeros(num_variants)
+        alpha_reshaped = np.zeros(num_variants)
+        noise_reshaped = np.zeros(num_variants)
 
         # Fill in values for successfully merged variants
-        beta_reshaped[sumstat_indices, 0] = beta.flatten()
-        alpha_reshaped[sumstat_indices, 0] = alpha.flatten()
-        noise_reshaped[sumstat_indices, 0] = noise.flatten()
+        beta_reshaped[sumstat_indices] = beta.flatten()
+        alpha_reshaped[sumstat_indices] = alpha.flatten()
+        noise_reshaped[sumstat_indices] = noise.flatten()
 
         # Update the shared memory arrays
         block_slice = slice(variant_offset, variant_offset + num_variants)
