@@ -89,19 +89,57 @@ cd graphld && pip install .
 graphld -h
 ```
 
-## Downloading LDGMs
+## Downloading Data
 
-Pre-computed LDGMs for the 1000 Genomes Project data are available at [Zenodo](https://zenodo.org/records/8157131). Download using the provided Makefile:
+Pre-computed LDGMs and data files are available from Zenodo. Download using the provided Makefile:
 
 ```bash
-cd data && make download
+cd data && make download_all
 ```
 
-The download takes 5-30 minutes. Options:
+The full download takes 30-60 minutes depending on connection speed.
 
-| Command | Contents |
-|---------|----------|
-| `make download` | Full download (precision matrices, annotations, score statistics) |
-| `make download_precision` | Precision matrices only |
-| `make download_scorestats` | Enrichment score test statistics only |
-| `make download_sumstats` | GWAS summary statistics from Li et al. 2025 |
+### Recommended Downloads
+
+| Use Case | Command | Size |
+|----------|---------|------|
+| Score test for gene sets only | `make download_gene_scores` | ~10 MB |
+| Score test for variant annotations | `make download_scores` | ~6.5 GB |
+| graphREML on European-ancestry data | `make download_reml` | ~2 GB |
+| All populations / all features | `make download_all` | ~25 GB |
+
+To try out graphREML or score test with example summary statistics, additionally run `make download_sumstats` (~7 GB).
+
+### All Download Options
+
+| Command | Description | Size |
+|---------|-------------|------|
+| `make download_all` | All data files | ~25 GB |
+| `make download_reml` | UKBB precision + annotations + surrogates | ~2 GB |
+| `make download_ukbb_precision` | UK Biobank LDGM precision matrices | ~1.5 GB |
+| `make download_precision` | All LDGM precision matrices (all populations) | ~10 GB |
+| `make download_annotations` | BaselineLD annotation files | ~400 MB |
+| `make download_scores` | Score statistics (variant + gene level) | ~6.5 GB |
+| `make download_gene_scores` | Gene-level score statistics only | ~10 MB |
+| `make download_surrogates` | Surrogate markers + gene table | ~60 MB |
+| `make download_sumstats` | GWAS summary statistics (Li et al. 2025) | ~7 GB |
+
+### Data Sources
+
+- **Precision matrices**: [Zenodo 8157131](https://zenodo.org/records/8157131) - LDGM precision matrices for 1000 Genomes populations
+- **Annotations & sumstats**: [Zenodo 15085817](https://zenodo.org/records/15085817) - BaselineLD annotations and UK Biobank summary statistics
+- **Score statistics**: [Zenodo 18102484](https://zenodo.org/records/18102484) - Pre-computed score statistics for enrichment testing
+
+### Directory Structure
+
+After downloading, the `data/` directory will contain:
+
+```
+data/
+├── ldgms/              # LDGM precision matrices
+├── baselineld/         # BaselineLD annotation files
+├── scores/             # Score statistics (.h5 files)
+├── surrogates/         # Surrogate marker files
+├── genes.tsv           # Gene table (GRCh38)
+└── rsid_position.csv   # SNP position mapping
+```
