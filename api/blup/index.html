@@ -1809,9 +1809,9 @@ migtht match to one of the blocks.</p>
 <a id="__codelineno-0-89" name="__codelineno-0-89"></a>    <span class="n">ldgm</span><span class="o">.</span><span class="n">del_factor</span><span class="p">()</span>
 <a id="__codelineno-0-90" name="__codelineno-0-90"></a>
 <a id="__codelineno-0-91" name="__codelineno-0-91"></a>    <span class="c1"># Store results for variants that were successfully merged</span>
-<a id="__codelineno-0-92" name="__codelineno-0-92"></a>    <span class="n">beta_reshaped</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">num_variants</span><span class="p">,</span><span class="mi">1</span><span class="p">))</span>
+<a id="__codelineno-0-92" name="__codelineno-0-92"></a>    <span class="n">beta_reshaped</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">num_variants</span><span class="p">)</span>
 <a id="__codelineno-0-93" name="__codelineno-0-93"></a>    <span class="c1"># Get indices of variants that were actually merged</span>
-<a id="__codelineno-0-94" name="__codelineno-0-94"></a>    <span class="n">beta_reshaped</span><span class="p">[</span><span class="n">sumstat_indices</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">beta</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+<a id="__codelineno-0-94" name="__codelineno-0-94"></a>    <span class="n">beta_reshaped</span><span class="p">[</span><span class="n">sumstat_indices</span><span class="p">]</span> <span class="o">=</span> <span class="n">beta</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
 <a id="__codelineno-0-95" name="__codelineno-0-95"></a>
 <a id="__codelineno-0-96" name="__codelineno-0-96"></a>    <span class="c1"># Update the shared memory array</span>
 <a id="__codelineno-0-97" name="__codelineno-0-97"></a>    <span class="n">block_slice</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="n">variant_offset</span><span class="p">,</span> <span class="n">variant_offset</span> <span class="o">+</span> <span class="n">num_variants</span><span class="p">)</span>
