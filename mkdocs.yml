@@ -13,9 +13,7 @@ hooks:
 theme:
   name: material
   features:
-    - navigation.tabs
     - navigation.sections
-    - navigation.expand
     - navigation.top
     - search.highlight
     - content.code.copy
@@ -65,23 +63,40 @@ nav:
   - Home: index.md
   - Installation: installation.md
   - User Guide:
-      - Command Line Interface: cli.md
+      - Command Line Interface:
+          - Overview: cli.md
+          - graphREML: cli/reml.md
+          - BLUP: cli/blup.md
+          - LD Clumping: cli/clump.md
+          - Simulation: cli/simulate.md
+          - Surrogate Markers: cli/surrogates.md
       - Enrichment Score Test: score_test.md
+      - Python Guide:
+          - Overview: python_api.md
+          - Heritability Estimation: python_api/heritability.md
+          - Matrix Operations: python_api/matrix_operations.md
+          - I/O and Merging: python_api/io_and_merging.md
+          - Likelihood Functions: python_api/likelihood.md
+          - LD Clumping: python_api/clumping.md
+          - Simulation: python_api/simulation.md
+          - BLUP: python_api/blup.md
+          - Parallel Processing: python_api/parallel_processing.md
       - File Formats: file_formats.md
-  - API Reference:
-      - graphld: api/graphld.md
-      - graphld.precision: api/precision.md
-      - graphld.likelihood: api/likelihood.md
-      - graphld.heritability: api/heritability.md
-      - graphld.io: api/io.md
-      - graphld.ldsc_io: api/ldsc_io.md
-      - graphld.vcf_io: api/vcf_io.md
-      - graphld.parquet_io: api/parquet_io.md
-      - graphld.simulate: api/simulate.md
-      - graphld.clumping: api/clumping.md
-      - graphld.blup: api/blup.md
-      - graphld.surrogates: api/surrogates.md
-      - graphld.genesets: api/genesets.md
-      - graphld.multiprocessing_template: api/multiprocessing.md
-      - score_test: api/score_test.md
+  - Reference:
+      - API Overview: api/graphld.md
+      - Modules:
+          - graphld.precision: api/precision.md
+          - graphld.likelihood: api/likelihood.md
+          - graphld.heritability: api/heritability.md
+          - graphld.io: api/io.md
+          - graphld.ldsc_io: api/ldsc_io.md
+          - graphld.vcf_io: api/vcf_io.md
+          - graphld.parquet_io: api/parquet_io.md
+          - graphld.simulate: api/simulate.md
+          - graphld.clumping: api/clumping.md
+          - graphld.blup: api/blup.md
+          - graphld.surrogates: api/surrogates.md
+          - graphld.genesets: api/genesets.md
+          - graphld.multiprocessing_template: api/multiprocessing.md
+          - score_test: api/score_test.md
   - See Also: see_also.md

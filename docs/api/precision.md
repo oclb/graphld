@@ -11,6 +11,8 @@ The `PrecisionOperator` class is the core abstraction for working with LD matric
 
 You cannot do this indexing manually - the submatrix of an inverse is not the inverse of a submatrix. See Section 5 of the [supplementary material](https://pubmed.ncbi.nlm.nih.gov/37640881/).
 
+For conceptual usage and examples, see the [Matrix Operations guide](../python_api/matrix_operations.md).
+
 ::: graphld.precision
     options:
       show_root_heading: true

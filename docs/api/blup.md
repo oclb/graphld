@@ -8,6 +8,8 @@ $$E(\beta) = \sqrt{n} D (nD + R^{-1})^{-1} R^{-1}z$$
 
 where $R^{-1}$ is approximated with the LDGM precision matrix.
 
+For usage examples, see the [BLUP guide](../python_api/blup.md).
+
 ::: graphld.blup
     options:
       show_root_heading: true

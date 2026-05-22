@@ -24,6 +24,8 @@ The likelihood functions operate on precision-premultiplied GWAS summary statist
 
 $$pz = n^{-1/2} R^{-1}z \sim N(0, M), \quad M = D + n^{-1}R^{-1}$$
 
+For model context and practical interpretation, see the [Likelihood Functions guide](../python_api/likelihood.md).
+
 ::: graphld.likelihood
     options:
       show_root_heading: true
