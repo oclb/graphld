@@ -97,3 +97,6 @@ notebooks/*.ipynb
 output/baseline_oe5_results.txt
 /text
 /scripts
+
+# Codex project notebook (separate git repo)
+notebook/

@@ -1,6 +1,6 @@
 site_name: GraphLD
 site_description: Graph-based linkage disequilibrium matrix operations and heritability estimation
-site_url: https://github.com/oclb/graphld
+site_url: https://oclb.github.io/graphld/
 repo_url: https://github.com/oclb/graphld
 repo_name: oclb/graphld
 
