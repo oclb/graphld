@@ -3,6 +3,10 @@ import sys
 
 import numpy as np
 import polars as pl
+from graphld.genesets import (
+    convert_gene_sets_to_variant_annotations as graphld_convert_gene_sets,
+)
+from graphld.genesets import gene_variant_matrix as graphld_gene_variant_matrix
 from score_test.genesets import (
     _get_gene_variant_matrix,
     _get_nearest_genes,
@@ -111,6 +115,77 @@ def test_score_test_low_level_matrix_preserves_fractional_weights():
     np.testing.assert_array_equal(row, np.array([0.4, 0.2]))
 
 
+def test_score_test_low_level_matrix_honors_dtype():
+    matrix = _get_gene_variant_matrix(
+        np.array([100]),
+        np.array([100, 200]),
+        np.array([1, 2]),
+        dtype=np.int8,
+    )
+
+    assert matrix.dtype == np.int8
+
+
+def test_graphld_and_score_test_gene_variant_matrix_share_implementation():
+    variant_table = pl.DataFrame({
+        "CHR": [1, 2],
+        "POS": [100, 100],
+    })
+    gene_table = pl.DataFrame({
+        "CHR": [1, 2],
+        "POS": [90, 110],
+    })
+    weights = np.array([1.0, 0.5])
+
+    score_test_matrix = gene_variant_matrix(variant_table, gene_table, weights)
+    graphld_matrix = graphld_gene_variant_matrix(variant_table, gene_table, weights)
+
+    np.testing.assert_array_equal(
+        score_test_matrix.toarray(),
+        graphld_matrix.toarray(),
+    )
+
+
+def test_graphld_and_score_test_converters_keep_id_column_contracts():
+    gene_sets = {"set1": ["GENE1"]}
+    gene_table = pl.DataFrame({
+        "CHR": [1],
+        "POS": [100],
+        "gene_id": ["ENSG1"],
+        "gene_name": ["GENE1"],
+    })
+    weights = np.array([1.0])
+
+    score_test_df = convert_gene_to_variant_annotations(
+        gene_sets,
+        pl.DataFrame({
+            "CHR": [1],
+            "POS": [100],
+            "RSID": ["score-rsid"],
+            "SNP": ["score-snp"],
+        }),
+        gene_table,
+        weights,
+    )
+    graphld_df = graphld_convert_gene_sets(
+        gene_sets,
+        pl.DataFrame({
+            "CHR": [1],
+            "POS": [100],
+            "RSID": ["graphld-rsid"],
+            "SNP": ["graphld-snp"],
+        }),
+        gene_table,
+        weights,
+    )
+
+    assert "RSID" in score_test_df.columns
+    assert "SNP" in graphld_df.columns
+    assert score_test_df["RSID"][0] == "score-rsid"
+    assert graphld_df["SNP"][0] == "graphld-snp"
+    assert score_test_df["set1"][0] == graphld_df["set1"][0] == 1.0
+
+
 def test_score_test_gene_annotation_conversion_uses_chromosome_aware_matrix():
     from score_test.score_test import GeneAnnot, VariantAnnot
 
@@ -152,3 +227,24 @@ def test_score_test_genesets_imports_standalone_without_graphld():
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "[[0]]"
+
+
+def test_score_test_modules_import_standalone_without_graphld():
+    script = (
+        "import convert_scores, score_test, score_test_io, sys; "
+        "assert 'graphld' not in sys.modules; "
+        "print(callable(score_test_io.load_gene_table), "
+        "callable(convert_scores.convert_hdf5), "
+        "callable(score_test.run_score_test))"
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd="src/score_test",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "True True True"
