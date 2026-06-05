@@ -52,7 +52,6 @@ Repository = "https://github.com/oclb/graphld"
 [project.scripts]
 graphld = "graphld.cli:main"
 estest = "score_test.cli:main"
-create-geneset-annot = "score_test.genesets:create_variant_annot"
 
 [tool.setuptools]
 packages = {find = {where = ["src"]}}
