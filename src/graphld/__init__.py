@@ -33,7 +33,11 @@ from graphld.blup import BLUP, run_blup
 from graphld.clumping import LDClumper, run_clump
 from graphld.io import load_annotations, load_ldgm, merge_snplists, read_ldgm_metadata, partition_variants
 from graphld.ldsc_io import read_ldsc_sumstats
-from graphld.parquet_io import get_parquet_traits, read_parquet_sumstats
+from graphld.parquet_io import (
+    get_parquet_traits,
+    read_parquet_sumstats,
+    read_parquet_sumstats_multi,
+)
 from graphld.likelihood import (
     gaussian_likelihood,
     gaussian_likelihood_gradient,
@@ -52,6 +56,7 @@ __all__ = [
     'read_gwas_vcf',
     'read_ldsc_sumstats',
     'read_parquet_sumstats',
+    'read_parquet_sumstats_multi',
     'get_parquet_traits',
     'merge_snplists',
     'partition_variants',
