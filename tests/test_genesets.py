@@ -1,8 +1,5 @@
 """Tests for graphld.genesets module."""
 
-import tempfile
-from pathlib import Path
-
 import numpy as np
 import polars as pl
 import pytest
@@ -115,6 +112,15 @@ class TestGetNearestGenes:
 
         with pytest.raises(ValueError, match="Gene positions must be sorted"):
             _get_nearest_genes(var_pos, gene_pos, 1)
+
+    def test_genome_scale_distances_do_not_overflow(self):
+        """Test nearest genes for encoded genome-scale coordinates."""
+        var_pos = np.array([22_000_000_000], dtype=np.int64)
+        gene_pos = np.array([1_000_000_000, 22_100_000_000], dtype=np.int64)
+
+        nearest = _get_nearest_genes(var_pos, gene_pos, 1)
+
+        np.testing.assert_array_equal(nearest, np.array([[1]], dtype=np.int32))
 
 
 class TestGetGeneVariantMatrix:
@@ -242,6 +248,48 @@ class TestConvertGeneSetsToVariantAnnotations:
         )
 
         assert "pathway1" in result.columns
+
+    def test_same_chromosome_gene_preferred_at_boundary(self):
+        """Test chromosome-aware nearest-gene mapping at boundaries."""
+        gene_sets = {"chr2_pathway": ["GENE2"]}
+        variant_table = pl.DataFrame({
+            "CHR": [1],
+            "POS": [999_900_000],
+            "SNP": ["rs_boundary"],
+        })
+        gene_table = pl.DataFrame({
+            "CHR": [1, 2],
+            "POS": [100, 100],
+            "gene_name": ["GENE1", "GENE2"],
+            "gene_id": ["ENSG1", "ENSG2"],
+        })
+
+        result = convert_gene_sets_to_variant_annotations(
+            gene_sets, variant_table, gene_table, np.array([1.0])
+        )
+
+        assert result["chr2_pathway"][0] == 0.0
+
+    def test_cross_chromosome_fallback_after_same_chromosome_genes(self):
+        """Test fallback when a chromosome has too few genes for the weights."""
+        gene_sets = {"chr2_pathway": ["GENE2"]}
+        variant_table = pl.DataFrame({
+            "CHR": [1],
+            "POS": [100],
+            "SNP": ["rs1"],
+        })
+        gene_table = pl.DataFrame({
+            "CHR": [1, 2],
+            "POS": [100, 120],
+            "gene_name": ["GENE1", "GENE2"],
+            "gene_id": ["ENSG1", "ENSG2"],
+        })
+
+        result = convert_gene_sets_to_variant_annotations(
+            gene_sets, variant_table, gene_table, np.array([1.0, 0.5])
+        )
+
+        assert result["chr2_pathway"][0] == 0.5
 
 
 class TestLoadGeneTable:
