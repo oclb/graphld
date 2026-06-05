@@ -106,7 +106,12 @@ def test_clumping_preserves_input_rows(create_sumstats):
             sumstats.slice(4, 1),
             sumstats.slice(2, 1),
         ]
-    ).with_columns(pl.int_range(pl.len()).alias("input_order"))
+    ).with_columns(
+        pl.int_range(pl.len()).alias("input_order"),
+        (pl.int_range(pl.len()) + 100).alias("row_nr"),
+        pl.lit("caller-row").alias("__graphld_clump_row_nr"),
+        pl.lit(True).alias("__graphld_clump_is_index"),
+    )
 
     clumped = LDClumper.clump(
         unsorted_sumstats,
@@ -115,9 +120,25 @@ def test_clumping_preserves_input_rows(create_sumstats):
         chisq_threshold=1.0,
         run_in_serial=True,
     )
+    clumped_parallel = LDClumper.clump(
+        unsorted_sumstats,
+        ldgm_metadata_path=metadata_path,
+        populations="EUR",
+        chisq_threshold=1.0,
+        num_processes=2,
+        run_in_serial=False,
+    )
 
     assert len(clumped) == len(unsorted_sumstats)
+    assert clumped.to_dict(as_series=False) == clumped_parallel.to_dict(as_series=False)
     assert clumped.select("input_order").to_series().to_list() == list(range(6))
+    assert clumped.select("row_nr").to_series().to_list() == list(range(100, 106))
+    assert clumped.select("__graphld_clump_row_nr").to_series().to_list() == (
+        ["caller-row"] * 6
+    )
+    assert clumped.select("__graphld_clump_is_index").to_series().to_list() == (
+        [True] * 6
+    )
     assert clumped.select("SNP").to_series().to_list() == (
         unsorted_sumstats.select("SNP").to_series().to_list()
     )

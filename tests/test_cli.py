@@ -6,7 +6,9 @@ from pathlib import Path
 import polars as pl
 import pytest
 
+from graphld import LDClumper
 from graphld.cli import _blup, _clump, _reml, _simulate
+from graphld.ldsc_io import read_ldsc_sumstats
 
 
 @pytest.fixture
@@ -76,9 +78,21 @@ def test_clump(metadata_path, sumstats_path):
 
         # Check output exists and has expected columns
         result = pl.read_csv(tmp.name, separator='\t')
-        # Just check that it runs without error - may have 0 results with test data
+        expected = LDClumper.clump(
+            read_ldsc_sumstats(str(sumstats_path)),
+            ldgm_metadata_path=str(metadata_path),
+            rsq_threshold=0.9,
+            chisq_threshold=1.0,
+            run_in_serial=True,
+        ).filter(pl.col('is_index')).drop('is_index')
+
+        # CLI output remains narrowed to retained index variants.
         assert 'SNP' in result.columns
         assert 'Z' in result.columns
+        assert 'is_index' not in result.columns
+        assert result.select('SNP').to_series().to_list() == (
+            expected.select('SNP').to_series().to_list()
+        )
 
 
 def test_simulate(metadata_path):

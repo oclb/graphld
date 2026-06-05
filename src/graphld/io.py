@@ -167,6 +167,16 @@ def merge_alleles(anc_alleles: pl.Series, deriv_alleles: pl.Series,
     return pl.Series(phase)
 
 
+def _temporary_column(existing_columns: list[str], base_name: str) -> str:
+    """Return a temporary column name that does not collide with existing data."""
+    column = base_name
+    suffix = 1
+    while column in existing_columns:
+        column = f"{base_name}_{suffix}"
+        suffix += 1
+    return column
+
+
 def merge_snplists(precision_op: "PrecisionOperator",
                    sumstats: pl.DataFrame, *,
                    variant_id_col: str = 'SNP',
@@ -234,8 +244,11 @@ def merge_snplists(precision_op: "PrecisionOperator",
 
     # Match variants
     match_by = ('position', pos_col) if match_by_position else ('site_ids', variant_id_col)
+    row_nr_col = _temporary_column(
+        precision_op.variant_info.columns + sumstats.columns, "row_nr"
+    )
     merged = precision_op.variant_info.join(
-        sumstats.with_row_index(name="row_nr"),
+        sumstats.with_row_index(name=row_nr_col),
         left_on=[match_by[0]],
         right_on=[match_by[1]],
         suffix="_sumstats",
@@ -307,7 +320,7 @@ def merge_snplists(precision_op: "PrecisionOperator",
         merged = merged.filter(pl.col('is_representative') == 1)
 
     precision_op.variant_info = merged
-    sumstat_indices = merged.select('row_nr').to_numpy().flatten().astype(int)
+    sumstat_indices = merged.select(row_nr_col).to_numpy().flatten().astype(int)
 
     return precision_op, sumstat_indices
 
