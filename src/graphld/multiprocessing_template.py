@@ -515,18 +515,18 @@ class ParallelProcessor(ABC):
             num_processes: Optional[int] = None,
             worker_params: Any = None,
             **kwargs: Any) -> Any:
-        """Run parallel computation.
+        """Run computation in a single process for debugging.
 
         Args:
             ldgm_metadata_path: Path to metadata file
             populations: Populations to process; None -> all
             chromosomes: Chromosomes to process; None -> all
-            num_processes: Number of processes to use
+            num_processes: Ignored in serial mode; accepted for API compatibility
             worker_params: Optional parameters passed to each worker process
             **kwargs: Additional arguments
 
         Returns:
-            Results of the parallel computation
+            Results of the computation
         """
 
         # Read metadata first
