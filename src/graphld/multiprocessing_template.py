@@ -16,6 +16,11 @@ from graphld.precision import PrecisionOperator
 from .io import load_ldgm, read_ldgm_metadata
 
 
+def _ldgm_block_context(ldgm_directory: Path, block: dict) -> tuple[Path, Optional[str]]:
+    """Return the edgelist path and population context for a metadata row."""
+    return ldgm_directory / block['name'], block.get('population')
+
+
 class SharedData:
     """Wrapper for shared memory data structures.
 
@@ -308,8 +313,8 @@ class ParallelProcessor(ABC):
         try:
             # Load LDGMs once
             ldgms = []
-            for file in files:
-                ldgm = load_ldgm(str(file))
+            for file, population in files:
+                ldgm = load_ldgm(str(file), population=population)
                 ldgm.factor()
                 ldgms.append(ldgm)
 
@@ -345,7 +350,7 @@ class ParallelProcessor(ABC):
     def serial_worker(cls,
                ldgm: Optional[PrecisionOperator],
                offset: int,
-               file: str,
+               file: tuple[Path, Optional[str]],
                data: list,
                flag: Value,
                shared_data: SharedData,
@@ -356,7 +361,7 @@ class ParallelProcessor(ABC):
         Args:
             ldgm: the LDGM that was previously loaded, or None
             offset: In shared data, where to start processing
-            file: LDGM file to process
+            file: LDGM file and population context to process
             data: List of block-specific data
             flag: Shared flag for worker control
             shared_data: Shared memory data
@@ -367,7 +372,8 @@ class ParallelProcessor(ABC):
 
         # Load LDGMs once
         if ldgm is None:
-            ldgm = load_ldgm(str(file))
+            edgelist_file, population = file
+            ldgm = load_ldgm(str(edgelist_file), population=population)
             ldgm.factor()
 
         # Process all blocks and collect solutions
@@ -456,7 +462,7 @@ class ParallelProcessor(ABC):
         # Get list of files from metadata
         ldgm_directory = Path(ldgm_metadata_path).parent
         edgelist_files = [
-            ldgm_directory / block['name']
+            _ldgm_block_context(ldgm_directory, block)
             for block in metadata.iter_rows(named=True)
         ]
         if not edgelist_files:
@@ -533,7 +539,7 @@ class ParallelProcessor(ABC):
         # Get list of files from metadata
         ldgm_directory = Path(ldgm_metadata_path).parent
         edgelist_files = [
-            ldgm_directory / block['name']
+            _ldgm_block_context(ldgm_directory, block)
             for block in metadata.iter_rows(named=True)
         ]
         if not edgelist_files:
