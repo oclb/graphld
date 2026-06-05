@@ -255,6 +255,10 @@ class TestLoadAnnotations:
 
 class TestLoadVariantAnnotations:
     """Tests for load_variant_annotations function."""
+
+    def _write_bed(self, annot_dir: Path, name: str, lines: list[str]) -> None:
+        bed_file = annot_dir / f"{name}.bed"
+        bed_file.write_text("\n".join(lines) + "\n")
     
     def test_load_variant_annotations_all_columns(self, tmp_path):
         """Test loading all annotation columns."""
@@ -306,6 +310,101 @@ class TestLoadVariantAnnotations:
         assert 'annot1' in variant_annot.annot_names
         assert 'annot3' in variant_annot.annot_names
         assert 'annot2' not in variant_annot.annot_names
+
+    def test_load_variant_annotations_with_bed(self, tmp_path):
+        """Test adding BED region annotations to .annot variants."""
+        annot_dir = tmp_path / "annot"
+        annot_dir.mkdir()
+
+        annot_file = annot_dir / "test.1.annot"
+        df = pl.DataFrame({
+            'CHR': [1, 1, 1],
+            'BP': [100, 200, 300],
+            'SNP': ['rs1', 'rs2', 'rs3'],
+            'CM': [0.0, 0.0, 0.0],
+            'annot1': [1, 0, 1],
+        })
+        df.write_csv(annot_file, separator='\t')
+        self._write_bed(annot_dir, "regions", ["chr1\t150\t250"])
+
+        variant_annot = load_variant_annotations(str(annot_dir))
+
+        assert 'annot1' in variant_annot.annot_names
+        assert 'regions' in variant_annot.annot_names
+        assert variant_annot.df['regions'].to_list() == [False, True, False]
+
+    def test_load_variant_annotations_bed_only(self, tmp_path):
+        """Test loading BED annotations against the HDF5 variant table."""
+        annot_dir = tmp_path / "annot"
+        annot_dir.mkdir()
+        self._write_bed(annot_dir, "regions", ["chr1\t50\t150", "chr2\t299\t301"])
+
+        variant_data = pl.DataFrame({
+            'CHR': [1, 1, 2],
+            'POS': [100, 200, 300],
+            'RSID': ['rs1', 'rs2', 'rs3'],
+        })
+
+        variant_annot = load_variant_annotations(
+            str(annot_dir), variant_table=variant_data
+        )
+
+        assert variant_annot.annot_names == ['regions']
+        assert variant_annot.df['RSID'].to_list() == ['rs1', 'rs2', 'rs3']
+        assert variant_annot.df['regions'].to_list() == [True, False, True]
+
+    def test_load_annotations_bed_only_filters_chromosome(self, tmp_path):
+        """BED-only loading should respect the chromosome filter."""
+        annot_dir = tmp_path / "annot"
+        annot_dir.mkdir()
+        self._write_bed(annot_dir, "regions", ["chr1\t50\t150", "chr2\t299\t301"])
+
+        variant_data = pl.DataFrame({
+            'CHR': [1, 1, 2],
+            'POS': [100, 200, 300],
+            'RSID': ['rs1', 'rs2', 'rs3'],
+        })
+
+        annotations = load_annotations(
+            str(annot_dir),
+            chromosome=1,
+            add_positions=False,
+            variant_table=variant_data,
+        )
+
+        assert annotations['CHR'].to_list() == [1, 1]
+        assert annotations['SNP'].to_list() == ['rs1', 'rs2']
+        assert annotations['regions'].to_list() == [True, False]
+
+    def test_load_variant_annotations_bed_only_requires_variant_table(self, tmp_path):
+        """BED-only annotation directories need variant coordinates from HDF5."""
+        annot_dir = tmp_path / "annot"
+        annot_dir.mkdir()
+        self._write_bed(annot_dir, "regions", ["chr1\t50\t150"])
+
+        with pytest.raises(ValueError, match="variant_table is required"):
+            load_variant_annotations(str(annot_dir))
+
+    def test_load_variant_annotations_filters_bed_names(self, tmp_path):
+        """Test filtering specific BED annotation names."""
+        annot_dir = tmp_path / "annot"
+        annot_dir.mkdir()
+        self._write_bed(annot_dir, "regions", ["chr1\t50\t150"])
+        self._write_bed(annot_dir, "other_regions", ["chr1\t150\t250"])
+
+        variant_data = pl.DataFrame({
+            'CHR': [1, 1],
+            'POS': [100, 200],
+            'RSID': ['rs1', 'rs2'],
+        })
+
+        variant_annot = load_variant_annotations(
+            str(annot_dir), ['regions'], variant_table=variant_data
+        )
+
+        assert variant_annot.annot_names == ['regions']
+        assert 'other_regions' in variant_annot.df.columns
+        assert 'other_regions' not in variant_annot.annot_names
 
 
 class TestLoadGeneAnnotations:
