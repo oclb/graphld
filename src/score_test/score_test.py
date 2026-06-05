@@ -62,7 +62,7 @@ except ImportError:
 
 
 def get_block_boundaries(blocks: np.ndarray) -> np.ndarray:
-    temp = np.where(np.diff(blocks) != 0)[0]
+    temp = np.where(np.diff(blocks) != 0)[0] + 1
     num_blocks = len(temp) + 1
     block_boundaries = np.zeros(num_blocks + 1, dtype=int)
     block_boundaries[1:-1] = temp
