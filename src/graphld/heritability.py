@@ -225,8 +225,10 @@ def _infer_or_default_sample_size(
         return
 
     if "N" in merged_data.columns:
-        mean_n = merged_data.get_column("N").drop_nulls().mean()
-        if mean_n is not None and np.isfinite(mean_n) and mean_n > 0:
+        n_values = merged_data.get_column("N").drop_nulls().to_numpy()
+        n_values = n_values[np.isfinite(n_values) & (n_values > 0)]
+        if len(n_values) > 0:
+            mean_n = n_values.mean()
             model_options.sample_size = float(mean_n)
             if verbose:
                 print(f"Using sample size N={model_options.sample_size} from sumstats")
@@ -383,6 +385,11 @@ class GraphREML(ParallelProcessor):
                 print(
                     f"{len(sumstats_blocks) - sum(keep_block)} out of {len(sumstats_blocks)} blocks discarded due to\n"
                     f"max chisq threshold of {method.max_chisq_threshold}"
+                )
+            if not any(keep_block):
+                raise ValueError(
+                    "No LD blocks remain after applying max_chisq_threshold="
+                    f"{method.max_chisq_threshold}."
                 )
 
         cumulative_num_variants = np.cumsum(

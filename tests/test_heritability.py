@@ -95,6 +95,21 @@ def test_max_z_squared_threshold_discards_high_chisq_blocks(
     assert block_data[1]['variant_offset'] == 0
 
 
+def test_max_z_squared_threshold_errors_when_all_blocks_discarded(
+    metadata_path, create_sumstats
+):
+    """All-discarded runs fail clearly instead of later concatenation errors."""
+    metadata = read_ldgm_metadata(metadata_path, populations='EUR')
+    sumstats = create_sumstats(str(metadata_path), 'EUR')
+
+    with pytest.raises(ValueError, match='No LD blocks remain'):
+        GraphREML.prepare_block_data(
+            metadata,
+            sumstats=sumstats,
+            method=MethodOptions(max_chisq_threshold=0.0),
+        )
+
+
 def test_binary_annotation_filter_subsets_existing_params(
     monkeypatch, metadata_path, create_annotations, create_sumstats
 ):
@@ -171,6 +186,42 @@ def test_missing_sample_size_warns_and_defaults_to_one(
     assert model.sample_size == 1.0
     assert captured['sample_size'] == 1.0
     assert result['sample_size'] == 1.0
+
+
+def test_sample_size_inference_ignores_nan_values(
+    monkeypatch, metadata_path, create_annotations, create_sumstats
+):
+    """Sample-size inference uses valid N rows instead of falling back on NaN."""
+    captured = {}
+
+    def fake_run(cls, *args, **kwargs):
+        captured.update(kwargs)
+        return {'sample_size': kwargs['sample_size']}
+
+    monkeypatch.setattr(GraphREML, 'run_serial', classmethod(fake_run))
+
+    sumstats = create_sumstats(str(metadata_path), 'EUR').with_row_index('row_nr')
+    sumstats = sumstats.with_columns(
+        pl.when(pl.col('row_nr') == 0)
+        .then(float('nan'))
+        .otherwise(1000.0)
+        .alias('N')
+    ).drop('row_nr')
+    model = ModelOptions(params=np.zeros((1, 1)), sample_size=None)
+    method = MethodOptions(match_by_position=True, run_serial=True)
+
+    result = run_graphREML(
+        model_options=model,
+        method_options=method,
+        summary_stats=sumstats,
+        annotation_data=create_annotations(metadata_path, 'EUR'),
+        ldgm_metadata_path=metadata_path,
+        populations='EUR',
+    )
+
+    assert model.sample_size == 1000.0
+    assert captured['sample_size'] == 1000.0
+    assert result['sample_size'] == 1000.0
 
 
 def test_max_z_squared_threshold(metadata_path, create_annotations, create_sumstats):
