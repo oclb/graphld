@@ -7,7 +7,11 @@ import graphld as gld
 import polars as pl
 
 sumstats: pl.DataFrame = gld.read_ldsc_sumstats("data/test/example.sumstats")
-annotations: pl.DataFrame = gld.load_annotations("data/test/", chromosome=1)
+annotations: pl.DataFrame = gld.load_annotations(
+    "data/test/annot",
+    chromosome=1,
+    positions_file="data/test/rsid_position.csv",
+)
 
 default_model_options = gld.ModelOptions()
 default_method_options = gld.MethodOptions()

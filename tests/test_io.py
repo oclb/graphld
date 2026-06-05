@@ -1,6 +1,7 @@
 """Tests for merge_snplists functionality."""
 
 
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -411,14 +412,15 @@ def test_partition_variants():
 
 def test_load_annotations(test_data_dir):
     """Test loading annotations with different options."""
+    positions_file = "data/test/rsid_position.csv"
 
     # Create test annotations
     annotations = load_annotations(
-        annot_path=str(test_data_dir),
-        chromosome=22,
+        annot_path=str(test_data_dir / "annot"),
+        chromosome=1,
         add_positions=True,
         add_alleles=True,
-        positions_file='data/rsid_position.csv'
+        positions_file=positions_file,
     )
 
     # Verify basic structure
@@ -427,6 +429,10 @@ def test_load_annotations(test_data_dir):
     assert 'POS' in annotations.columns
     assert 'A1' in annotations.columns
     assert 'A2' in annotations.columns
+    known_snp = annotations.filter(pl.col('SNP') == 'rs199745162').row(0, named=True)
+    assert known_snp['POS'] == 16949
+    assert known_snp['A1'] == 'C'
+    assert known_snp['A2'] == 'A'
 
     # Verify data types are correct
     assert annotations['SNP'].dtype == pl.Utf8
@@ -437,14 +443,14 @@ def test_load_annotations(test_data_dir):
     assert len(annotations) > 0
 
     # Verify some specific properties
-    assert all(annotations['CHR'] == 22)  # Filtered by chromosome
+    assert all(annotations['CHR'] == 1)  # Filtered by chromosome
     assert all(annotations['POS'] > 0)  # Positions are valid
 
     # Test with custom file pattern
     custom_pattern_annotations = load_annotations(
-        annot_path=str(test_data_dir),
-        chromosome=22,
-        file_pattern='baselineLD.{chrom}.annot',
+        annot_path=str(test_data_dir / "annot"),
+        chromosome=1,
+        file_pattern='3_annotations.{chrom}.annot',
         add_positions=False
     )
     assert len(custom_pattern_annotations) > 0
@@ -453,21 +459,111 @@ def test_load_annotations(test_data_dir):
     # Test error handling
     with pytest.raises(ValueError, match="No annotation files found"):
         load_annotations(
-            annot_path=str(test_data_dir),
+            annot_path=str(test_data_dir / "annot"),
             chromosome=99,  # Non-existent chromosome
             file_pattern='baselineLD.{chrom}.annot'
         )
 
 
-def test_load_annotations_with_bed(test_data_dir):
+def test_load_annotations_positions_without_alleles(test_data_dir, tmp_path):
+    """Test adding positions from a file without allele columns."""
+    positions_file = tmp_path / "rsid_position.csv"
+    pl.read_csv("data/test/rsid_position.csv").select(
+        ["chrom", "site_ids", "position"]
+    ).write_csv(positions_file)
+
+    annotations = load_annotations(
+        annot_path=str(test_data_dir / "annot"),
+        chromosome=1,
+        add_positions=True,
+        add_alleles=False,
+        positions_file=str(positions_file),
+    )
+
+    assert len(annotations) > 0
+    assert 'CHR' in annotations.columns
+    assert 'POS' in annotations.columns
+    assert 'A1' not in annotations.columns
+    assert 'A2' not in annotations.columns
+
+
+def test_load_annotations_missing_allele_columns(test_data_dir, tmp_path):
+    """Test missing allele columns produce a clear error when alleles are requested."""
+    positions_file = tmp_path / "rsid_position.csv"
+    pl.read_csv("data/test/rsid_position.csv").select(
+        ["chrom", "site_ids", "position"]
+    ).write_csv(positions_file)
+
+    with pytest.raises(ValueError, match="anc_alleles and deriv_alleles"):
+        load_annotations(
+            annot_path=str(test_data_dir / "annot"),
+            chromosome=1,
+            add_positions=True,
+            add_alleles=True,
+            positions_file=str(positions_file),
+        )
+
+
+def test_load_annotations_alleles_without_positions(test_data_dir):
+    """Test adding alleles while keeping annotation coordinates."""
+    annotations = load_annotations(
+        annot_path=str(test_data_dir / "annot"),
+        chromosome=1,
+        add_positions=False,
+        add_alleles=True,
+        positions_file="data/test/rsid_position.csv",
+    )
+
+    known_snp = annotations.filter(pl.col('SNP') == 'rs199745162').row(0, named=True)
+    assert known_snp['POS'] == 16949
+    assert known_snp['A1'] == 'C'
+    assert known_snp['A2'] == 'A'
+
+
+def test_load_annotations_respects_file_pattern(tmp_path):
+    """Test file_pattern selects the intended annotation files."""
+    annot_dir = tmp_path / "annot"
+    annot_dir.mkdir()
+    (annot_dir / "keep.1.annot").write_text(
+        "CHR\tBP\tSNP\tCM\tbase\tkeep_col\n"
+        "1\t100\trs_keep\t0\t1\t1\n"
+    )
+    (annot_dir / "drop.1.annot").write_text(
+        "CHR\tBP\tSNP\tCM\tbase\tdrop_col\n"
+        "1\t200\trs_drop\t0\t1\t1\n"
+    )
+
+    annotations = load_annotations(
+        annot_path=str(annot_dir),
+        chromosome=1,
+        add_positions=False,
+        file_pattern="keep.{chrom}.annot",
+    )
+
+    assert annotations['SNP'].to_list() == ['rs_keep']
+    assert 'keep_col' in annotations.columns
+    assert 'drop_col' not in annotations.columns
+
+
+def test_load_annotations_with_bed(test_data_dir, tmp_path):
     """Test loading annotations with BED file integration."""
+    positions_file = "data/test/rsid_position.csv"
+    annot_dir = tmp_path / "annot"
+    annot_dir.mkdir()
+    shutil.copyfile(
+        test_data_dir / "annot" / "3_annotations.1.annot",
+        annot_dir / "3_annotations.1.annot",
+    )
+    (annot_dir / "test_regions.bed").write_text(
+        "chr1\t16940\t16960\ttest_region1\n"
+    )
 
     # Load annotations with BED files
     annotations = load_annotations(
-        annot_path=str(test_data_dir),
-        chromosome=22,
+        annot_path=str(annot_dir),
+        chromosome=1,
         add_positions=True,
-        positions_file='data/rsid_position.csv'
+        positions_file=positions_file,
     )
 
     # Verify BED annotations were added
@@ -480,21 +576,17 @@ def test_load_annotations_with_bed(test_data_dir):
 
     # Verify region annotations are correct
     for row in in_regions.iter_rows(named=True):
-        assert row['CHR'] == 22
+        assert row['CHR'] == 1
         # Position should be within one of our test regions
         pos = row['POS']
-        assert (
-            (16050075 <= pos < 16050115) or  # region1
-            (16050200 <= pos < 16050300) or  # region2
-            (17000000 <= pos < 17100000)     # region3
-        )
+        assert 16940 <= pos < 16960
 
     # Test excluding BED files
     annotations_no_bed = load_annotations(
-        annot_path=str(test_data_dir),
-        chromosome=22,
+        annot_path=str(annot_dir),
+        chromosome=1,
         add_positions=True,
-        positions_file='data/rsid_position.csv',
+        positions_file=positions_file,
         exclude_bed=True
     )
     assert 'test_regions' not in annotations_no_bed.columns
