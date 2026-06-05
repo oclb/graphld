@@ -312,40 +312,15 @@ class TestLoadGeneAnnotations:
     """Tests for load_gene_annotations function."""
     
     def test_load_gene_annotations_basic(self, tmp_path):
-        """Test basic loading and conversion of gene annotations."""
-        # Create test GMT file
+        """Test basic loading of gene annotations from GMT files."""
         gmt_dir = tmp_path / "gmt"
         gmt_dir.mkdir()
         gmt_file = gmt_dir / "test.gmt"
         gmt_file.write_text("set1\tDescription\tGENE1\tGENE2\n")
-        
-        # Create test gene table
-        gene_table_path = tmp_path / "genes.tsv"
-        gene_df = pl.DataFrame({
-            'gene_id': ['ENSG1', 'ENSG2', 'ENSG3'],
-            'gene_id_version': ['ENSG1.1', 'ENSG2.1', 'ENSG3.1'],
-            'gene_name': ['GENE1', 'GENE2', 'GENE3'],
-            'start': [1000, 2000, 3000],
-            'end': [1500, 2500, 3500],
-            'CHR': ['22', '22', '22']
-        })
-        gene_df.write_csv(gene_table_path, separator='\t')
-        
-        # Create variant data
-        variant_data = pl.DataFrame({
-            'CHR': [22, 22, 22],
-            'POS': [1250, 2250, 3250],
-            'RSID': ['rs1', 'rs2', 'rs3']
-        })
-        
-        weights = np.array([1.0])
-        
-        # load_gene_annotations now returns a GeneAnnot object
+
         from score_test.score_test import GeneAnnot
-        gene_annot = load_gene_annotations(
-            str(gmt_dir), variant_data, str(gene_table_path), weights
-        )
-        
+        gene_annot = load_gene_annotations(str(gmt_dir))
+
         assert isinstance(gene_annot, GeneAnnot)
         assert len(gene_annot.annot_names) == 1
         assert 'set1' in gene_annot.annot_names

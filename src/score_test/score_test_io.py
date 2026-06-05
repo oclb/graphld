@@ -403,18 +403,12 @@ def load_variant_annotations(
 
 def load_gene_annotations(
     gene_annot_dir: str,
-    variant_table: pl.DataFrame,
-    gene_table_path: str,
-    nearest_weights: np.ndarray,
     annot_names: list[str] | None = None,
 ) -> "GeneAnnot":
-    """Load gene-level annotations as a GeneAnnot object.
+    """Load GMT gene-set files from a directory into a GeneAnnot object.
 
     Args:
         gene_annot_dir: Directory containing GMT files with gene sets
-        variant_table: Data table retained for API compatibility
-        gene_table_path: Retained for API compatibility
-        nearest_weights: Retained for API compatibility
         annot_names: Optional list of specific annotation names to load
 
     Returns:
