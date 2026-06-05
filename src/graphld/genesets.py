@@ -296,22 +296,25 @@ def convert_gene_sets_to_variant_annotations(
     Returns:
         DataFrame with variant-level annotations in LDSC format (CHR, BP, SNP, CM, ...)
     """
-    # Determine if using gene IDs or symbols
-    first_set = next(iter(gene_sets.values()))
-    use_gene_id = _is_gene_id(first_set[0]) if first_set else False
-    gene_key = "gene_id" if use_gene_id else "gene_name"
+    if not gene_sets:
+        raise ValueError("gene_sets must contain at least one gene set")
 
     # Get gene-variant matrix
     gv_matrix = gene_variant_matrix(variant_table, gene_table, nearest_weights)
 
     # Convert each gene set to variant-level annotation
     variant_annots = {}
-    gene_identifiers = gene_table[gene_key].to_list()
+    gene_ids = gene_table["gene_id"].to_list()
+    gene_names = gene_table["gene_name"].to_list()
 
     for set_name, genes in gene_sets.items():
         gene_set = set(genes)
         gene_values = np.array(
-            [1.0 if gene in gene_set else 0.0 for gene in gene_identifiers], dtype=np.float64
+            [
+                1.0 if gene_id in gene_set or gene_name in gene_set else 0.0
+                for gene_id, gene_name in zip(gene_ids, gene_names)
+            ],
+            dtype=np.float64,
         )
         variant_values = (gv_matrix @ gene_values.reshape(-1, 1)).ravel()
         variant_annots[set_name] = variant_values

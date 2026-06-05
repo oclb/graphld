@@ -10,6 +10,7 @@ from graphld.genesets import (
     _get_nearest_genes,
     _is_gene_id,
     convert_gene_sets_to_variant_annotations,
+    load_gene_annotations,
     load_gene_sets_from_gmt,
     load_gene_table,
 )
@@ -248,6 +249,95 @@ class TestConvertGeneSetsToVariantAnnotations:
         )
 
         assert "pathway1" in result.columns
+
+    def test_empty_first_gene_set_does_not_force_symbol_matching(self):
+        """Test Ensembl ID sets still match when an earlier set is empty."""
+        gene_sets = {
+            "empty_pathway": [],
+            "ensembl_pathway": ["ENSG00000002"],
+        }
+        variant_table = pl.DataFrame({
+            "CHR": [1, 1],
+            "POS": [100, 200],
+            "SNP": ["rs1", "rs2"],
+        })
+        gene_table = pl.DataFrame({
+            "CHR": [1, 1],
+            "POS": [100, 200],
+            "gene_name": ["GENE1", "GENE2"],
+            "gene_id": ["ENSG00000001", "ENSG00000002"],
+        })
+
+        result = convert_gene_sets_to_variant_annotations(
+            gene_sets, variant_table, gene_table, np.array([1.0])
+        )
+
+        assert result["empty_pathway"].to_list() == [0.0, 0.0]
+        assert result["ensembl_pathway"].to_list() == [0.0, 1.0]
+
+    def test_mixed_gene_id_and_symbol_set(self):
+        """Test one set can match both Ensembl IDs and symbols."""
+        gene_sets = {"mixed_pathway": ["ENSG00000001", "GENE2"]}
+        variant_table = pl.DataFrame({
+            "CHR": [1, 1],
+            "POS": [100, 200],
+            "SNP": ["rs1", "rs2"],
+        })
+        gene_table = pl.DataFrame({
+            "CHR": [1, 1],
+            "POS": [100, 200],
+            "gene_name": ["GENE1", "GENE2"],
+            "gene_id": ["ENSG00000001", "ENSG00000002"],
+        })
+
+        result = convert_gene_sets_to_variant_annotations(
+            gene_sets, variant_table, gene_table, np.array([1.0])
+        )
+
+        assert result["mixed_pathway"].to_list() == [1.0, 1.0]
+
+    def test_empty_gene_sets_raise_clear_error(self):
+        """Test empty input raises a clear error instead of StopIteration."""
+        variant_table = pl.DataFrame({
+            "CHR": [1],
+            "POS": [100],
+            "SNP": ["rs1"],
+        })
+        gene_table = pl.DataFrame({
+            "CHR": [1],
+            "POS": [100],
+            "gene_name": ["GENE1"],
+            "gene_id": ["ENSG00000001"],
+        })
+
+        with pytest.raises(ValueError, match="gene_sets must contain at least one gene set"):
+            convert_gene_sets_to_variant_annotations(
+                {}, variant_table, gene_table, np.array([1.0])
+            )
+
+    def test_load_gene_annotations_raises_when_filter_removes_all_sets(self, tmp_path):
+        """Test annotation-name filtering to empty raises a clear error."""
+        gmt_file = tmp_path / "test.gmt"
+        gmt_file.write_text("pathway1\tdesc\tGENE1\n")
+        gene_table_file = tmp_path / "genes.tsv"
+        gene_table_file.write_text(
+            "gene_id\tgene_id_version\tgene_name\tstart\tend\tCHR\n"
+            "ENSG00000001\tENSG00000001.1\tGENE1\t100\t100\t1\n"
+        )
+        variant_table = pl.DataFrame({
+            "CHR": [1],
+            "POS": [100],
+            "SNP": ["rs1"],
+        })
+
+        with pytest.raises(ValueError, match="gene_sets must contain at least one gene set"):
+            load_gene_annotations(
+                str(tmp_path),
+                variant_table,
+                str(gene_table_file),
+                np.array([1.0]),
+                annot_names=["missing_pathway"],
+            )
 
     def test_same_chromosome_gene_preferred_at_boundary(self):
         """Test chromosome-aware nearest-gene mapping at boundaries."""
