@@ -16,6 +16,7 @@
 #-------------------------------------------------------
 from dataclasses import dataclass
 import logging
+from pathlib import Path
 import sys
 import time
 from typing import List, Tuple
@@ -77,6 +78,14 @@ def _parse_probs(probs_str: str) -> List[float]:
         if p < 0 or p > 1:
             raise ValueError(f"Probability must be between 0 and 1, got {p}")
     return probs
+
+
+def _require_gene_table(gene_table: str, option_name: str) -> None:
+    if not Path(gene_table).is_file():
+        raise click.UsageError(
+            f"--gene-table path '{gene_table}' does not exist; "
+            f"pass --gene-table when using {option_name} with variant-level HDF5 input."
+        )
 
 
 
@@ -353,7 +362,7 @@ def _setup_logging(output_fp: str | None, verbose: bool):
               help="Comma-separated probabilities (0-1) for random gene-level annotations (e.g., '0.1,0.01').")
 @click.option('--random-variants', 'random_variants',
               help="Comma-separated probabilities (0-1) for random variant-level annotations (e.g., '0.1,0.01').")
-@click.option('--gene-table', default='data/genes.tsv', type=click.Path(exists=True),
+@click.option('--gene-table', default='data/genes.tsv', type=click.Path(),
               help="Path to gene table TSV file (required for gene-level options).")
 @click.option('--nearest-weights', default='0.4,0.2,0.1,0.1,0.1,0.05,0.05',
               help="Comma-separated weights for k-nearest genes (for gene-level options).")
@@ -415,6 +424,7 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
             logging.info(f"Loaded {len(annot.annot_names)} gene annotations from {gene_annot_dir}")
         else:
             # For variant-level data, convert gene to variant annotations
+            _require_gene_table(gene_table, "--gene-annot-dir")
             chromosomes = data_table['CHR'].unique().sort().to_list()
             gene_table_df = load_gene_table(gene_table, chromosomes)
             annot = convert_gene_to_variant_annotations(gene_annot, data_table, gene_table_df, weights)
@@ -423,6 +433,8 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
 
     if random_genes:
         probs = _parse_probs(random_genes)
+        if not is_gene_level:
+            _require_gene_table(gene_table, "--random-genes")
         gene_annot: GeneAnnot = create_random_gene_annotations(
             data_table, gene_table, probs
         )
