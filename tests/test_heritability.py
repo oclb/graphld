@@ -6,8 +6,10 @@ import tempfile
 import h5py
 import numpy as np
 import polars as pl
+import pytest
 
 from graphld.heritability import (
+    GraphREML,
     MethodOptions,
     ModelOptions,
     _get_softmax_link_function,
@@ -64,6 +66,111 @@ def test_softmax_link_function():
     print(val)
     expected = [[0.0881], [0.0711]]
     assert np.allclose(val, expected, rtol=1e-3), f"Expected {expected}, got {val}"
+
+
+def test_max_z_squared_threshold_discards_high_chisq_blocks(
+    metadata_path, create_sumstats
+):
+    """Regression test that max_chisq_threshold is applied per block."""
+    metadata = read_ldgm_metadata(metadata_path, populations='EUR')
+    sumstats = create_sumstats(str(metadata_path), 'EUR')
+    original_blocks = partition_variants(metadata, sumstats)
+    first_pos = original_blocks[0].select('POS').head(1).item()
+    sumstats = sumstats.with_columns(
+        pl.when(pl.col('POS') == first_pos)
+        .then(10.0)
+        .otherwise(pl.col('Z'))
+        .alias('Z')
+    )
+
+    block_data = GraphREML.prepare_block_data(
+        metadata,
+        sumstats=sumstats,
+        method=MethodOptions(max_chisq_threshold=50.0),
+    )
+
+    assert len(block_data[0]['sumstats']) == 0
+    assert len(block_data[1]['sumstats']) == len(original_blocks[1])
+    assert block_data[0]['variant_offset'] == 0
+    assert block_data[1]['variant_offset'] == 0
+
+
+def test_binary_annotation_filter_subsets_existing_params(
+    monkeypatch, metadata_path, create_annotations, create_sumstats
+):
+    """Binary filtering keeps parameter rows aligned to retained annotations."""
+    captured = {}
+
+    def fake_run(cls, *args, **kwargs):
+        captured.update(kwargs)
+        model = kwargs['worker_params'][0]
+        return {'parameters': model.params.flatten()}
+
+    monkeypatch.setattr(GraphREML, 'run_serial', classmethod(fake_run))
+
+    sumstats = create_sumstats(str(metadata_path), 'EUR')
+    annotations = create_annotations(metadata_path, 'EUR').with_columns(
+        pl.Series('continuous', np.linspace(0.0, 1.0, len(sumstats))),
+        pl.Series('binary_flag', np.arange(len(sumstats)) % 2),
+    )
+    model = ModelOptions(
+        annotation_columns=['base', 'continuous', 'binary_flag'],
+        params=np.array([[0.1], [0.2], [0.3]]),
+        sample_size=1000,
+        binary_annotations_only=True,
+    )
+    method = MethodOptions(match_by_position=True, run_serial=True)
+
+    result = run_graphREML(
+        model_options=model,
+        method_options=method,
+        summary_stats=sumstats,
+        annotation_data=annotations,
+        ldgm_metadata_path=metadata_path,
+        populations='EUR',
+    )
+
+    assert model.annotation_columns == ['base', 'binary_flag']
+    np.testing.assert_allclose(model.params, np.array([[0.1], [0.3]]))
+    assert captured['num_params'] == 2
+    np.testing.assert_allclose(result['parameters'], np.array([0.1, 0.3]))
+
+
+@pytest.mark.parametrize('missing_mode', ['absent', 'all_null'])
+def test_missing_sample_size_warns_and_defaults_to_one(
+    monkeypatch, metadata_path, create_annotations, create_sumstats, missing_mode
+):
+    """GraphREML warns before falling back to sample_size=1.0."""
+    captured = {}
+
+    def fake_run(cls, *args, **kwargs):
+        captured.update(kwargs)
+        return {'sample_size': kwargs['sample_size']}
+
+    monkeypatch.setattr(GraphREML, 'run_serial', classmethod(fake_run))
+
+    sumstats = create_sumstats(str(metadata_path), 'EUR')
+    if missing_mode == 'absent':
+        sumstats = sumstats.drop('N')
+    else:
+        sumstats = sumstats.with_columns(pl.lit(None).cast(pl.Float64).alias('N'))
+
+    model = ModelOptions(params=np.zeros((1, 1)), sample_size=None)
+    method = MethodOptions(match_by_position=True, run_serial=True)
+
+    with pytest.warns(RuntimeWarning, match='sample_size=1.0'):
+        result = run_graphREML(
+            model_options=model,
+            method_options=method,
+            summary_stats=sumstats,
+            annotation_data=create_annotations(metadata_path, 'EUR'),
+            ldgm_metadata_path=metadata_path,
+            populations='EUR',
+        )
+
+    assert model.sample_size == 1.0
+    assert captured['sample_size'] == 1.0
+    assert result['sample_size'] == 1.0
 
 
 def test_max_z_squared_threshold(metadata_path, create_annotations, create_sumstats):

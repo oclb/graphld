@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from multiprocessing import Value
 from typing import *
+import warnings
 
 import h5py
 import numpy as np
@@ -181,6 +182,65 @@ def _filter_binary_annotations(
     return filtered_annotation_data, cols_to_keep
 
 
+def _validate_model_params(model_options: ModelOptions) -> None:
+    """Validate that graphREML parameters align with active annotations."""
+    expected_shape = (len(model_options.annotation_columns), 1)
+    if model_options.params.shape != expected_shape:
+        raise ValueError(
+            "Model parameter shape must match annotation columns: "
+            f"expected {expected_shape}, got {model_options.params.shape}."
+        )
+
+
+def _subset_model_options_to_annotations(
+    model_options: ModelOptions,
+    original_annotation_columns: List[str],
+    kept_annotation_columns: List[str],
+) -> None:
+    """Subset model annotation columns and parameters after annotation filtering."""
+    if not kept_annotation_columns:
+        raise ValueError("No binary annotations remain after filtering.")
+
+    original_param_shape = (len(original_annotation_columns), 1)
+    if model_options.params.shape != original_param_shape:
+        raise ValueError(
+            "Model parameters must align with the original annotation columns "
+            "before binary annotation filtering: "
+            f"expected {original_param_shape}, got {model_options.params.shape}."
+        )
+
+    kept_indices = [
+        original_annotation_columns.index(column) for column in kept_annotation_columns
+    ]
+    model_options.annotation_columns = kept_annotation_columns
+    model_options.params = model_options.params[kept_indices, :]
+    _validate_model_params(model_options)
+
+
+def _infer_or_default_sample_size(
+    model_options: ModelOptions, merged_data: pl.DataFrame, verbose: bool = False
+) -> None:
+    """Infer sample size from N, or warn and fall back to 1.0."""
+    if model_options.sample_size is not None:
+        return
+
+    if "N" in merged_data.columns:
+        mean_n = merged_data.get_column("N").drop_nulls().mean()
+        if mean_n is not None and np.isfinite(mean_n) and mean_n > 0:
+            model_options.sample_size = float(mean_n)
+            if verbose:
+                print(f"Using sample size N={model_options.sample_size} from sumstats")
+            return
+
+    warnings.warn(
+        "Sample size was not provided and could not be inferred from a valid "
+        "non-null N column; using sample_size=1.0.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
+    model_options.sample_size = 1.0
+
+
 def _surrogate_marker(
     ldgm: PrecisionOperator, missing_index: int, candidates: pl.DataFrame
 ) -> dict:
@@ -310,12 +370,14 @@ class GraphREML(ParallelProcessor):
         if method.max_chisq_threshold is not None:
             max_z2s = [
                 float(np.nanmax(block.select("Z").to_numpy() ** 2))
+                if len(block) > 0
+                else -np.inf
                 for block in sumstats_blocks
             ]
             keep_block = [max_z2 <= method.max_chisq_threshold for max_z2 in max_z2s]
             sumstats_blocks = [
-                block if keep_block else pl.DataFrame([])
-                for block, max_z2 in zip(sumstats_blocks, max_z2s, strict=False)
+                block if keep else block.head(0)
+                for block, keep in zip(sumstats_blocks, keep_block, strict=False)
             ]
             if method.verbose and not all(keep_block):
                 print(
@@ -808,6 +870,9 @@ class GraphREML(ParallelProcessor):
             np.random.seed(seed)
 
         sumstats: pl.DataFrame = block_data["sumstats"]
+        if sumstats is None or len(sumstats) == 0:
+            block_data["Pz"] = None
+            return
 
         Pz: np.ndarray
         if flag.value == FLAGS["INITIALIZE"]:
@@ -1447,9 +1512,15 @@ def run_graphREML(
         raise ValueError("Populations must be provided")
 
     if model_options.binary_annotations_only:
+        original_annotation_columns = list(model_options.annotation_columns)
         annotation_data, model_options.annotation_columns = _filter_binary_annotations(
             annotation_data, model_options.annotation_columns, method_options.verbose
         )
+        _subset_model_options_to_annotations(
+            model_options, original_annotation_columns, model_options.annotation_columns
+        )
+    else:
+        _validate_model_params(model_options)
 
     # Merge summary stats with annotations
     merge_how = "right" if method_options.use_surrogate_markers else "inner"
@@ -1488,18 +1559,7 @@ def run_graphREML(
         max_chisq = (merged_data["Z"] ** 2).max()
         print(f"Max chisq: {max_chisq}")
 
-    # If sample size not provided, try to get it from sumstats
-    if model_options.sample_size is None:
-        if "N" in merged_data.columns:
-            mean_n = merged_data["N"].mean()
-            if mean_n is not None:
-                model_options.sample_size = float(mean_n)
-                if method_options.verbose:
-                    print(
-                        f"Using sample size N={model_options.sample_size} from sumstats"
-                    )
-            else:
-                model_options.sample_size = 1
+    _infer_or_default_sample_size(model_options, merged_data, method_options.verbose)
 
     run_fn = GraphREML.run_serial if method_options.run_serial else GraphREML.run
     return run_fn(
