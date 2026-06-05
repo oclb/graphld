@@ -245,6 +245,17 @@ class PrecisionOperator(LinearOperator):
         y[self._which_indices, :] = b
         return y
 
+    def _reshape_rhs(self, b: np.ndarray) -> np.ndarray:
+        """Convert a right-hand side to a 2-D matrix matching the operator shape."""
+        b = np.asarray(b, dtype=np.result_type(b, self.dtype))
+        if b.ndim == 1:
+            b = b.reshape(-1, 1)
+
+        expected_size = self.shape[0]
+        if b.shape[0] != expected_size:
+            raise ValueError(f"Input vector has shape {b.shape}, but expected size {expected_size}")
+        return b
+
     def _matvec(self, x: np.ndarray) -> np.ndarray:
         """Schur complement matrix-vector multiplication.
 
@@ -379,26 +390,24 @@ class PrecisionOperator(LinearOperator):
         Returns:
             Solution vector x
         """
-        y = self._expand_vector(b)
+        original_shape = np.asarray(b).shape
 
         if method == "direct":
+            y = self._expand_vector(b)
             if not self._cholesky_is_up_to_date:
                 self.factor()
             solution = self._solver(y)
+            if self._which_indices is not None:
+                solution = solution[self._which_indices, :]
         elif method == "pcg":
+            y = self._reshape_rhs(b)
             if self._solver is None:
                 self.factor()  # Some factorization is needed for use as a preconditioner
-            if self._cholesky_is_up_to_date:
-                solution = self._solver(y)
-            else:
-                solution = self._pcg(y, tol=tol, callback=callback, initialization=initialization)
+            solution = self._pcg(y, tol=tol, callback=callback, initialization=initialization)
         else:
             raise ValueError("Method must be either 'direct' or 'pcg'")
 
-        if self._which_indices is not None:
-            solution = solution[self._which_indices, :]
-
-        return solution.reshape(b.shape)
+        return solution.reshape(original_shape)
 
     def _pcg(self,
             b: np.ndarray,
@@ -407,12 +416,24 @@ class PrecisionOperator(LinearOperator):
             initialization: Optional[np.ndarray] = None
             ) -> np.ndarray:
 
-        solution = np.zeros_like(b)
+        def apply_preconditioner(x: np.ndarray) -> np.ndarray:
+            if self._which_indices is None:
+                return self._solver(x)
+
+            y = np.zeros(self._matrix.shape[0], dtype=x.dtype)
+            y[self._which_indices] = x
+            return self._solver(y)[self._which_indices]
+
+        solution = np.zeros(b.shape, dtype=np.result_type(b, self.dtype))
         for i in range(b.shape[1]):
             # Use conjugate gradient for each right-hand side
             x0 = initialization[:,i] if initialization is not None else None
 
-            preconditioner = LinearOperator((b.shape[0], b.shape[0]), matvec=self._solver)
+            preconditioner = LinearOperator(
+                self.shape,
+                matvec=apply_preconditioner,
+                dtype=self.dtype
+            )
             x, info = cg(self, b[:, i], rtol=tol, callback=callback, x0=x0, M=preconditioner)
             if info != 0:
                 raise RuntimeError(f"Conjugate gradient failed to converge for column {i}")
