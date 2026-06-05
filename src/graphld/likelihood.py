@@ -83,7 +83,10 @@ def gaussian_likelihood_gradient(
     # Compute gradient diagonal elements
     node_grad = -0.5 * (minv_diag.flatten() - b.flatten()**2)
 
-    return node_grad if del_M_del_a is None else node_grad @ del_M_del_a
+    if del_M_del_a is None:
+        return node_grad
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        return node_grad @ del_M_del_a
 
 
 def gaussian_likelihood_hessian(
@@ -135,7 +138,8 @@ def gaussian_likelihood_hessian(
     minv_b_scaled = M.solve(b_scaled)
 
     # Compute Hessian: -1/2 * b_scaled^T * M^(-1) * b_scaled
-    hess = -0.5 * (b_scaled.T @ minv_b_scaled)
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        hess = -0.5 * (b_scaled.T @ minv_b_scaled)
 
     return hess
 

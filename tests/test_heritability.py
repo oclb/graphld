@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+import warnings
 
 import h5py
 import numpy as np
@@ -17,7 +18,6 @@ from graphld.heritability import (
     partition_variants,
     run_graphREML,
 )
-from graphld.heritability_testing import GraphREML as TestingGraphREML
 from graphld.io import read_ldgm_metadata
 
 
@@ -68,6 +68,19 @@ def test_softmax_link_function():
     print(val)
     expected = [[0.0881], [0.0711]]
     assert np.allclose(val, expected, rtol=1e-3), f"Expected {expected}, got {val}"
+
+
+def test_softmax_link_grad_large_positive_has_no_invalid_warning():
+    """Large positive rows should not evaluate the discarded negative branch."""
+    _, link_fn_grad, _ = _get_softmax_link_function(denominator=1)
+    annot = np.ones((2, 1))
+    theta = np.array([[1000.0]])
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        grad = link_fn_grad(annot, theta)
+
+    np.testing.assert_allclose(grad, annot)
 
 
 def test_max_z_squared_threshold_discards_high_chisq_blocks(
@@ -137,9 +150,9 @@ def test_max_z_squared_threshold_ignores_blocks_with_no_finite_z(
     assert len(block_data[0]['sumstats']) == len(first_block)
 
 
-def test_testing_module_jackknife_allows_empty_filtered_blocks():
-    """The mirrored module handles duplicate offsets from filtered empty blocks."""
-    assignments = TestingGraphREML._get_variant_jackknife_assignments(
+def test_jackknife_allows_empty_filtered_blocks():
+    """GraphREML handles duplicate offsets from filtered empty blocks."""
+    assignments = GraphREML._get_variant_jackknife_assignments(
         [0, 0, 3], num_groups=2
     )
 

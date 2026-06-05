@@ -312,10 +312,11 @@ def run_score_test(trait_data: TraitData,
 
     # Compute single-block derivatives
     U_block = [] # Derivative of the log-likelihood for each test annotation
-    for i in range(noBlocks):
-        block = range(block_boundaries[i], block_boundaries[i+1])
-        Ui = grad[block].reshape(1,-1) @ test_annot[block, :]
-        U_block.append(Ui)
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        for i in range(noBlocks):
+            block = range(block_boundaries[i], block_boundaries[i+1])
+            Ui = grad[block].reshape(1,-1) @ test_annot[block, :]
+            U_block.append(Ui)
     U_total = sum(U_block)
 
     # Compute leave-one-out derivatives

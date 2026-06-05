@@ -280,9 +280,10 @@ def _surrogate_marker(
 
 def softmax_robust(x: np.ndarray) -> np.ndarray:
     """Numerically stable softmax implementation."""
-    y = x + np.log1p(np.exp(-x))
-    mask = x < 0
-    y[mask] = np.log1p(np.exp(x[mask]))
+    with np.errstate(over="ignore"):
+        y = x + np.log1p(np.exp(-x))
+        mask = x < 0
+        y[mask] = np.log1p(np.exp(x[mask]))
     return y
 
 
@@ -297,8 +298,6 @@ def _get_softmax_link_function(denominator: int) -> tuple[Callable, Callable, Ca
         - Link function mapping (annot, theta) to per-SNP heritabilities
         - Gradient of the link function
     """
-    np.seterr(over="ignore")
-
     def _link_arg(annot: np.ndarray, theta: np.ndarray) -> np.ndarray:
         if annot.ndim == 0:
             return annot * theta
@@ -316,9 +315,15 @@ def _get_softmax_link_function(denominator: int) -> tuple[Callable, Callable, Ca
     def _link_fn_grad(annot: np.ndarray, theta: np.ndarray) -> np.ndarray:
         """Gradient of softmax link function."""
         x = _link_arg(annot, theta)
-        result = annot / denominator / (1 + np.exp(-x))
-        equivalent_result = annot / denominator * np.exp(x) / (1 + np.exp(x))
-        result[x.ravel() < 0, ...] = equivalent_result[x.ravel() < 0, ...]
+        with np.errstate(over="ignore"):
+            result = annot / denominator / (1 + np.exp(-x))
+        mask = x.ravel() < 0
+        if np.any(mask):
+            x_neg = x[mask]
+            annot_neg = annot if annot.ndim == 0 else annot[mask, ...]
+            result[mask, ...] = (
+                annot_neg / denominator * np.exp(x_neg) / (1 + np.exp(x_neg))
+            )
         return result
 
     def _link_fn_hess(annot: np.ndarray, theta: np.ndarray) -> np.ndarray:
@@ -332,8 +337,9 @@ def _get_softmax_link_function(denominator: int) -> tuple[Callable, Callable, Ca
 
 def _project_out(y: np.ndarray, x: np.ndarray):
     """Projects out x from y in place."""
-    beta = np.linalg.solve(x.T @ x, x.T @ y.reshape(-1, 1))
-    y -= (x @ beta).reshape(y.shape)
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        beta = np.linalg.solve(x.T @ x, x.T @ y.reshape(-1, 1))
+        y -= (x @ beta).reshape(y.shape)
     # assert np.allclose(x.T @ y, np.zeros(x.shape[1]), rtol=1e-3)
     print(f"Sum of y: {np.sum(y)}")
     print(f"Shape of y: {y.shape}")
@@ -1167,11 +1173,12 @@ class GraphREML(ParallelProcessor):
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Computes the heritability of each annotation based on the given h2 values."""
         annot_mat = annot.to_numpy().T
-        annot_h2 = annot_mat @ variant_h2
-        annot_size = np.sum(annot_mat, axis=1)
-        annot_enrichment = (
-            annot_size[ref_col] * annot_h2 / (annot_h2[ref_col] * annot_size)
-        )
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+            annot_h2 = annot_mat @ variant_h2
+            annot_size = np.sum(annot_mat, axis=1)
+            annot_enrichment = (
+                annot_size[ref_col] * annot_h2 / (annot_h2[ref_col] * annot_size)
+            )
 
         return annot_h2, annot_enrichment
 
