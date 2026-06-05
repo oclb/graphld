@@ -12,10 +12,12 @@ from graphld.heritability import (
     GraphREML,
     MethodOptions,
     ModelOptions,
+    _block_max_chisq,
     _get_softmax_link_function,
     partition_variants,
     run_graphREML,
 )
+from graphld.heritability_testing import GraphREML as TestingGraphREML
 from graphld.io import read_ldgm_metadata
 
 
@@ -108,6 +110,40 @@ def test_max_z_squared_threshold_errors_when_all_blocks_discarded(
             sumstats=sumstats,
             method=MethodOptions(max_chisq_threshold=0.0),
         )
+
+
+def test_max_z_squared_threshold_ignores_blocks_with_no_finite_z(
+    metadata_path, create_sumstats
+):
+    """Blocks with no finite Z do not emit nanmax warnings or fail filtering."""
+    metadata = read_ldgm_metadata(metadata_path, populations='EUR')
+    sumstats = create_sumstats(str(metadata_path), 'EUR')
+    first_block = partition_variants(metadata, sumstats)[0]
+    positions = first_block.get_column('POS').to_list()
+    sumstats = sumstats.with_columns(
+        pl.when(pl.col('POS').is_in(positions))
+        .then(float('nan'))
+        .otherwise(pl.col('Z'))
+        .alias('Z')
+    )
+
+    block_data = GraphREML.prepare_block_data(
+        metadata,
+        sumstats=sumstats,
+        method=MethodOptions(max_chisq_threshold=50.0),
+    )
+
+    assert _block_max_chisq(block_data[0]['sumstats']) == -np.inf
+    assert len(block_data[0]['sumstats']) == len(first_block)
+
+
+def test_testing_module_jackknife_allows_empty_filtered_blocks():
+    """The mirrored module handles duplicate offsets from filtered empty blocks."""
+    assignments = TestingGraphREML._get_variant_jackknife_assignments(
+        [0, 0, 3], num_groups=2
+    )
+
+    np.testing.assert_array_equal(assignments, np.array([1, 1, 1]))
 
 
 def test_binary_annotation_filter_subsets_existing_params(

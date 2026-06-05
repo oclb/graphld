@@ -243,6 +243,17 @@ def _infer_or_default_sample_size(
     model_options.sample_size = 1.0
 
 
+def _block_max_chisq(block: pl.DataFrame) -> float:
+    """Return the maximum finite Z^2 in a block, or -inf if none exist."""
+    if len(block) == 0:
+        return -np.inf
+    z_values = block.get_column("Z").drop_nulls().to_numpy()
+    z_values = z_values[np.isfinite(z_values)]
+    if len(z_values) == 0:
+        return -np.inf
+    return float(np.max(z_values**2))
+
+
 def _surrogate_marker(
     ldgm: PrecisionOperator, missing_index: int, candidates: pl.DataFrame
 ) -> dict:
@@ -370,12 +381,7 @@ class GraphREML(ParallelProcessor):
 
         # Filter blocks based on max Z² threshold
         if method.max_chisq_threshold is not None:
-            max_z2s = [
-                float(np.nanmax(block.select("Z").to_numpy() ** 2))
-                if len(block) > 0
-                else -np.inf
-                for block in sumstats_blocks
-            ]
+            max_z2s = [_block_max_chisq(block) for block in sumstats_blocks]
             keep_block = [max_z2 <= method.max_chisq_threshold for max_z2 in max_z2s]
             sumstats_blocks = [
                 block if keep else block.head(0)
