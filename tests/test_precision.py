@@ -117,10 +117,22 @@ def test_precision_operator_solve():
     residual = np.linalg.norm(P_sub @ x_sub - b_sub)
     assert residual < 1e-5  # Use a more reasonable tolerance for float32
 
+    # Function to count iterations
+    def make_callback():
+        iterations = [0]
+        def callback(xk):
+            iterations[0] += 1
+        return callback, iterations
+
     # Test PCG solver
     x_pcg = P.solve(b, method='pcg')
     residual = np.linalg.norm(P @ x_pcg - b)
     assert residual < 1e-5  # PCG tolerance is typically larger
+
+    callback, iterations = make_callback()
+    x_pcg_callback = P.solve(b, method='pcg', callback=callback)
+    np.testing.assert_array_almost_equal(x_pcg_callback, dense_solution, decimal=5)
+    assert iterations[0] > 0
 
     # Test multiple right-hand sides
     B = np.array([[1.0, 2.0], [1.0, 2.0], [1.0, 2.0]], dtype=np.float32)
@@ -128,13 +140,6 @@ def test_precision_operator_solve():
     assert X.shape == (3, 2)
     residual = np.linalg.norm(P @ X - B)
     assert residual < 1e-5
-
-    # Function to count iterations
-    def make_callback():
-        iterations = [0]
-        def callback(xk):
-            iterations[0] += 1
-        return callback, iterations
 
     # Test with different perturbation sizes
     perturbations = [0.1, 1.0, 10.0]  # Small, medium, large perturbations
@@ -152,6 +157,65 @@ def test_precision_operator_solve():
         x_pcg_perturbed = P_perturbed.solve(b, method='pcg', callback=callback)
         residual = np.linalg.norm(P_perturbed @ x_pcg_perturbed - b)
         assert residual < 1e-5  # Should still converge, might take more iterations
+
+def test_precision_operator_pcg_subset_with_stale_factor():
+    """Test PCG on subsetted operators after the preconditioner becomes stale."""
+    data = np.array([
+        4.0, -1.0,
+        -1.0, 4.0, -1.0,
+        -1.0, 4.0, -1.0,
+        -1.0, 4.0,
+    ], dtype=np.float64)
+    indices = np.array([0, 1, 0, 1, 2, 1, 2, 3, 2, 3])
+    indptr = np.array([0, 2, 5, 8, 10])
+    matrix = csc_matrix((data, indices, indptr), shape=(4, 4))
+    variant_info = pl.DataFrame({
+        'variant_id': ['rs1', 'rs2', 'rs3', 'rs4'],
+        'position': [1, 2, 3, 4],
+        'chromosome': ['1', '1', '1', '1']
+    })
+
+    P = PrecisionOperator(matrix.copy(), variant_info)
+    P_sub = P[[0, 2, 3]]
+    P_sub.factor()
+    P_sub.update_matrix(np.array([0.25, 0.5, 0.75]))
+
+    b = np.array([1.0, -0.5, 2.0])
+    x_pcg = P_sub.solve(b, method='pcg', tol=1e-10)
+
+    assert x_pcg.shape == b.shape
+    np.testing.assert_allclose(P_sub @ x_pcg, b, rtol=1e-8, atol=1e-8)
+
+def test_precision_operator_inverse_diagonal_subset_with_stale_factor():
+    """Test stochastic inverse-diagonal estimates on a subsetted stale-factor operator."""
+    data = np.array([
+        4.0, -1.0,
+        -1.0, 4.0, -1.0,
+        -1.0, 4.0,
+    ], dtype=np.float64)
+    indices = np.array([0, 1, 0, 1, 2, 1, 2])
+    indptr = np.array([0, 2, 5, 7])
+    matrix = csc_matrix((data, indices, indptr), shape=(3, 3))
+    variant_info = pl.DataFrame({
+        'variant_id': ['rs1', 'rs2', 'rs3'],
+        'position': [1, 2, 3],
+        'chromosome': ['1', '1', '1']
+    })
+
+    P = PrecisionOperator(matrix.copy(), variant_info)
+    P_sub = P[[0, 2]]
+    P_sub.factor()
+    P_sub.update_matrix(np.array([0.5, 0.25]))
+
+    probes = np.array([[1.0, 1.0], [1.0, -1.0]])
+    exact_diag = P_sub.inverse_diagonal(method='exact')
+    hutch_diag, hutch_y = P_sub.inverse_diagonal(
+        method='hutchinson',
+        initialization=(probes, probes.copy()),
+    )
+
+    assert hutch_y.shape == probes.shape
+    np.testing.assert_allclose(hutch_diag, exact_diag, rtol=1e-8, atol=1e-8)
 
 def test_precision_operator_update():
     """Test updating the precision matrix."""
