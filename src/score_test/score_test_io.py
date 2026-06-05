@@ -243,7 +243,7 @@ def load_annotations(
     annotations = []
     for chromosome in chromosomes:
         file_pattern = f"*.{chromosome}.annot"
-        matching_files = Path(annot_path).glob(file_pattern)
+        matching_files = sorted(Path(annot_path).glob(file_pattern))
 
         # Read all matching files for this chromosome
         dfs = []

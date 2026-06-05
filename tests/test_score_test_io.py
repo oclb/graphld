@@ -7,6 +7,7 @@ import numpy as np
 import polars as pl
 import pytest
 
+from score_test import score_test_io
 from score_test.score_test_io import (
     load_variant_data,
     load_trait_data,
@@ -251,6 +252,45 @@ class TestLoadAnnotations:
         # CHR, BP, SNP, CM should not be duplicated
         assert result.columns.count('CHR') == 1
         assert result.columns.count('SNP') == 1
+
+    def test_load_annotations_file_order_is_deterministic(self, tmp_path, monkeypatch):
+        """Shared columns come from the lexicographically first file."""
+        annot_dir = tmp_path / "annot"
+        annot_dir.mkdir()
+
+        first_file = annot_dir / "a_reference.1.annot"
+        first_df = pl.DataFrame({
+            'CHR': [1, 1],
+            'BP': [1000, 2000],
+            'SNP': ['rs_first_1', 'rs_first_2'],
+            'CM': [0.1, 0.2],
+            'annot_first': [1, 0]
+        })
+        first_df.write_csv(first_file, separator='\t')
+
+        later_file = annot_dir / "z_custom.1.annot"
+        later_df = pl.DataFrame({
+            'CHR': [1, 1],
+            'BP': [9000, 8000],
+            'SNP': ['rs_later_1', 'rs_later_2'],
+            'CM': [9.1, 9.2],
+            'annot_later': [20.5, 10.5]
+        })
+        later_df.write_csv(later_file, separator='\t')
+
+        original_glob = score_test_io.Path.glob
+
+        def reverse_glob(path, pattern):
+            return reversed(sorted(original_glob(path, pattern)))
+
+        monkeypatch.setattr(score_test_io.Path, "glob", reverse_glob)
+
+        result = load_annotations(str(annot_dir), chromosome=1, add_positions=False)
+
+        assert result['SNP'].to_list() == ['rs_first_1', 'rs_first_2']
+        assert result['BP'].to_list() == [1000, 2000]
+        assert result['CM'].to_list() == [0.1, 0.2]
+        assert result['annot_later'].to_list() == [20.5, 10.5]
 
 
 class TestLoadVariantAnnotations:
