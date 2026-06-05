@@ -273,7 +273,7 @@ class GraphREML(ParallelProcessor):
         return array.sum(axis=0)
 
     @classmethod
-    def prepare_block_data(cls, metadata: pl.DataFrame, **kwargs) -> list[tuple]:
+    def prepare_block_data(cls, metadata: pl.DataFrame, **kwargs: Any) -> list[tuple]:
         """Prepare block-specific data for processing.
 
         Args:
@@ -350,7 +350,7 @@ class GraphREML(ParallelProcessor):
 
     @staticmethod
     def create_shared_memory(
-        metadata: pl.DataFrame, block_data: list[tuple], **kwargs
+        metadata: pl.DataFrame, block_data: list[tuple], **kwargs: Any
     ) -> SharedData:
         """Create output array.
 
@@ -1427,29 +1427,21 @@ def run_graphREML(
     ldgm_metadata_path: str,
     populations: Union[str, List[str]] = None,
     chromosomes: Optional[Union[int, List[int]]] = None,
-):
-    """Wrapper function for GraphREML.
+) -> dict[str, Any]:
+    """Run GraphREML heritability partitioning.
 
     Args:
-        model: Model instance containing parameters and settings
+        model_options: Model options containing annotations and parameterization.
+        method_options: Method options controlling optimization and processing.
         summary_stats: DataFrame containing GWAS summary statistics
         annotation_data: DataFrame containing variant annotations
         ldgm_metadata_path: Path to LDGM metadata file
         populations: Optional list of populations to include
         chromosomes: Optional list of chromosomes to include
-        num_processes: Optional number of processes for parallel computation
-        max_iterations: Maximum number of iterations
-        convergence_tol: Convergence tolerance
-        match_by_position: If True, match variants by position instead of variant ID
-        run_in_serial: If True, run in serial instead of parallel
-        num_iterations: Number of repetitions
 
     Returns:
-        Dictionary containing:
-        - estimated parameters
-        - heritability estimates
-        - standard errors
-        - convergence diagnostics
+        dict: Estimated parameters, heritability estimates, standard errors,
+            and convergence diagnostics.
     """
     if populations is None:
         raise ValueError("Populations must be provided")

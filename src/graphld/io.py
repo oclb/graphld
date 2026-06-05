@@ -133,10 +133,8 @@ def merge_alleles(anc_alleles: pl.Series, deriv_alleles: pl.Series,
         alt_alleles: Alternative alleles from summary statistics
 
     Returns:
-        Series of integers indicating phase:
-         1: Alleles match exactly
-        -1: Alleles match but are swapped
-         0: Alleles do not match
+        Series of integers indicating phase, where 1 means alleles match exactly,
+        -1 means alleles match but are swapped, and 0 means alleles do not match.
     """
     # Convert to numpy arrays for faster comparison
     anc = anc_alleles.to_numpy()
@@ -597,9 +595,9 @@ def load_annotations(annot_path: str,
     Args:
         annot_path: Path to directory containing annotation files
         chromosome: Specific chromosome number, or None for all chromosomes
-        infer_schema_length: Number of rows to infer schema from. Runs faster if this is smaller
-        but will throw an error if too small because floating-point columns will be
-        cast as integers.
+        infer_schema_length: Number of rows to infer schema from. Runs faster if this is
+            smaller, but will throw an error if too small because floating-point columns
+            will be cast as integers.
         file_pattern: Filename pattern to match, with {chrom} as a placeholder for chromosome number
         exclude_bed: If True, skip loading .bed files from the annotations directory
 

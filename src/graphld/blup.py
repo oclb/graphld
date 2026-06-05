@@ -14,7 +14,7 @@ class BLUP(ParallelProcessor):
 
 
     @classmethod
-    def prepare_block_data(cls, metadata: pl.DataFrame, **kwargs) -> list[tuple]:
+    def prepare_block_data(cls, metadata: pl.DataFrame, **kwargs: Any) -> list[tuple]:
         """Split summary statistics into blocks whose positions match the LDGMs.
         
         Args:
@@ -36,7 +36,7 @@ class BLUP(ParallelProcessor):
         return list(zip(sumstats_blocks, cumulative_num_variants, strict=False))
 
     @staticmethod
-    def create_shared_memory(metadata: pl.DataFrame, block_data: list[tuple], **kwargs) -> SharedData:
+    def create_shared_memory(metadata: pl.DataFrame, block_data: list[tuple], **kwargs: Any) -> SharedData:
         """Create output array with length number of variants in the summary statistics that 
         migtht match to one of the blocks.
         
@@ -98,7 +98,7 @@ class BLUP(ParallelProcessor):
         shared_data['beta', block_slice] = beta_reshaped
 
     @classmethod
-    def supervise(cls, manager: WorkerManager, shared_data: Dict[str, Any], block_data: list, **kwargs) -> pl.DataFrame:
+    def supervise(cls, manager: WorkerManager, shared_data: Dict[str, Any], block_data: list, **kwargs: Any) -> pl.DataFrame:
         """Supervise worker processes and collect results.
         
         Args:
@@ -159,23 +159,16 @@ class BLUP(ParallelProcessor):
 
         return result
 
-def run_blup(*args, **kwargs):
-    """
-    Compute Best Linear Unbiased Prediction (BLUP) weights.
+def run_blup(*args: Any, **kwargs: Any) -> pl.DataFrame:
+    """Compute Best Linear Unbiased Prediction (BLUP) weights.
+
+    Positional and keyword arguments are forwarded to :meth:`BLUP.compute_blup`.
 
     Args:
-        ldgm_metadata_path (str): Path to LDGM metadata file
-        sumstats (pl.DataFrame): Summary statistics DataFrame
-        heritability (float): Heritability parameter (between 0 and 1)
-        num_samples (Optional[int], optional): Number of samples. Defaults to None.
-        num_processes (Optional[int], optional): Number of processes for parallel computation. Defaults to None.
-        run_in_serial (bool, optional): Whether to run in serial mode. Defaults to False.
-        chromosome (Optional[int], optional): Chromosome to filter. Defaults to None.
-        population (Optional[str], optional): Population to filter. Defaults to None.
-        verbose (bool, optional): Whether to print verbose output. Defaults to False.
-        quiet (bool, optional): Whether to suppress all output except errors. Defaults to False.
+        *args: Positional arguments for :meth:`BLUP.compute_blup`.
+        **kwargs: Keyword arguments for :meth:`BLUP.compute_blup`.
 
     Returns:
-        pl.DataFrame: DataFrame with BLUP weights and associated statistics
+        DataFrame with BLUP weights and associated statistics.
     """
     return BLUP.compute_blup(*args, **kwargs)

@@ -184,7 +184,7 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
     def create_shared_memory(
         metadata: pl.DataFrame,
         block_data: list[tuple],
-        **kwargs
+        **kwargs: Any
     ) -> SharedData:
         """Create shared memory arrays for simulation.
 
@@ -216,7 +216,7 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
         return shared
 
     @classmethod
-    def prepare_block_data(cls, metadata: pl.DataFrame, **kwargs) -> list[tuple]:
+    def prepare_block_data(cls, metadata: pl.DataFrame, **kwargs: Any) -> list[tuple]:
         """Prepare block-specific data for processing.
 
         Args:
@@ -299,7 +299,7 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
         manager: WorkerManager,
         shared_data: Dict[str, Any],
         block_data: list,
-        **kwargs
+        **kwargs: Any
     ) -> pl.DataFrame:
         """Supervise worker processes and collect results.
 

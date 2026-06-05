@@ -1,7 +1,7 @@
 """LD clumping implementation using ParallelProcessor framework."""
 
 from multiprocessing import Value
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union
 
 import numpy as np
 import polars as pl
@@ -15,7 +15,7 @@ class LDClumper(ParallelProcessor):
     """Fast LD clumping to find unlinked lead SNPs from GWAS summary statistics."""
 
     @classmethod
-    def prepare_block_data(cls, metadata: pl.DataFrame, **kwargs) -> list[tuple]:
+    def prepare_block_data(cls, metadata: pl.DataFrame, **kwargs: Any) -> list[tuple]:
         """Split summary statistics into blocks whose positions match the LDGMs.
         
         Args:
@@ -37,7 +37,7 @@ class LDClumper(ParallelProcessor):
         return list(zip(sumstats_blocks, cumulative_num_variants, strict=False))
 
     @staticmethod
-    def create_shared_memory(metadata: pl.DataFrame, block_data: list[tuple], **kwargs) -> SharedData:
+    def create_shared_memory(metadata: pl.DataFrame, block_data: list[tuple], **kwargs: Any) -> SharedData:
         """Create output array with length number of variants in the summary statistics.
         
         Args:
@@ -145,7 +145,7 @@ class LDClumper(ParallelProcessor):
     @classmethod
     def supervise(cls, manager: Union[WorkerManager, SerialManager],
                 shared_data: SharedData,
-                block_data: list, **kwargs) -> pl.DataFrame:
+                block_data: list, **kwargs: Any) -> pl.DataFrame:
         """Monitor workers and process results.
 
         Args:
@@ -217,23 +217,16 @@ class LDClumper(ParallelProcessor):
         return result
 
 
-def run_clump(*args, **kwargs):
-    """
-    Perform LD-based clumping on summary statistics.
+def run_clump(*args: Any, **kwargs: Any) -> pl.DataFrame:
+    """Perform LD-based clumping on summary statistics.
+
+    Positional and keyword arguments are forwarded to :meth:`LDClumper.clump`.
 
     Args:
-        ldgm_metadata_path (str): Path to LDGM metadata file
-        sumstats (pl.DataFrame): Summary statistics DataFrame
-        min_chisq (float, optional): Minimum chi-squared threshold. Defaults to 5.0.
-        max_rsq (float, optional): Maximum R-squared threshold. Defaults to 0.1.
-        num_processes (Optional[int], optional): Number of processes for parallel computation. Defaults to None.
-        run_in_serial (bool, optional): Whether to run in serial mode. Defaults to False.
-        chromosome (Optional[int], optional): Chromosome to filter. Defaults to None.
-        population (Optional[str], optional): Population to filter. Defaults to None.
-        verbose (bool, optional): Whether to print verbose output. Defaults to False.
-        quiet (bool, optional): Whether to suppress all output except errors. Defaults to False.
+        *args: Positional arguments for :meth:`LDClumper.clump`.
+        **kwargs: Keyword arguments for :meth:`LDClumper.clump`.
 
     Returns:
-        pl.DataFrame: DataFrame with clumped summary statistics and index variant information
+        DataFrame with clumped summary statistics and index variant information.
     """
     return LDClumper.clump(*args, **kwargs)

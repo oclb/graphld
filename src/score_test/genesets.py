@@ -150,10 +150,10 @@ def convert_gene_set_to_gene_annotations(gene_sets: dict[str, list[str]],
     return pl.DataFrame(columns)
 
 
-def convert_gene_to_variant_annotations(gene_annot,
+def convert_gene_to_variant_annotations(gene_annot: object,
                                         variant_table: pl.DataFrame,
                                         gene_table: pl.DataFrame,
-                                        nearest_weights: np.ndarray):
+                                        nearest_weights: np.ndarray) -> object:
     """Convert gene annotations to variant-level annotations.
     
     Can accept either:
@@ -167,8 +167,8 @@ def convert_gene_to_variant_annotations(gene_annot,
         nearest_weights: Weights for k-nearest genes
         
     Returns:
-        VariantAnnot object with variant-level annotations (if gene_annot is GeneAnnot)
-        or DataFrame with variant-level annotations in LDSC format (if gene_annot is dict)
+        VariantAnnot object with variant-level annotations, if gene_annot is GeneAnnot.
+        DataFrame with variant-level annotations in LDSC format, if gene_annot is dict.
     """
     # Import at runtime to avoid circular import
     try:
@@ -218,5 +218,4 @@ def convert_gene_to_variant_annotations(gene_annot,
         return VariantAnnot(df_annot, annot_names)
     else:
         return df_annot
-
 

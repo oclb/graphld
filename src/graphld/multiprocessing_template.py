@@ -215,7 +215,7 @@ class ParallelProcessor(ABC):
     @classmethod
     @abstractmethod
     def create_shared_memory(
-        cls, metadata: pl.DataFrame, block_data: list, **kwargs
+        cls, metadata: pl.DataFrame, block_data: list, **kwargs: Any
     ) -> 'SharedData':
         """Initialize shared memory and data structures.
 
@@ -233,7 +233,7 @@ class ParallelProcessor(ABC):
     @abstractmethod
     def supervise(cls, manager: Union[WorkerManager, SerialManager],
                 shared_data: SharedData,
-                block_data: list, **kwargs) -> Any:
+                block_data: list, **kwargs: Any) -> Any:
         """Monitor workers and process results.
 
         Args:
@@ -270,7 +270,7 @@ class ParallelProcessor(ABC):
         pass
 
     @classmethod
-    def prepare_block_data(cls, metadata: pl.DataFrame, **kwargs) -> list:
+    def prepare_block_data(cls, metadata: pl.DataFrame, **kwargs: Any) -> list:
         """Prepare data specific to each block for processing.
 
         This method should return a list of length equal to the number of blocks,
@@ -356,7 +356,7 @@ class ParallelProcessor(ABC):
         Args:
             ldgm: the LDGM that was previously loaded, or None
             offset: In shared data, where to start processing
-            files: List of LDGM files to process
+            file: LDGM file to process
             data: List of block-specific data
             flag: Shared flag for worker control
             shared_data: Shared memory data
@@ -430,7 +430,7 @@ class ParallelProcessor(ABC):
             chromosomes: Optional[Union[int, List[int]]] = None,
             num_processes: Optional[int] = None,
             worker_params: Any = None,
-            **kwargs) -> Any:
+            **kwargs: Any) -> Any:
         """Run parallel computation.
 
         Args:
@@ -508,7 +508,7 @@ class ParallelProcessor(ABC):
             chromosomes: Optional[Union[int, List[int]]] = None,
             num_processes: Optional[int] = None,
             worker_params: Any = None,
-            **kwargs) -> Any:
+            **kwargs: Any) -> Any:
         """Run parallel computation.
 
         Args:
