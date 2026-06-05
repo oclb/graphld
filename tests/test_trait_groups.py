@@ -11,9 +11,8 @@ from score_test.score_test_io import (
     load_variant_data,
     load_trait_data,
     create_random_variant_annotations,
-    get_trait_names,
 )
-from score_test.score_test import run_score_test
+from score_test.score_test import TraitData, run_score_test
 from score_test.meta_analysis import MetaAnalysis
 
 
@@ -32,6 +31,79 @@ def setup_trait_groups(test_hdf5_path):
     }
     save_trait_groups(str(test_hdf5_path), groups)
     return groups
+
+
+def test_trait_data_exclude_cols_handles_nullable_keys():
+    """TraitData allows keys and annot_names to be omitted."""
+    trait_data = TraitData(
+        df=pl.DataFrame({
+            'CHR': [1],
+            'POS': [1],
+            'gradient': [0.1],
+            'jackknife_blocks': [0],
+        })
+    )
+
+    assert trait_data.annot_names is None
+    assert trait_data.keys is None
+    assert trait_data.exclude_cols == {'CHR', 'POS', 'jackknife_blocks', 'gradient', 'hessian'}
+
+
+def test_trait_data_exclude_cols_includes_keys():
+    """TraitData excludes merge keys when annotation names are inferred."""
+    trait_data = TraitData(
+        df=pl.DataFrame({
+            'RSID': ['rs1'],
+            'CHR': [1],
+            'POS': [1],
+            'gradient': [0.1],
+            'jackknife_blocks': [0],
+        }),
+        keys=['RSID'],
+    )
+
+    assert trait_data.exclude_cols == {'RSID', 'CHR', 'POS', 'jackknife_blocks', 'gradient', 'hessian'}
+
+
+def test_meta_analysis_initializes_arrays_on_first_update():
+    """MetaAnalysis starts empty and becomes array-backed after update()."""
+    meta = MetaAnalysis()
+    point_estimates = np.array([[2.0, 4.0]])
+    jackknife_estimates = np.array([
+        [1.0, 2.0],
+        [2.0, 4.0],
+        [3.0, 6.0],
+    ])
+
+    assert meta.point_estimates is None
+    assert meta.jackknife_estimates is None
+
+    meta.update(point_estimates, jackknife_estimates)
+
+    precision = 1 / np.var(jackknife_estimates, axis=0)
+    np.testing.assert_allclose(meta.point_estimates, precision * point_estimates)
+    np.testing.assert_allclose(meta.jackknife_estimates, precision * jackknife_estimates)
+
+
+def test_meta_analysis_accumulates_multiple_updates():
+    """MetaAnalysis keeps array shapes stable while accumulating estimates."""
+    meta = MetaAnalysis()
+    point_estimates = np.array([[2.0, 4.0]])
+    jackknife_estimates = np.array([
+        [1.0, 2.0],
+        [2.0, 4.0],
+        [3.0, 6.0],
+    ])
+
+    meta.update(point_estimates, jackknife_estimates)
+    first_point_estimates = meta.point_estimates.copy()
+    meta.update(point_estimates, jackknife_estimates)
+
+    np.testing.assert_allclose(meta.point_estimates, first_point_estimates * 2)
+    assert meta.point_estimates.shape == (1, 2)
+    assert meta.jackknife_estimates.shape == (3, 2)
+    assert np.all(np.isfinite(meta.std))
+    assert np.all(np.isfinite(meta.z_scores))
 
 
 def test_save_and_load_trait_groups(test_hdf5_path):
@@ -245,9 +317,6 @@ def test_meta_analysis_precision_weighting(test_hdf5_path, setup_trait_groups):
         meta.update(trait_results[trait_name]['point'], trait_results[trait_name]['jackknife'])
     
     meta_z = meta.z_scores.ravel()[0]
-    
-    # Meta-analysis z-score should be different from simple average
-    avg_z = np.mean([trait_results['bmi']['z_score'][0], trait_results['prca']['z_score'][0]])
     
     # They should be different (unless by chance the precisions are equal)
     # Just verify meta-analysis produces a valid result
