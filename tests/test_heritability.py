@@ -6,14 +6,18 @@ import tempfile
 import h5py
 import numpy as np
 import polars as pl
+import pytest
 
 from graphld.heritability import (
+    GraphREML,
     MethodOptions,
     ModelOptions,
+    _block_max_chisq,
     _get_softmax_link_function,
     partition_variants,
     run_graphREML,
 )
+from graphld.heritability_testing import GraphREML as TestingGraphREML
 from graphld.io import read_ldgm_metadata
 
 
@@ -64,6 +68,196 @@ def test_softmax_link_function():
     print(val)
     expected = [[0.0881], [0.0711]]
     assert np.allclose(val, expected, rtol=1e-3), f"Expected {expected}, got {val}"
+
+
+def test_max_z_squared_threshold_discards_high_chisq_blocks(
+    metadata_path, create_sumstats
+):
+    """Regression test that max_chisq_threshold is applied per block."""
+    metadata = read_ldgm_metadata(metadata_path, populations='EUR')
+    sumstats = create_sumstats(str(metadata_path), 'EUR')
+    original_blocks = partition_variants(metadata, sumstats)
+    first_pos = original_blocks[0].select('POS').head(1).item()
+    sumstats = sumstats.with_columns(
+        pl.when(pl.col('POS') == first_pos)
+        .then(10.0)
+        .otherwise(pl.col('Z'))
+        .alias('Z')
+    )
+
+    block_data = GraphREML.prepare_block_data(
+        metadata,
+        sumstats=sumstats,
+        method=MethodOptions(max_chisq_threshold=50.0),
+    )
+
+    assert len(block_data[0]['sumstats']) == 0
+    assert len(block_data[1]['sumstats']) == len(original_blocks[1])
+    assert block_data[0]['variant_offset'] == 0
+    assert block_data[1]['variant_offset'] == 0
+
+
+def test_max_z_squared_threshold_errors_when_all_blocks_discarded(
+    metadata_path, create_sumstats
+):
+    """All-discarded runs fail clearly instead of later concatenation errors."""
+    metadata = read_ldgm_metadata(metadata_path, populations='EUR')
+    sumstats = create_sumstats(str(metadata_path), 'EUR')
+
+    with pytest.raises(ValueError, match='No LD blocks remain'):
+        GraphREML.prepare_block_data(
+            metadata,
+            sumstats=sumstats,
+            method=MethodOptions(max_chisq_threshold=0.0),
+        )
+
+
+def test_max_z_squared_threshold_ignores_blocks_with_no_finite_z(
+    metadata_path, create_sumstats
+):
+    """Blocks with no finite Z do not emit nanmax warnings or fail filtering."""
+    metadata = read_ldgm_metadata(metadata_path, populations='EUR')
+    sumstats = create_sumstats(str(metadata_path), 'EUR')
+    first_block = partition_variants(metadata, sumstats)[0]
+    positions = first_block.get_column('POS').to_list()
+    sumstats = sumstats.with_columns(
+        pl.when(pl.col('POS').is_in(positions))
+        .then(float('nan'))
+        .otherwise(pl.col('Z'))
+        .alias('Z')
+    )
+
+    block_data = GraphREML.prepare_block_data(
+        metadata,
+        sumstats=sumstats,
+        method=MethodOptions(max_chisq_threshold=50.0),
+    )
+
+    assert _block_max_chisq(block_data[0]['sumstats']) == -np.inf
+    assert len(block_data[0]['sumstats']) == len(first_block)
+
+
+def test_testing_module_jackknife_allows_empty_filtered_blocks():
+    """The mirrored module handles duplicate offsets from filtered empty blocks."""
+    assignments = TestingGraphREML._get_variant_jackknife_assignments(
+        [0, 0, 3], num_groups=2
+    )
+
+    np.testing.assert_array_equal(assignments, np.array([1, 1, 1]))
+
+
+def test_binary_annotation_filter_subsets_existing_params(
+    monkeypatch, metadata_path, create_annotations, create_sumstats
+):
+    """Binary filtering keeps parameter rows aligned to retained annotations."""
+    captured = {}
+
+    def fake_run(cls, *args, **kwargs):
+        captured.update(kwargs)
+        model = kwargs['worker_params'][0]
+        return {'parameters': model.params.flatten()}
+
+    monkeypatch.setattr(GraphREML, 'run_serial', classmethod(fake_run))
+
+    sumstats = create_sumstats(str(metadata_path), 'EUR')
+    annotations = create_annotations(metadata_path, 'EUR').with_columns(
+        pl.Series('continuous', np.linspace(0.0, 1.0, len(sumstats))),
+        pl.Series('binary_flag', np.arange(len(sumstats)) % 2),
+    )
+    model = ModelOptions(
+        annotation_columns=['base', 'continuous', 'binary_flag'],
+        params=np.array([[0.1], [0.2], [0.3]]),
+        sample_size=1000,
+        binary_annotations_only=True,
+    )
+    method = MethodOptions(match_by_position=True, run_serial=True)
+
+    result = run_graphREML(
+        model_options=model,
+        method_options=method,
+        summary_stats=sumstats,
+        annotation_data=annotations,
+        ldgm_metadata_path=metadata_path,
+        populations='EUR',
+    )
+
+    assert model.annotation_columns == ['base', 'binary_flag']
+    np.testing.assert_allclose(model.params, np.array([[0.1], [0.3]]))
+    assert captured['num_params'] == 2
+    np.testing.assert_allclose(result['parameters'], np.array([0.1, 0.3]))
+
+
+@pytest.mark.parametrize('missing_mode', ['absent', 'all_null'])
+def test_missing_sample_size_warns_and_defaults_to_one(
+    monkeypatch, metadata_path, create_annotations, create_sumstats, missing_mode
+):
+    """GraphREML warns before falling back to sample_size=1.0."""
+    captured = {}
+
+    def fake_run(cls, *args, **kwargs):
+        captured.update(kwargs)
+        return {'sample_size': kwargs['sample_size']}
+
+    monkeypatch.setattr(GraphREML, 'run_serial', classmethod(fake_run))
+
+    sumstats = create_sumstats(str(metadata_path), 'EUR')
+    if missing_mode == 'absent':
+        sumstats = sumstats.drop('N')
+    else:
+        sumstats = sumstats.with_columns(pl.lit(None).cast(pl.Float64).alias('N'))
+
+    model = ModelOptions(params=np.zeros((1, 1)), sample_size=None)
+    method = MethodOptions(match_by_position=True, run_serial=True)
+
+    with pytest.warns(RuntimeWarning, match='sample_size=1.0'):
+        result = run_graphREML(
+            model_options=model,
+            method_options=method,
+            summary_stats=sumstats,
+            annotation_data=create_annotations(metadata_path, 'EUR'),
+            ldgm_metadata_path=metadata_path,
+            populations='EUR',
+        )
+
+    assert model.sample_size == 1.0
+    assert captured['sample_size'] == 1.0
+    assert result['sample_size'] == 1.0
+
+
+def test_sample_size_inference_ignores_nan_values(
+    monkeypatch, metadata_path, create_annotations, create_sumstats
+):
+    """Sample-size inference uses valid N rows instead of falling back on NaN."""
+    captured = {}
+
+    def fake_run(cls, *args, **kwargs):
+        captured.update(kwargs)
+        return {'sample_size': kwargs['sample_size']}
+
+    monkeypatch.setattr(GraphREML, 'run_serial', classmethod(fake_run))
+
+    sumstats = create_sumstats(str(metadata_path), 'EUR').with_row_index('row_nr')
+    sumstats = sumstats.with_columns(
+        pl.when(pl.col('row_nr') == 0)
+        .then(float('nan'))
+        .otherwise(1000.0)
+        .alias('N')
+    ).drop('row_nr')
+    model = ModelOptions(params=np.zeros((1, 1)), sample_size=None)
+    method = MethodOptions(match_by_position=True, run_serial=True)
+
+    result = run_graphREML(
+        model_options=model,
+        method_options=method,
+        summary_stats=sumstats,
+        annotation_data=create_annotations(metadata_path, 'EUR'),
+        ldgm_metadata_path=metadata_path,
+        populations='EUR',
+    )
+
+    assert model.sample_size == 1000.0
+    assert captured['sample_size'] == 1000.0
+    assert result['sample_size'] == 1000.0
 
 
 def test_max_z_squared_threshold(metadata_path, create_annotations, create_sumstats):
