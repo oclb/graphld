@@ -520,6 +520,7 @@ class GraphREML(ParallelProcessor):
             variant_info.filter(pl.col("Z").is_not_null())
             .group_by("index")
             .first()
+            .sort("index")
             .with_row_index(name="surrogate_nr")
         )
         index_to_row = {row["index"]: row for row in variant_info_nonmissing.to_dicts()}
