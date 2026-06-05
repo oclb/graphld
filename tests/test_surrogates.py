@@ -27,6 +27,21 @@ def _right_join_sumstats_annotations(
     return merged.unique(subset=["SNP"], keep="first")
 
 
+def _active_subset_inputs(metadata_path, create_sumstats, create_annotations):
+    sumstats = create_sumstats(ldgm_metadata_path=str(metadata_path), populations="EUR")
+    annotations = create_annotations(metadata_path, populations="EUR")
+    metadata = read_ldgm_metadata(str(metadata_path), populations="EUR")
+    block = metadata.row(0, named=True)
+
+    nonmissing = sumstats.filter(pl.col('POS') % 7 != 0)
+    active_annotations = annotations.filter(pl.col('POS') % 13 != 0)
+    annot_df = _right_join_sumstats_annotations(nonmissing, active_annotations)
+    annot_block = partition_variants(metadata, annot_df)[0]
+
+    assert annot_block.get_column("Z").null_count() > 0
+    return metadata, block, nonmissing, annot_block
+
+
 def test_get_surrogate_markers(metadata_path, create_sumstats):
     """Surrogate maps are keyed by full LDGM row coordinates."""
     sumstats = create_sumstats(ldgm_metadata_path=metadata_path, populations="EUR")
@@ -90,21 +105,55 @@ def test_unversioned_surrogate_map_is_rejected(metadata_path):
             GraphREML._load_block_surrogate_map(tmp.name, block_name)
 
 
+def test_get_surrogate_markers_rejects_unversioned_existing_output(
+    metadata_path, create_sumstats
+):
+    sumstats = create_sumstats(ldgm_metadata_path=metadata_path, populations="EUR")
+    metadata = read_ldgm_metadata(str(metadata_path), populations="EUR")
+    block_name = metadata.row(0, named=True)["name"]
+    nonmissing = sumstats.filter(pl.col('POS') % 10 != 0)
+
+    with tempfile.NamedTemporaryFile(suffix=".h5") as tmp:
+        with h5py.File(tmp.name, "w") as h5:
+            h5.create_dataset(block_name, data=np.arange(5, dtype=np.int32))
+
+        with pytest.raises(ValueError, match="Regenerate it with `graphld surrogates`"):
+            get_surrogate_markers(
+                metadata_path,
+                nonmissing,
+                population="EUR",
+                run_serial=True,
+                output_path=tmp.name,
+            )
+
+
+def test_wrong_length_surrogate_map_is_rejected(
+    metadata_path, create_sumstats, create_annotations
+):
+    _, block, _, annot_block = _active_subset_inputs(
+        metadata_path, create_sumstats, create_annotations
+    )
+    ldgm = load_ldgm(
+        str(metadata_path.parent / block["name"]),
+        population=block["population"],
+    )
+
+    with pytest.raises(ValueError, match="Surrogate map length 5"):
+        GraphREML._initialize_block_zscores(
+            ldgm,
+            annot_block,
+            ["base"],
+            match_by_position=False,
+            surrogate_map=np.arange(5, dtype=np.int32),
+        )
+
+
 def test_precomputed_surrogates_translate_for_active_subset(
     metadata_path, create_sumstats, create_annotations
 ):
-    sumstats = create_sumstats(ldgm_metadata_path=str(metadata_path), populations="EUR")
-    annotations = create_annotations(metadata_path, populations="EUR")
-    metadata = read_ldgm_metadata(str(metadata_path), populations="EUR")
-    block = metadata.row(0, named=True)
-
-    nonmissing = sumstats.filter(pl.col('POS') % 7 != 0)
-    active_annotations = annotations.filter(pl.col('POS') % 13 != 0)
-    active_sumstats = nonmissing
-    annot_df = _right_join_sumstats_annotations(active_sumstats, active_annotations)
-    annot_block = partition_variants(metadata, annot_df)[0]
-
-    assert annot_block.get_column("Z").null_count() > 0
+    _, block, nonmissing, annot_block = _active_subset_inputs(
+        metadata_path, create_sumstats, create_annotations
+    )
 
     with tempfile.NamedTemporaryFile(suffix=".h5") as tmp:
         h5_path = get_surrogate_markers(
@@ -118,10 +167,6 @@ def test_precomputed_surrogates_translate_for_active_subset(
             str(h5_path), block["name"]
         )
 
-        ldgm_precomputed = load_ldgm(
-            str(metadata_path.parent / block["name"]),
-            population=block["population"],
-        )
         ldgm_probe = load_ldgm(
             str(metadata_path.parent / block["name"]),
             population=block["population"],
@@ -155,6 +200,8 @@ def test_precomputed_surrogates_translate_for_active_subset(
         }
         expected_row = None
         for row in probe_info.filter(pl.col("Z").is_null()).to_dicts():
+            if row["index"] in nonmissing_by_index:
+                continue
             full_idx = int(active_to_full[row["index"]])
             surrogate_active_idx = full_to_active.get(int(surrogate_map[full_idx]))
             if surrogate_active_idx in nonmissing_by_index:
@@ -162,6 +209,10 @@ def test_precomputed_surrogates_translate_for_active_subset(
                 break
         assert expected_row is not None
 
+        ldgm_precomputed = load_ldgm(
+            str(metadata_path.parent / block["name"]),
+            population=block["population"],
+        )
         ldgm_precomputed, pz_precomputed = GraphREML._initialize_block_zscores(
             ldgm_precomputed,
             annot_block,
@@ -182,6 +233,79 @@ def test_precomputed_surrogates_translate_for_active_subset(
         assert initialized_row["index"] == surrogate_row["index"]
         assert initialized_row["Z"] == surrogate_row["Z"]
         assert np.all(np.isfinite(pz_precomputed))
+
+
+def test_precomputed_surrogates_fall_back_when_target_not_active(
+    metadata_path, create_sumstats, create_annotations, monkeypatch
+):
+    _, block, _, annot_block = _active_subset_inputs(
+        metadata_path, create_sumstats, create_annotations
+    )
+    ldgm_probe = load_ldgm(
+        str(metadata_path.parent / block["name"]),
+        population=block["population"],
+    )
+    ldgm_probe, _ = merge_snplists(
+        ldgm_probe,
+        annot_block,
+        add_allelic_cols=["Z"],
+        add_cols=["base"],
+        match_by_position=False,
+        pos_col="POS",
+        ref_allele_col="REF",
+        alt_allele_col="ALT",
+        modify_in_place=True,
+    )
+    active_to_full = ldgm_probe._which_indices
+    assert active_to_full is not None
+    probe_info = ldgm_probe.variant_info.with_row_index(name="vi_row_nr")
+    nonmissing_indices = set(
+        probe_info.filter(pl.col("Z").is_not_null()).get_column("index").to_list()
+    )
+    missing_row = next(
+        row
+        for row in probe_info.filter(pl.col("Z").is_null()).to_dicts()
+        if row["index"] not in nonmissing_indices
+    )
+    inactive_full_indices = np.setdiff1d(
+        np.arange(ldgm_probe._matrix.shape[0]), active_to_full
+    )
+    assert len(inactive_full_indices) > 0
+
+    surrogate_map = np.arange(ldgm_probe._matrix.shape[0], dtype=np.int32)
+    surrogate_map[int(active_to_full[missing_row["index"]])] = int(
+        inactive_full_indices[0]
+    )
+
+    fallback_rows = {}
+
+    def fake_surrogate_marker(ldgm, missing_index, candidates):
+        surrogate_row = candidates.to_dicts()[0]
+        fallback_rows[missing_index] = surrogate_row
+        return surrogate_row
+
+    monkeypatch.setattr(
+        "graphld.heritability._surrogate_marker", fake_surrogate_marker
+    )
+
+    ldgm_precomputed = load_ldgm(
+        str(metadata_path.parent / block["name"]),
+        population=block["population"],
+    )
+    ldgm_precomputed, _ = GraphREML._initialize_block_zscores(
+        ldgm_precomputed,
+        annot_block,
+        ["base"],
+        match_by_position=False,
+        surrogate_map=surrogate_map,
+    )
+
+    assert missing_row["index"] in fallback_rows
+    precomputed_row = ldgm_precomputed.variant_info.row(
+        missing_row["vi_row_nr"], named=True
+    )
+    assert precomputed_row["index"] == fallback_rows[missing_row["index"]]["index"]
+    assert precomputed_row["Z"] == fallback_rows[missing_row["index"]]["Z"]
 
 
 def test_surrogates_integration_with_graphreml(metadata_path, create_sumstats, create_annotations):
