@@ -40,6 +40,8 @@ FLAGS = {
 assert len(set(FLAGS.values())) == len(FLAGS.values())
 
 VARIANT_INFO_COMPRESSION_TYPE = "lzf"
+SURROGATE_FORMAT_VERSION = "1"
+SURROGATE_COORDINATE_SYSTEM = "ldgm_full_index"
 
 
 @dataclass
@@ -276,6 +278,14 @@ def _surrogate_marker(
     surrogate = np.argmax(candidate_correlations**2)
 
     return candidates.filter(pl.col("surrogate_nr") == surrogate).to_dicts()[0]
+
+
+def _read_hdf5_attr_string(h5: h5py.File, name: str) -> Optional[str]:
+    """Read an HDF5 attribute as a normal Python string."""
+    value = h5.attrs.get(name)
+    if isinstance(value, bytes):
+        return value.decode()
+    return value
 
 
 def softmax_robust(x: np.ndarray) -> np.ndarray:
@@ -526,16 +536,37 @@ class GraphREML(ParallelProcessor):
         z_indices[variant_info_nonmissing.get_column("index").to_numpy()] = (
             variant_info_nonmissing.get_column("Z").to_numpy()
         )
+        if surrogate_map is not None:
+            full_num_indices = ldgm._matrix.shape[0]
+            if len(surrogate_map) != full_num_indices:
+                raise ValueError(
+                    f"Surrogate map length {len(surrogate_map)} does not match "
+                    f"LDGM block size {full_num_indices}."
+                )
+            active_to_full = (
+                ldgm._which_indices
+                if ldgm._which_indices is not None
+                else np.arange(ldgm.shape[0])
+            )
+            full_to_active = {
+                int(full_idx): int(active_idx)
+                for active_idx, full_idx in enumerate(active_to_full)
+            }
+        else:
+            active_to_full = None
+            full_to_active = {}
+
         missing_count = 0
         for row in variant_info_missing.to_dicts():
             idx = row["index"]
             surrogate_row: dict | None = index_to_row.get(idx)
             if surrogate_row is None:
-                # Try to use pre-computed surrogate map if available
                 if surrogate_map is not None:
-                    surrogate_idx = surrogate_map[idx]
-                    surrogate_row = index_to_row.get(surrogate_idx)
-                # Fall back to computing surrogate on-the-fly
+                    full_idx = int(active_to_full[idx])
+                    surrogate_full_idx = int(surrogate_map[full_idx])
+                    surrogate_active_idx = full_to_active.get(surrogate_full_idx)
+                    if surrogate_active_idx is not None:
+                        surrogate_row = index_to_row.get(surrogate_active_idx)
                 if surrogate_row is None:
                     missing_count += 1
                     surrogate_row = _surrogate_marker(
@@ -582,6 +613,19 @@ class GraphREML(ParallelProcessor):
             Numpy array of surrogate indices for this block, or None if unavailable.
         """
         with h5py.File(surrogate_markers_path, "r") as h5:
+            version = _read_hdf5_attr_string(h5, "graphld_surrogate_format")
+            coordinate_system = _read_hdf5_attr_string(h5, "coordinate_system")
+            if (
+                version != SURROGATE_FORMAT_VERSION
+                or coordinate_system != SURROGATE_COORDINATE_SYSTEM
+            ):
+                raise ValueError(
+                    f"{surrogate_markers_path} is not a GraphLD surrogate marker "
+                    f"file with format {SURROGATE_FORMAT_VERSION} and "
+                    f"coordinate system {SURROGATE_COORDINATE_SYSTEM}. "
+                    "Regenerate it with `graphld surrogates`."
+                )
+
             if block_name in h5:
                 return h5[block_name][:]
             else:

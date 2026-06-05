@@ -1,19 +1,12 @@
 """Generate surrogate-marker mapping files for LD graphical models.
 
-Each output is an HDF5 file *per population*.  Within the file there is one
-HDF5 *group* per LD block.  Every group stores three 1-D datasets with a
-common length equal to the number of variants in the LDGM block:
+Each output is an HDF5 file per population, with one int32 1-D dataset per LD
+block. The dataset length is the full loaded LDGM size, and both dataset
+positions and values are full loaded LDGM row indices. For variants already
+present in the training sumstats, the surrogate index equals the variant index.
 
-    variant_id       — UTF-8 string     (snplist ``site_ids`` column)
-    variant_index    — int32            (row index inside the LDGM)
-    surrogate_index  — int32            (row index of best surrogate)
-
-For variants that are already non-missing in the training sum-stats the
-surrogate index equals the variant index.
-
-The heavy (and slow) search for a surrogate marker therefore needs to be
-performed only once per population and block; subsequent GraphREML runs can
-simply look up the stored mapping.
+The heavy surrogate-marker search therefore needs to be performed once per
+population and block; later GraphREML runs can look up the stored mapping.
 """
 from __future__ import annotations
 
@@ -29,6 +22,39 @@ from filelock import FileLock
 from .heritability import _surrogate_marker
 from .io import merge_snplists, partition_variants
 from .multiprocessing_template import ParallelProcessor, SharedData, WorkerManager
+
+
+SURROGATE_FORMAT_VERSION = "1"
+SURROGATE_COORDINATE_SYSTEM = "ldgm_full_index"
+
+
+def _read_attr_string(h5: h5py.File, name: str) -> Optional[str]:
+    """Read an HDF5 root attribute as a normal Python string."""
+    value = h5.attrs.get(name)
+    if isinstance(value, bytes):
+        return value.decode()
+    return value
+
+
+def _ensure_surrogate_hdf5_contract(h5: h5py.File, path: Path) -> None:
+    """Stamp or validate the surrogate-map HDF5 coordinate contract."""
+    version = _read_attr_string(h5, "graphld_surrogate_format")
+    coordinate_system = _read_attr_string(h5, "coordinate_system")
+    if version is None and coordinate_system is None and len(h5.keys()) == 0:
+        h5.attrs["graphld_surrogate_format"] = SURROGATE_FORMAT_VERSION
+        h5.attrs["coordinate_system"] = SURROGATE_COORDINATE_SYSTEM
+        return
+
+    if (
+        version != SURROGATE_FORMAT_VERSION
+        or coordinate_system != SURROGATE_COORDINATE_SYSTEM
+    ):
+        raise ValueError(
+            f"{path} is not a GraphLD surrogate marker file with format "
+            f"{SURROGATE_FORMAT_VERSION} and coordinate system "
+            f"{SURROGATE_COORDINATE_SYSTEM}. Regenerate it with "
+            "`graphld surrogates`."
+        )
 
 
 class Surrogates(ParallelProcessor):
@@ -78,7 +104,8 @@ class Surrogates(ParallelProcessor):
         sumstats_df = block_data['df']
         match_by_position = worker_params.get('match_by_position', False)
 
-        # Don't modify ldgm in place - we need to preserve original indices
+        # Do not modify ldgm in place: the output map is keyed by full LDGM row
+        # coordinates, while merge_snplists renumbers variant_info["index"].
         merged_ldgm, _ = merge_snplists(
             ldgm, sumstats_df,
             match_by_position=match_by_position,
@@ -94,12 +121,15 @@ class Surrogates(ParallelProcessor):
         num_indices = ldgm.shape[0]
         mapping = np.arange(num_indices, dtype=np.int32)
 
-        # Candidates are unique indices among non-missing rows (those that survived the merge)
-        candidates = (
-            merged_ldgm.variant_info
-              .select('index')
-              .unique()
-              .with_row_index(name='surrogate_nr')
+        # Candidates are unique full-LDGM row indices among non-missing variants.
+        candidate_indices = np.array(
+            merged_ldgm._which_indices
+            if merged_ldgm._which_indices is not None
+            else np.arange(merged_ldgm.shape[0]),
+            dtype=np.int64,
+        )
+        candidates = pl.DataFrame({'index': candidate_indices}).with_row_index(
+            name='surrogate_nr'
         )
 
         if len(candidates) > 0:
@@ -120,6 +150,7 @@ class Surrogates(ParallelProcessor):
         lock = FileLock(str(out_path) + ".lock")
         with lock:
             with h5py.File(out_path, 'a') as h5:
+                _ensure_surrogate_hdf5_contract(h5, out_path)
                 dset_name = str(block_data['block_name'])
                 if dset_name in h5:
                     raise ValueError(f"Dataset {dset_name} already exists in {out_path}")
