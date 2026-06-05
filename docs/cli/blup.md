@@ -16,7 +16,7 @@ uv run graphld blup \
 
 | Option | Description |
 |--------|-------------|
-| `-H, --heritability` | Total trait heritability between `0` and `1` |
+| `-H, --heritability` | Heritability for the analyzed variant scope, between `0` and `1` |
 
 ## Inputs And Output
 
@@ -27,6 +27,6 @@ BLUP also uses the shared LDGM options documented in the [CLI overview](../cli.m
 
 ## Notes
 
-- BLUP assumes an infinitesimal effect covariance matrix `D`; GraphLD sets `trace(D)` equal to `--heritability` across the matched LDGM effect indices.
+- BLUP assumes an infinitesimal effect covariance matrix `D`; GraphLD sets `trace(D)` equal to `--heritability` across the matched LDGM effect indices in the analyzed scope. If you restrict BLUP with `--chromosome` or `--population`, pass the heritability for that restricted scope.
 - If `--num-samples` is omitted, GraphLD infers sample size from the input file.
 - Use `--population`, `--chromosome`, and `--run-in-serial` to limit the scope of a run or simplify debugging.

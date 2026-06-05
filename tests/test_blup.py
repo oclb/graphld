@@ -6,6 +6,7 @@ from typing import List, Optional, Union
 
 import numpy as np
 import polars as pl
+import pytest
 
 from graphld import BLUP, read_ldgm_metadata
 
@@ -120,3 +121,14 @@ def test_blup_heritability_scales_to_matched_effect_trace(tmp_path: Path):
     )
     expected_weights = np.array([2.0, -1.0, 0.0]) * coefficient
     np.testing.assert_allclose(result["weight"].to_numpy(), expected_weights)
+
+
+def test_blup_rejects_legacy_sigmasq_keyword():
+    """The public BLUP input is analyzed-scope heritability, not per-effect variance."""
+    with pytest.raises(ValueError, match="sigmasq keyword is no longer supported"):
+        BLUP.compute_blup(
+            "metadata.csv",
+            pl.DataFrame({"CHR": [], "POS": [], "SNP": [], "Z": []}),
+            sample_size=1000,
+            sigmasq=0.01,
+        )

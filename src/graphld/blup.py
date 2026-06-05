@@ -158,21 +158,22 @@ class BLUP(ParallelProcessor):
     def compute_blup(cls,
             ldgm_metadata_path: str,
             sumstats: pl.DataFrame,
-            heritability: float,
-            sample_size: float,
+            heritability: Optional[float] = None,
+            sample_size: Optional[float] = None,
             populations: Optional[Union[str, List[str]]] = None,
             chromosomes: Optional[Union[int, List[int]]] = None,
             num_processes: Optional[int] = None,
             run_in_serial: bool = False,
             match_by_position: bool = False,
             verbose: bool = False,
+            sigmasq: Optional[float] = None,
             ) -> pl.DataFrame:
         """Compute BLUP weights for multiple LD blocks.
         
         Args:
             ldgm_metadata_path: Path to metadata CSV file
             sumstats: Sumstats dataframe containing Z scores
-            heritability: Total trait heritability. Internally, BLUP uses
+            heritability: Heritability for the analyzed variant scope. Internally, BLUP uses
                 D = (heritability / m) I, where m is the number of unique
                 matched LDGM effect indices.
             sample_size: GWAS sample size
@@ -183,6 +184,15 @@ class BLUP(ParallelProcessor):
         Returns:
             DataFrame with BLUP weights added to the partitioned summary statistics.
         """
+        if sigmasq is not None:
+            raise ValueError(
+                "The BLUP sigmasq keyword is no longer supported. "
+                "Pass total heritability for the analyzed variant scope with heritability=."
+            )
+        if heritability is None:
+            raise ValueError("BLUP requires heritability for the analyzed variant scope")
+        if sample_size is None:
+            raise ValueError("BLUP requires sample_size")
         if not 0 <= heritability <= 1:
             raise ValueError(f"Heritability must be between 0 and 1, got {heritability}")
 

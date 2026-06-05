@@ -20,7 +20,7 @@ sumstats_with_weights: pl.DataFrame = gld.run_blup(
 )
 ```
 
-`heritability` is total trait heritability. This workflow assumes heritability is equally distributed among the matched LDGM effect indices, corresponding to $D = m^{-1} h^2 I$ with $\mathrm{trace}(D) = h^2$.
+`heritability` is the heritability for the analyzed variant scope. This workflow assumes heritability is equally distributed among the matched LDGM effect indices, corresponding to $D = m^{-1} h^2 I$ with $\mathrm{trace}(D) = h^2$. If you filter by chromosome or population, pass the heritability for that restricted scope.
 
 See also:
 
