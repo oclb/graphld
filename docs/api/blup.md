@@ -6,7 +6,7 @@ Under the infinitesimal model with per-s.d. effect sizes $\beta \sim N(0, D)$, t
 
 $$E(\beta) = \sqrt{n} D (nD + R^{-1})^{-1} R^{-1}z$$
 
-where $R^{-1}$ is approximated with the LDGM precision matrix.
+where $R^{-1}$ is approximated with the LDGM precision matrix. Public BLUP workflows take total trait heritability and set $\mathrm{trace}(D)$ equal to that value across matched LDGM effect indices.
 
 For usage examples, see the [BLUP guide](../python_api/blup.md).
 

@@ -16,10 +16,11 @@ sumstats_with_weights: pl.DataFrame = gld.run_blup(
     ldgm_metadata_path="data/metadata.csv",
     sumstats=sumstats_dataframe_with_z_scores,
     heritability=0.1,
+    sample_size=100000,
 )
 ```
 
-This workflow assumes heritability is equally distributed among the variants with Z scores provided, corresponding to $D = m^{-1} h^2 I$.
+`heritability` is total trait heritability. This workflow assumes heritability is equally distributed among the matched LDGM effect indices, corresponding to $D = m^{-1} h^2 I$ with $\mathrm{trace}(D) = h^2$.
 
 See also:
 
