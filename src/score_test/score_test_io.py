@@ -412,9 +412,12 @@ def load_gene_annotations(
 
     Args:
         gene_annot_dir: Directory containing GMT files with gene sets
-        variant_table: Variant table DataFrame (used to determine chromosomes)
-        gene_table_path: Path to gene table TSV file
-        nearest_weights: Weights for k-nearest genes
+        variant_table: Retained for compatibility with callers that convert gene
+            sets to variant annotations after loading.
+        gene_table_path: Retained for compatibility; not read when returning a
+            GeneAnnot object.
+        nearest_weights: Retained for compatibility; not used when returning a
+            GeneAnnot object.
         annot_names: Optional list of specific annotation names to load
 
     Returns:
@@ -426,8 +429,8 @@ def load_gene_annotations(
     except ImportError:
         from score_test import GeneAnnot
 
-    chromosomes = variant_table["CHR"].unique().sort().to_list()
-    _gene_table = load_gene_table(gene_table_path, chromosomes)  # TODO: unused, may need review
+    del variant_table, gene_table_path, nearest_weights
+
     gene_sets = load_gene_sets_from_gmt(gene_annot_dir)
 
     if annot_names:

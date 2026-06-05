@@ -20,6 +20,12 @@ def _default_link_fn(annotations: np.ndarray) -> np.ndarray:
     """Default link function mapping annotations to relative per-variant heritability."""
     return softmax_robust(np.sum(annotations, axis=1))
 
+_ANNOTATION_DEPENDENT_POLYGENICITY_ERROR = (
+    "Annotation-dependent polygenicity is not implemented yet. "
+    "Use annotation-dependent effect-size scaling instead by leaving "
+    "annotation_dependent_polygenicity=False."
+)
+
 @dataclass
 class _SimulationSpecification:
     """
@@ -31,8 +37,9 @@ class _SimulationSpecification:
         component_variance: Per-allele effect size variance for each mixture component
         component_weight: Mixture weight for each component (must sum to ≤ 1)
         alpha_param: Alpha parameter for allele frequency-dependent architecture
-        annotation_dependent_polygenicity: If True, use annotations to modify proportion
-            of causal variants instead of effect size magnitude
+        annotation_dependent_polygenicity: Reserved for future support for using
+            annotations to modify the proportion of causal variants. Currently raises
+            NotImplementedError when enabled.
         link_fn: Function mapping annotation vector to relative per-variant heritability.
             Default is softmax: x -> log(1 + exp(sum(x))). Must be defined at module level
             (not as lambda or nested function) to work with multiprocessing
@@ -53,6 +60,9 @@ class _SimulationSpecification:
 
     def __post_init__(self):
         """Initialize default values and validate inputs."""
+        if self.annotation_dependent_polygenicity:
+            raise NotImplementedError(_ANNOTATION_DEPENDENT_POLYGENICITY_ERROR)
+
         if self.component_variance is None:
             self.component_variance = np.array([1.0])
         if self.component_weight is None:
@@ -82,8 +92,8 @@ def _simulate_beta_block(ldgm: PrecisionOperator,
     Returns:
         Tuple of causal effect sizes, marginal effect sizes
     """
-    if spec.annotation_dependent_polygenicity:  # TODO
-        raise NotImplementedError
+    if spec.annotation_dependent_polygenicity:
+        raise NotImplementedError(_ANNOTATION_DEPENDENT_POLYGENICITY_ERROR)
 
     # Use annotations from LDGM
     annotation_columns = spec.annotation_columns or ['af']
@@ -418,8 +428,9 @@ def run_simulate(
         component_variance: Per-allele effect size variance for each mixture component
         component_weight: Mixture weight for each component (must sum to ≤ 1)
         alpha_param: Alpha parameter for allele frequency-dependent architecture
-        annotation_dependent_polygenicity: If True, use annotations to modify proportion
-            of causal variants instead of effect size magnitude
+        annotation_dependent_polygenicity: Reserved for future support for using
+            annotations to modify the proportion of causal variants. Currently raises
+            NotImplementedError when enabled.
         link_fn: Function mapping annotation vector to relative per-variant heritability.
             Default is softmax: x -> log(1 + exp(sum(x))). Must be defined at module level
             (not as lambda or nested function) to work with multiprocessing

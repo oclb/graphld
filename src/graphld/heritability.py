@@ -1278,7 +1278,8 @@ class GraphREML(ParallelProcessor):
                 if len(dict["sumstats"]) > 0
             ]
         )
-        ref_col = 0  # Maybe TODO
+        # Enrichment is normalized against the first annotation column.
+        ref_col = 0
         annotation_heritability, annotation_enrichment = cls._annotation_heritability(
             variant_h2, annotations.select(model.annotation_columns), ref_col
         )

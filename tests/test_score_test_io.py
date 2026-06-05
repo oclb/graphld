@@ -351,6 +351,27 @@ class TestLoadGeneAnnotations:
         assert 'set1' in gene_annot.annot_names
         assert 'GENE1' in gene_annot.gene_sets['set1']
 
+    def test_load_gene_annotations_does_not_require_gene_table(self, tmp_path):
+        """GeneAnnot loading only needs GMT gene sets; conversion validates gene tables."""
+        gmt_dir = tmp_path / "gmt"
+        gmt_dir.mkdir()
+        gmt_file = gmt_dir / "test.gmt"
+        gmt_file.write_text("set1\tDescription\tGENE1\tGENE2\n")
+
+        variant_data = pl.DataFrame({
+            'CHR': [22],
+            'POS': [1250],
+            'RSID': ['rs1']
+        })
+
+        from score_test.score_test import GeneAnnot
+        gene_annot = load_gene_annotations(
+            str(gmt_dir), variant_data, str(tmp_path / "missing.tsv"), np.array([1.0])
+        )
+
+        assert isinstance(gene_annot, GeneAnnot)
+        assert gene_annot.gene_sets == {'set1': ['GENE1', 'GENE2']}
+
 
 class TestCreateRandomGeneAnnotations:
     """Tests for create_random_gene_annotations function."""

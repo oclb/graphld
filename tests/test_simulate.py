@@ -84,6 +84,15 @@ def test_component_mixture(metadata_path, create_annotations):
     assert 0.01 < np.mean(non_zero) < 0.2
 
 
+def test_annotation_dependent_polygenicity_fails_early():
+    """Annotation-dependent polygenicity is a reserved, unimplemented option."""
+    with pytest.raises(NotImplementedError, match="not implemented yet"):
+        Simulate(
+            sample_size=100_000,
+            annotation_dependent_polygenicity=True,
+        )
+
+
 @pytest.mark.skip(reason="Annotation-dependent polygenicity not implemented yet")
 def test_annotation_dependent_polygenicity(metadata_path, create_annotations):
     """Test annotation-dependent polygenicity."""

@@ -244,7 +244,6 @@ class GeneAnnot(Annot):
         gene_ids = trait_data.df[merge_key].to_list()
 
         # Create one-hot encoding for each gene set
-        # TODO vectorize
         test_annot_dict = {}
         for set_name, gene_list in self.gene_sets.items():
             # Create binary indicator: 1 if gene is in set, 0 otherwise
@@ -262,24 +261,6 @@ class GeneAnnot(Annot):
         block_boundaries = get_block_boundaries(trait_data.df['jackknife_blocks'].to_numpy())
 
         return grad, None, None, test_annot, block_boundaries
-
-
-class GenomeAnnot(Annot):
-    """Genome region annotations (from BED files)."""
-
-    def __init__(self):
-        """TODO: Implement GenomeAnnot for BED file annotations."""
-        raise NotImplementedError("GenomeAnnot not yet implemented")
-
-    def merge(self, trait_data: TraitData) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Merge genome region annotations with TraitData.
-
-        Returns:
-            Tuple of (grad, correction, test_annot, block_boundaries)
-        """
-        # TODO: Implement BED file annotation logic
-        raise NotImplementedError("GenomeAnnot.merge() not yet implemented")
-
 
 def run_score_test(trait_data: TraitData,
     annot: Annot,
