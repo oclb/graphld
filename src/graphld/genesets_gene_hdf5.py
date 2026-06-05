@@ -3,60 +3,30 @@ from scipy.sparse import csr_matrix
 import polars as pl
 import h5py
 import click
-from graphld.score_test import load_variant_data, load_trait_data
+from score_test.genesets import (
+    _compute_positions,
+    _get_gene_variant_matrix,
+    _get_nearest_genes,
+    gene_variant_matrix,
+    load_gene_table,
+)
+from score_test.score_test_io import load_variant_data, load_trait_data
 
 COMPRESSION_TYPE = 'lzf'
 CHUNK_SIZE = 1000
-POSITION_SCALE = 1e9  # Scale factor for chromosome positions
 
-def get_nearest_genes(var_pos: np.ndarray,
-                        gene_pos: np.ndarray,
-                        num_nearest: int,
-                        ) -> np.ndarray:
-
-    # Ensure 1D inputs (HDF5 may store as Nx1)
-    var_pos = np.asarray(var_pos).ravel()
-    gene_pos = np.asarray(gene_pos).ravel()
-    if not np.array_equal(var_pos, np.sort(var_pos)):
-        raise ValueError("Variant positions must be sorted")
-    if not np.array_equal(gene_pos, np.sort(gene_pos)):
-        raise ValueError("Gene positions must be sorted")
-    nvar, ngene = var_pos.size, gene_pos.size
-
-    # how many genes come before each variant?
-    order = np.argsort(np.concatenate((var_pos, gene_pos)))
-    perm = np.empty(nvar + ngene)
-    perm[order] = np.arange(nvar + ngene) # number of genes or variants before
-    num_genes_before = perm[:nvar] - np.arange(nvar)
-
-    dist_k_flanking = np.empty((nvar, 2*num_nearest), dtype=np.int32)
-    genes_k_flanking = np.empty((nvar, 2*num_nearest), dtype=np.int32)
-    for k in range(-num_nearest, num_nearest):
-        # fancy indexing + wraparound
-        genes_k_flanking[:,k] = (num_genes_before + k) % ngene
-        dist_k_flanking[:,k] = abs(var_pos - gene_pos[genes_k_flanking[:,k]])
-
-    dist_k_flanking = dist_k_flanking.ravel()
-    genes_k_flanking = genes_k_flanking.ravel()
-
-    result = np.empty((nvar, num_nearest), dtype=np.int32)
-    left_contestant = np.arange(0, 2*nvar*num_nearest, 2*num_nearest, dtype=np.int32)
-    right_contestant = left_contestant + num_nearest*2-1
-    for k in range(num_nearest):
-        right_wins = dist_k_flanking[right_contestant] < dist_k_flanking[left_contestant]
-        left_wins = ~right_wins
-        result[right_wins,k] = genes_k_flanking[right_contestant[right_wins]]
-        result[left_wins,k] = genes_k_flanking[left_contestant[left_wins]]
-        right_contestant -= right_wins
-        left_contestant += left_wins
-
-    return result
+def get_nearest_genes(
+    var_pos: np.ndarray,
+    gene_pos: np.ndarray,
+    num_nearest: int,
+) -> np.ndarray:
+    return _get_nearest_genes(var_pos, gene_pos, num_nearest)
 
 def get_gene_variant_matrix(
     var_pos: np.ndarray,
     gene_pos: np.ndarray,
     nearest_weights: np.ndarray,
-    dtype: np.dtype = np.int8,
+    dtype: np.dtype = np.float64,
 ) -> csr_matrix:
     """Build a sparse variants x genes weighted matrix.
 
@@ -71,7 +41,7 @@ def get_gene_variant_matrix(
     nearest_weights: np.ndarray
         Weights for the k-nearest genes (1D array of length num_nearest).
     dtype: np.dtype
-        Data type of the sparse matrix values (defaults to int8).
+        Data type of the sparse matrix values.
 
     Returns
     -------
@@ -79,16 +49,7 @@ def get_gene_variant_matrix(
         CSR matrix of shape (nvar, ngene) where entry (i,j) equals nearest_weights[k]
         if gene j is the k-th closest to variant i, otherwise 0.
     """
-    nvar, ngene = len(var_pos), len(gene_pos)
-    num_nearest = len(nearest_weights)
-    assert num_nearest > 0 and num_nearest <= ngene
-
-    nearest = get_nearest_genes(var_pos, gene_pos, num_nearest)
-    # Row indices: each variant repeated num_nearest times
-    rows = np.repeat(np.arange(nvar, dtype=np.int32), num_nearest)
-    cols = nearest.ravel()
-    data = np.tile(nearest_weights, nvar)
-    return csr_matrix((data, (rows, cols)), shape=(nvar, ngene))
+    return _get_gene_variant_matrix(var_pos, gene_pos, nearest_weights, dtype=dtype)
 
 def compute_gene_jackknife_blocks(M: csr_matrix, variant_blocks: pl.Series) -> np.ndarray:
     """Assign a jackknife block to each gene by averaging variant block indices.
@@ -106,28 +67,16 @@ def compute_gene_jackknife_blocks(M: csr_matrix, variant_blocks: pl.Series) -> n
 
 def compute_variant_positions(variant_data: pl.DataFrame) -> np.ndarray:
     """Compute global positions for variants (CHR * POSITION_SCALE + POS)."""
-    return (variant_data['POS'] + variant_data['CHR'] * POSITION_SCALE).to_numpy().astype(np.int64)
+    return _compute_positions(variant_data)
 
 def compute_gene_positions(gene_table: pl.DataFrame) -> np.ndarray:
     """Compute global positions for genes (CHR * POSITION_SCALE + midpoint)."""
-    return (gene_table['midpoint'] + gene_table['CHR'].cast(pl.Int64) * POSITION_SCALE).to_numpy().astype(np.int64)
+    if "POS" not in gene_table.columns:
+        gene_table = gene_table.with_columns(pl.col("midpoint").cast(pl.Int64).alias("POS"))
+    return _compute_positions(gene_table)
 
 def read_genes_tsv(gene_table: str) -> pl.DataFrame:
-    schema = {
-        'gene_id': pl.Utf8,
-        'gene_id_version': pl.Utf8,
-        'gene_name': pl.Utf8,
-        'start': pl.Int64,
-        'end': pl.Int64,
-        'CHR': pl.Utf8,
-    }
-    return pl.scan_csv(gene_table, schema=schema, separator='\t', has_header=True) \
-        .filter(pl.col('CHR').is_in([str(i) for i in range(1,23)])) \
-        .filter(pl.col('gene_id').is_not_null()) \
-        .with_columns(pl.col('gene_name').fill_null('NA')) \
-        .with_columns(((pl.col('start') + pl.col('end')) / 2).alias('midpoint')) \
-        .sort(pl.col('CHR').cast(pl.Int64), 'midpoint') \
-        .collect()
+    return load_gene_table(gene_table)
 
 def get_test_gene_set(gene_table: pl.DataFrame) -> set[str]:
     """Get an arbitrary test gene set (first 10% of genes alphabetically by name)."""
@@ -144,9 +93,7 @@ def compute_gene_variant_matrix_from_data(variant_data: pl.DataFrame,
     This is the canonical function for computing the gene-variant matrix.
     Both convert_variant_to_gene_hdf5 and create_variant_annot_internal should use this.
     """
-    variant_positions = compute_variant_positions(variant_data)
-    gene_positions = compute_gene_positions(gene_table)
-    return get_gene_variant_matrix(variant_positions, gene_positions, nearest_weights)
+    return gene_variant_matrix(variant_data, gene_table, nearest_weights)
 
 
 def compute_gene_level_data(variant_data: pl.DataFrame,

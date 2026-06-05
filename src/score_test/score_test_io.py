@@ -12,6 +12,11 @@ import polars as pl
 if TYPE_CHECKING:
     from score_test import GeneAnnot, TraitData, VariantAnnot
 
+try:
+    from .genesets import load_gene_sets_from_gmt, load_gene_table
+except ImportError:
+    from genesets import load_gene_sets_from_gmt, load_gene_table
+
 
 def _load_hdf5_group(group: h5py.Group) -> dict:
     result = {}
@@ -292,77 +297,6 @@ def load_annotations(
         annotations = annotations.rename({"BP": "POS"})
 
     return annotations
-
-
-def load_gene_table(
-    gene_table_path: str, chromosomes: list[int] | None = None
-) -> pl.DataFrame:
-    """Load gene table and optionally filter to specific chromosomes.
-
-    Args:
-        gene_table_path: Path to gene table TSV
-        chromosomes: Optional list of chromosome numbers to filter to
-
-    Returns:
-        Gene table DataFrame
-    """
-    schema = {
-        "gene_id": pl.Utf8,
-        "gene_id_version": pl.Utf8,
-        "gene_name": pl.Utf8,
-        "start": pl.Int64,
-        "end": pl.Int64,
-        "CHR": pl.Utf8,
-    }
-    gene_table = (
-        pl.scan_csv(gene_table_path, schema=schema, separator="\t", has_header=True)
-        .filter(pl.col("CHR").is_in([str(i) for i in range(1, 23)]))
-        .filter(pl.col("gene_id").is_not_null())
-        .with_columns(pl.col("gene_name").fill_null("NA"))
-        .with_columns(((pl.col("start") + pl.col("end")) / 2).alias("midpoint"))
-        .with_columns(pl.col("midpoint").alias("POS"))
-        .sort(pl.col("CHR").cast(pl.Int64), "midpoint")
-        .collect()
-    )
-
-    if chromosomes:
-        # Convert chromosomes to integers if they're strings
-        if isinstance(chromosomes[0], str):
-            chromosomes = [int(c) for c in chromosomes if c.isdigit()]
-        gene_table = gene_table.filter(pl.col("CHR").cast(pl.Int64).is_in(chromosomes))
-
-    # Add POS column (using midpoint) for compatibility with position-based functions
-    gene_table = gene_table.with_columns(pl.col("midpoint").cast(pl.Int64).alias("POS"))
-
-    return gene_table
-
-
-def load_gene_sets_from_gmt(gene_annot_dir: str) -> dict[str, list[str]]:
-    """Load gene sets from GMT files in a directory.
-
-    GMT format: set_name<tab>description<tab>gene1<tab>gene2<tab>...
-
-    Returns:
-        Dictionary mapping set names to lists of genes
-    """
-    import glob
-    from pathlib import Path
-
-    gmt_files = glob.glob(str(Path(gene_annot_dir) / "*.gmt"))
-    if not gmt_files:
-        raise FileNotFoundError(f"No .gmt files found in {gene_annot_dir}")
-
-    gene_sets = {}
-    for gmt_file in gmt_files:
-        with open(gmt_file, "r") as f:
-            for line in f:
-                parts = line.strip().split("\t")
-                if len(parts) >= 3:
-                    set_name = parts[0]
-                    genes = parts[2:]  # Skip description
-                    gene_sets[set_name] = genes
-
-    return gene_sets
 
 
 def load_variant_annotations(

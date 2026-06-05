@@ -1,8 +1,12 @@
+import glob
+from pathlib import Path
+
 import numpy as np
 import polars as pl
 from scipy.sparse import csr_matrix
 
 POSITION_SCALE = 1e9  # Scale factor for chromosome positions
+
 
 def _nearest_indices_for_position(
     position: np.integer,
@@ -30,10 +34,13 @@ def _nearest_indices_for_position(
     order = np.lexsort((gene_indices[candidates], distances))
     return gene_indices[candidates[order[:num_nearest]]]
 
-def _get_nearest_genes(var_pos: np.ndarray,
-                        gene_pos: np.ndarray,
-                        num_nearest: int,
-                        ) -> np.ndarray:
+
+def _get_nearest_genes(
+    var_pos: np.ndarray,
+    gene_pos: np.ndarray,
+    num_nearest: int,
+) -> np.ndarray:
+    """Find the k nearest genes for each sorted variant position."""
 
     # Ensure 1D inputs (HDF5 may store as Nx1)
     var_pos = np.asarray(var_pos).ravel()
@@ -57,11 +64,12 @@ def _get_nearest_genes(var_pos: np.ndarray,
 
     return result
 
+
 def _get_gene_variant_matrix(
     var_pos: np.ndarray,
     gene_pos: np.ndarray,
     nearest_weights: np.ndarray,
-    dtype: np.dtype = np.int8,
+    dtype: np.dtype = np.float64,
 ) -> csr_matrix:
     """Build a sparse variants x genes weighted matrix.
 
@@ -76,7 +84,7 @@ def _get_gene_variant_matrix(
     nearest_weights: np.ndarray
         Weights for the k-nearest genes (1D array of length num_nearest).
     dtype: np.dtype
-        Data type of the sparse matrix values (defaults to int8).
+        Data type of the sparse matrix values.
 
     Returns
     -------
@@ -93,14 +101,17 @@ def _get_gene_variant_matrix(
     rows = np.repeat(np.arange(nvar, dtype=np.int32), num_nearest)
     cols = nearest.ravel()
     data = np.tile(nearest_weights, nvar)
-    return csr_matrix((data, (rows, cols)), shape=(nvar, ngene))
+    return csr_matrix((data, (rows, cols)), shape=(nvar, ngene), dtype=dtype)
+
 
 def _compute_positions(table: pl.DataFrame) -> np.ndarray:
-    """Compute global positions (CHR * POSITION_SCALE + POS).
-    """
-    if table['POS'].max() >= POSITION_SCALE:
+    """Compute global positions (CHR * POSITION_SCALE + POS)."""
+    if table["POS"].max() >= POSITION_SCALE:
         raise ValueError(f"POS values must be less than POSITION_SCALE: {POSITION_SCALE}")
-    return (table['POS'] + table['CHR'].cast(pl.Int64) * POSITION_SCALE).to_numpy().astype(np.int64)
+    return (
+        table["POS"] + table["CHR"].cast(pl.Int64) * POSITION_SCALE
+    ).to_numpy().astype(np.int64)
+
 
 def _get_chromosome_aware_nearest_genes(
     variant_table: pl.DataFrame,
@@ -162,17 +173,23 @@ def _get_chromosome_aware_nearest_genes(
 
     return nearest
 
-def gene_variant_matrix(variant_table: pl.DataFrame, gene_table: pl.DataFrame,
-                        nearest_weights: np.ndarray) -> csr_matrix:
-    """Compute gene-variant matrix from data.
-    
+
+def gene_variant_matrix(
+    variant_table: pl.DataFrame,
+    gene_table: pl.DataFrame,
+    nearest_weights: np.ndarray,
+    dtype: np.dtype = np.float64,
+) -> csr_matrix:
+    """Compute a chromosome-aware variants x genes weighted matrix.
+
     Args:
         variant_table: DataFrame with CHR, POS columns
         gene_table: DataFrame with CHR, POS columns (POS is midpoint for genes)
         nearest_weights: Weights for k-nearest genes
-        
+        dtype: Data type of the sparse matrix values
+
     Returns:
-        Sparse matrix mapping genes to variants (ngenes x nvariants)
+        Sparse matrix mapping variants to genes with shape (nvariants, ngenes)
     """
     nvar, ngene = len(variant_table), len(gene_table)
     num_nearest = len(nearest_weights)
@@ -183,13 +200,133 @@ def gene_variant_matrix(variant_table: pl.DataFrame, gene_table: pl.DataFrame,
     rows = np.repeat(np.arange(nvar, dtype=np.int32), num_nearest)
     cols = nearest.ravel()
     data = np.tile(nearest_weights, nvar)
-    return csr_matrix((data, (rows, cols)), shape=(nvar, ngene))
+    return csr_matrix((data, (rows, cols)), shape=(nvar, ngene), dtype=dtype)
 
+
+def load_gene_table(
+    gene_table_path: str,
+    chromosomes: list[int] | None = None,
+) -> pl.DataFrame:
+    """Load gene table and optionally filter to specific chromosomes.
+
+    Args:
+        gene_table_path: Path to gene table TSV file with columns:
+            gene_id, gene_id_version, gene_name, start, end, CHR
+        chromosomes: Optional list of chromosome numbers to filter to
+
+    Returns:
+        Gene table DataFrame with POS column set to gene midpoint
+    """
+    schema = {
+        "gene_id": pl.Utf8,
+        "gene_id_version": pl.Utf8,
+        "gene_name": pl.Utf8,
+        "start": pl.Int64,
+        "end": pl.Int64,
+        "CHR": pl.Utf8,
+    }
+    gene_table = (
+        pl.scan_csv(gene_table_path, schema=schema, separator="\t", has_header=True)
+        .filter(pl.col("CHR").is_in([str(i) for i in range(1, 23)]))
+        .filter(pl.col("gene_id").is_not_null())
+        .with_columns(pl.col("gene_name").fill_null("NA"))
+        .with_columns(((pl.col("start") + pl.col("end")) / 2).alias("midpoint"))
+        .with_columns(pl.col("midpoint").alias("POS"))
+        .sort(pl.col("CHR").cast(pl.Int64), "midpoint")
+        .collect()
+    )
+
+    if chromosomes:
+        if isinstance(chromosomes[0], str):
+            chromosomes = [int(c) for c in chromosomes if c.isdigit()]
+        gene_table = gene_table.filter(pl.col("CHR").cast(pl.Int64).is_in(chromosomes))
+
+    return gene_table.with_columns(pl.col("midpoint").cast(pl.Int64).alias("POS"))
+
+
+def load_gene_sets_from_gmt(gene_annot_dir: str) -> dict[str, list[str]]:
+    """Load gene sets from GMT files in a directory.
+
+    GMT format: set_name<tab>description<tab>gene1<tab>gene2<tab>...
+    """
+    gmt_files = glob.glob(str(Path(gene_annot_dir) / "*.gmt"))
+    if not gmt_files:
+        raise FileNotFoundError(f"No .gmt files found in {gene_annot_dir}")
+
+    gene_sets = {}
+    for gmt_file in gmt_files:
+        with open(gmt_file) as f:
+            for line in f:
+                parts = line.strip().split("\t")
+                if len(parts) >= 3:
+                    gene_sets[parts[0]] = parts[2:]
+
+    return gene_sets
 
 
 def _is_gene_id(gene: str) -> bool:
     """Check if a gene identifier is an Ensembl ID (vs gene symbol)."""
-    return 'ENSG' in gene
+    return "ENSG" in gene
+
+
+def _gene_set_indicator(
+    gene_table: pl.DataFrame,
+    genes: list[str],
+) -> np.ndarray:
+    """Create a binary vector matching gene symbols or Ensembl IDs."""
+    gene_set = set(genes)
+    gene_ids = gene_table["gene_id"].to_list()
+    gene_names = gene_table["gene_name"].to_list()
+    return np.array(
+        [
+            1.0 if gene_id in gene_set or gene_name in gene_set else 0.0
+            for gene_id, gene_name in zip(gene_ids, gene_names)
+        ],
+        dtype=np.float64,
+    )
+
+
+def _variant_id_column(variant_table: pl.DataFrame, preferred: str = "RSID") -> str:
+    if preferred in variant_table.columns:
+        return preferred
+    fallback = "SNP" if preferred == "RSID" else "RSID"
+    if fallback in variant_table.columns:
+        return fallback
+    raise ValueError(f"variant_table must contain '{preferred}' or '{fallback}'")
+
+
+def gene_sets_to_variant_annotation_frame(
+    gene_sets: dict[str, list[str]],
+    variant_table: pl.DataFrame,
+    gene_table: pl.DataFrame,
+    nearest_weights: np.ndarray,
+    *,
+    variant_id_col: str = "RSID",
+    output_id_col: str | None = None,
+) -> pl.DataFrame:
+    """Convert gene sets to a variant-level annotation DataFrame."""
+    if not gene_sets:
+        raise ValueError("gene_sets must contain at least one gene set")
+
+    input_id_col = _variant_id_column(variant_table, variant_id_col)
+    output_id_col = output_id_col or input_id_col
+    gv_matrix = gene_variant_matrix(variant_table, gene_table, nearest_weights)
+    variant_annots = {}
+
+    for set_name, genes in gene_sets.items():
+        gene_values = _gene_set_indicator(gene_table, genes)
+        variant_annots[set_name] = (gv_matrix @ gene_values.reshape(-1, 1)).ravel()
+
+    return pl.DataFrame(
+        {
+            "CHR": variant_table["CHR"],
+            "BP": variant_table["POS"],
+            output_id_col: variant_table[input_id_col],
+            "CM": pl.Series([0.0] * len(variant_table)),
+            **variant_annots,
+        }
+    )
+
 
 def convert_gene_set_to_gene_annotations(gene_sets: dict[str, list[str]],
                                          gene_table: pl.DataFrame,
@@ -200,7 +337,13 @@ def convert_gene_set_to_gene_annotations(gene_sets: dict[str, list[str]],
     plus a gene_id or gene_name column for merging.
     """
     # Determine if using gene IDs or gene symbols from first gene in first set
-    first_gene = next(iter(next(iter(gene_sets.values()))))
+    if not gene_sets:
+        raise ValueError("gene_sets must contain at least one gene set")
+
+    first_gene = next(
+        (gene for genes in gene_sets.values() for gene in genes),
+        "",
+    )
     use_gene_id = _is_gene_id(first_gene)
     gene_key = 'gene_id' if use_gene_id else 'gene_name'
 
@@ -257,33 +400,14 @@ def convert_gene_to_variant_annotations(gene_annot: object,
         annot_names = None
         return_variant_annot = False
 
-    # Determine if using gene IDs or symbols
-    first_set = next(iter(gene_sets.values()))
-    use_gene_id = _is_gene_id(first_set[0]) if first_set else False
-    gene_key = 'gene_id' if use_gene_id else 'gene_name'
-
-    # Get gene-variant matrix
-    gv_matrix = gene_variant_matrix(variant_table, gene_table, nearest_weights)
-
-    # Convert each gene set to variant-level annotation
-    variant_annots = {}
-    gene_identifiers = gene_table[gene_key].to_list()
-
-    for set_name, genes in gene_sets.items():
-        gene_set = set(genes)
-        gene_values = np.array([1.0 if gene in gene_set else 0.0
-                                for gene in gene_identifiers], dtype=np.float64)
-        variant_values = (gv_matrix @ gene_values.reshape(-1, 1)).ravel()
-        variant_annots[set_name] = variant_values
-
-    # Create output DataFrame in LDSC format
-    df_annot = pl.DataFrame({
-        'CHR': variant_table['CHR'],
-        'BP': variant_table['POS'],
-        'RSID': variant_table['RSID'],
-        'CM': pl.Series([0.0] * len(variant_table)),
-        **variant_annots
-    })
+    df_annot = gene_sets_to_variant_annotation_frame(
+        gene_sets,
+        variant_table,
+        gene_table,
+        nearest_weights,
+        variant_id_col="RSID",
+        output_id_col="RSID",
+    )
 
     if return_variant_annot:
         return VariantAnnot(df_annot, annot_names)
