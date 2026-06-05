@@ -89,6 +89,8 @@ class LDClumper(ParallelProcessor):
         assert isinstance(block_data, tuple), "block_data must be a tuple"
         sumstats, variant_offset = block_data
         num_variants = len(sumstats)
+        if num_variants == 0:
+            return
 
         # Merge variants with LDGM variant info and get indices of merged variants
         ldgm, sumstat_indices = merge_snplists(
@@ -280,6 +282,9 @@ def run_clump(*args: Any, **kwargs: Any) -> pl.DataFrame:
         **kwargs: Keyword arguments for :meth:`LDClumper.clump`.
 
     Returns:
-        DataFrame with clumped summary statistics and index variant information.
+        Input DataFrame in its original row order with an additional boolean
+        'is_index' column. Variants outside the selected LDGM blocks,
+        unmatched variants, and allele-mismatched variants are retained with
+        'is_index=False'.
     """
     return LDClumper.clump(*args, **kwargs)

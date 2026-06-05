@@ -87,6 +87,10 @@ def test_clumping_preserves_input_rows(create_sumstats):
     """Clumping results should align with the caller's input rows."""
     metadata_path = "data/test/metadata.csv"
     sumstats = create_sumstats(metadata_path, populations="EUR").head(5)
+    lead_snp = sumstats.row(4, named=True)["SNP"]
+    sumstats = sumstats.with_columns(
+        pl.when(pl.col("SNP") == lead_snp).then(10.0).otherwise(0.0).alias("Z")
+    )
     out_of_block = sumstats.head(1).with_columns(
         pl.lit("out_of_block").alias("SNP"),
         pl.lit(1, dtype=pl.Int64).alias("CHR"),
@@ -108,7 +112,7 @@ def test_clumping_preserves_input_rows(create_sumstats):
         unsorted_sumstats,
         ldgm_metadata_path=metadata_path,
         populations="EUR",
-        chisq_threshold=1_000_000.0,
+        chisq_threshold=1.0,
         run_in_serial=True,
     )
 
@@ -118,4 +122,29 @@ def test_clumping_preserves_input_rows(create_sumstats):
         unsorted_sumstats.select("SNP").to_series().to_list()
     )
     assert clumped.select("is_index").to_numpy().dtype == bool
+    assert clumped.filter(pl.col("SNP") == lead_snp).select("is_index").item()
     assert not clumped.filter(pl.col("SNP") == "out_of_block").select("is_index").item()
+
+
+def test_clumping_retains_rows_when_all_blocks_are_empty(create_sumstats):
+    """Rows on chromosomes absent from metadata should return as non-index rows."""
+    metadata_path = "data/test/metadata.csv"
+    sumstats = (
+        create_sumstats(metadata_path, populations="EUR")
+        .head(3)
+        .with_columns(
+            pl.lit(2, dtype=pl.Int64).alias("CHR"),
+            pl.int_range(pl.len()).alias("input_order"),
+        )
+    )
+
+    clumped = LDClumper.clump(
+        sumstats,
+        ldgm_metadata_path=metadata_path,
+        populations="EUR",
+        run_in_serial=True,
+    )
+
+    assert len(clumped) == len(sumstats)
+    assert clumped.select("input_order").to_series().to_list() == [0, 1, 2]
+    assert not clumped.select("is_index").to_series().any()
