@@ -628,7 +628,7 @@ def _attach_annotation_positions(
 
     if 'SNP' in annotations.columns:
         if add_positions:
-            drop_cols = [col for col in ['CHR', 'BP'] if col in annotations.columns]
+            drop_cols = [col for col in ['CHR', 'BP', 'POS'] if col in annotations.columns]
             if drop_cols:
                 # Existing coordinates might be in the wrong genome build.
                 annotations = annotations.drop(drop_cols)

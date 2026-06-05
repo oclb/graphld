@@ -665,6 +665,36 @@ def test_load_annotations_with_unsorted_bed_intervals(tmp_path):
     assert annotations['regions'].to_list() == [True, False, True]
 
 
+def test_load_annotations_replaces_existing_pos_before_bed_masking(tmp_path):
+    """BED masking should use replacement coordinates from positions_file."""
+    annot_dir = tmp_path / "annot"
+    annot_dir.mkdir()
+    (annot_dir / "test.1.annot").write_text(
+        "SNP\tCHR\tPOS\tbase\n"
+        "rs1\t1\t999\t1\n"
+    )
+    (annot_dir / "regions.bed").write_text(
+        "chr1\t90\t110\tregion\n"
+    )
+    positions_file = tmp_path / "positions.csv"
+    pl.DataFrame({
+        'chrom': [1],
+        'site_ids': ['rs1'],
+        'position': [100],
+    }).write_csv(positions_file)
+
+    annotations = load_annotations(
+        annot_path=str(annot_dir),
+        chromosome=1,
+        add_positions=True,
+        positions_file=str(positions_file),
+    )
+
+    assert annotations['POS'].to_list() == [100]
+    assert 'POS_right' not in annotations.columns
+    assert annotations['regions'].to_list() == [True]
+
+
 def test_load_annotations_thin_only_adds_positions_by_row_order(tmp_path):
     """Thin-only annotations can be mapped through positions_file row order."""
     annot_dir = tmp_path / "annot"
