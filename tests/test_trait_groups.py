@@ -1,9 +1,11 @@
 """Tests for trait groups and meta-analysis functionality."""
 
+import shutil
+from pathlib import Path
+
 import numpy as np
 import polars as pl
 import pytest
-from pathlib import Path
 
 from score_test.score_test_io import (
     save_trait_groups,
@@ -17,9 +19,12 @@ from score_test.meta_analysis import MetaAnalysis
 
 
 @pytest.fixture
-def test_hdf5_path():
-    """Path to test HDF5 file."""
-    return Path(__file__).parent.parent / "data" / "test" / "test.scores.h5"
+def test_hdf5_path(tmp_path):
+    """Temporary copy of the test HDF5 file."""
+    source = Path(__file__).parent.parent / "data" / "test" / "test.scores.h5"
+    target = tmp_path / "test.scores.h5"
+    shutil.copy(source, target)
+    return target
 
 
 @pytest.fixture
