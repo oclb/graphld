@@ -59,6 +59,68 @@ def test_seeded_effect_size_rng_is_block_offset_specific_in_process_block():
     assert not np.array_equal(beta_block_1, beta_block_2)
 
 
+def test_process_block_phases_simulated_outputs_to_annotation_alleles():
+    """Swapped A1/A2 annotations should flip simulated output signs."""
+    variant_info = pl.DataFrame({
+        'index': [0, 1],
+        'site_ids': ['rs1', 'rs2'],
+        'position': [10, 20],
+        'anc_alleles': ['A', 'C'],
+        'deriv_alleles': ['G', 'T'],
+        'af': [0.2, 0.3],
+    })
+    spec = _SimulationSpecification(
+        sample_size=100_000,
+        heritability=0.5,
+        component_variance=[1.0],
+        component_weight=[1.0],
+        alpha_param=-1,
+        random_seed=7,
+    )
+    aligned_annotations = pl.DataFrame({
+        'SNP': ['rs1', 'rs2'],
+        'CHR': [1, 1],
+        'POS': [10, 20],
+        'A2': ['A', 'C'],
+        'A1': ['G', 'T'],
+        'base': [1, 1],
+    })
+    swapped_annotations = aligned_annotations.with_columns(
+        pl.when(pl.col('SNP') == 'rs2')
+        .then(pl.col('A1'))
+        .otherwise(pl.col('A2'))
+        .alias('A2'),
+        pl.when(pl.col('SNP') == 'rs2')
+        .then(pl.col('A2'))
+        .otherwise(pl.col('A1'))
+        .alias('A1'),
+    )
+
+    def run_block(annotations: pl.DataFrame) -> SharedData:
+        ldgm = PrecisionOperator(csc_matrix(np.eye(2)), variant_info)
+        shared_data = SharedData({
+            'beta': len(annotations),
+            'alpha': len(annotations),
+            'noise': len(annotations),
+        })
+        Simulate.process_block(
+            ldgm,
+            Value('i', 1),
+            shared_data,
+            block_offset=0,
+            block_data=(annotations, 0),
+            worker_params=spec,
+        )
+        return shared_data
+
+    aligned = run_block(aligned_annotations)
+    swapped = run_block(swapped_annotations)
+
+    for output_name in ['beta', 'alpha', 'noise']:
+        np.testing.assert_allclose(swapped[output_name][0], aligned[output_name][0])
+        np.testing.assert_allclose(swapped[output_name][1], -aligned[output_name][1])
+
+
 def test_simulate_with_annotations(metadata_path, create_annotations):
     """Test simulation with variant annotations."""
     # Create simulator with specific settings

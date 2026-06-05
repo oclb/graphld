@@ -258,14 +258,19 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
             ldgm, sumstat_indices = merge_snplists(
                 ldgm, annotations,
                 match_by_position=True,
-                pos_col='BP',
-                ref_allele_col='REF',
-                alt_allele_col='ALT'
+                pos_col='POS',
+                ref_allele_col='A2',
+                alt_allele_col='A1'
+            )
+            phase = (
+                ldgm.variant_info.get_column('phase').to_numpy()
+                if 'phase' in ldgm.variant_info.columns else 1
             )
         else:
             variant_offset = block_offset
             num_variants = ldgm.shape[0]
             sumstat_indices = range(num_variants)
+            phase = 1
 
         # Get block slice using the number of indices
         block_slice = slice(variant_offset, variant_offset + num_variants)
@@ -287,9 +292,9 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
         noise_reshaped = np.zeros(num_variants)
 
         # Fill in values for successfully merged variants
-        beta_reshaped[sumstat_indices] = beta.flatten()
-        alpha_reshaped[sumstat_indices] = alpha.flatten()
-        noise_reshaped[sumstat_indices] = noise.flatten()
+        beta_reshaped[sumstat_indices] = beta.flatten() * phase
+        alpha_reshaped[sumstat_indices] = alpha.flatten() * phase
+        noise_reshaped[sumstat_indices] = noise.flatten() * phase
 
         # Update the shared memory arrays
         block_slice = slice(variant_offset, variant_offset + num_variants)
