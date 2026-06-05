@@ -196,6 +196,25 @@ def test_merge_snplists_errors():
         merge_snplists(op1, sumstats, add_cols=['NONEXISTENT'])
 
 
+def test_merge_snplists_id_only_without_position():
+    """ID-only matching should not require position columns."""
+    variant_info = pl.DataFrame({
+        'index': [0, 1],
+        'site_ids': ['rs1', 'rs2'],
+        'position': [100, 200],
+        'chr': [1, 1],
+        'anc_alleles': ['A', 'C'],
+        'deriv_alleles': ['T', 'G']
+    })
+    op = PrecisionOperator(csr_matrix((2, 2)), variant_info)
+    sumstats = pl.DataFrame({'SNP': ['rs2', 'rs_missing']})
+
+    merged_op, indices = merge_snplists(op, sumstats)
+
+    assert merged_op.variant_info['site_ids'].to_list() == ['rs2']
+    assert indices.tolist() == [0]
+
+
 def test_load_ldgm():
     """Test loading LDGM data from files and directories."""
     import numpy as np
@@ -410,6 +429,35 @@ def test_partition_variants():
         partition_variants(metadata, bad_variants)
 
 
+def test_partition_variants_preserves_metadata_row_order():
+    """Returned partitions are zipped with metadata rows by public callers."""
+    metadata = pl.DataFrame({
+        'chrom': [2, 1, 2],
+        'chromStart': [100, 100, 300],
+        'chromEnd': [200, 200, 400],
+        'name': ['chr2_first', 'chr1_middle', 'chr2_last'],
+        'snplistName': ['snp1', 'snp2', 'snp3'],
+        'population': ['EUR', 'EUR', 'EUR'],
+        'numVariants': [10, 10, 10],
+        'numIndices': [5, 5, 5],
+        'numEntries': [20, 20, 20],
+        'info': ['', '', '']
+    })
+    variants = pl.DataFrame({
+        'CHR': [1, 2, 2],
+        'POS': [150, 150, 350],
+        'SNP': ['chr1_variant', 'chr2_first_variant', 'chr2_last_variant'],
+    })
+
+    partitioned = partition_variants(metadata, variants)
+
+    assert [df['SNP'].to_list() for df in partitioned] == [
+        ['chr2_first_variant'],
+        ['chr1_variant'],
+        ['chr2_last_variant'],
+    ]
+
+
 def test_load_annotations(test_data_dir):
     """Test loading annotations with different options."""
     positions_file = "data/test/rsid_position.csv"
@@ -590,6 +638,123 @@ def test_load_annotations_with_bed(test_data_dir, tmp_path):
         exclude_bed=True
     )
     assert 'test_regions' not in annotations_no_bed.columns
+
+
+def test_load_annotations_with_unsorted_bed_intervals(tmp_path):
+    """Valid BED files do not have to be sorted by interval start."""
+    annot_dir = tmp_path / "annot"
+    annot_dir.mkdir()
+    (annot_dir / "test.1.annot").write_text(
+        "CHR\tBP\tSNP\tCM\tbase\n"
+        "1\t150\trs1\t0\t1\n"
+        "1\t250\trs2\t0\t1\n"
+        "1\t350\trs3\t0\t1\n"
+    )
+    (annot_dir / "regions.bed").write_text(
+        "chr1\t300\t400\tsecond\n"
+        "chr1\t100\t200\tfirst\n"
+    )
+
+    annotations = load_annotations(
+        annot_path=str(annot_dir),
+        chromosome=1,
+        add_positions=False,
+    )
+
+    assert annotations['SNP'].to_list() == ['rs1', 'rs2', 'rs3']
+    assert annotations['regions'].to_list() == [True, False, True]
+
+
+def test_load_annotations_replaces_existing_pos_before_bed_masking(tmp_path):
+    """BED masking should use replacement coordinates from positions_file."""
+    annot_dir = tmp_path / "annot"
+    annot_dir.mkdir()
+    (annot_dir / "test.1.annot").write_text(
+        "SNP\tCHR\tPOS\tbase\n"
+        "rs1\t1\t999\t1\n"
+    )
+    (annot_dir / "regions.bed").write_text(
+        "chr1\t90\t110\tregion\n"
+    )
+    positions_file = tmp_path / "positions.csv"
+    pl.DataFrame({
+        'chrom': [1],
+        'site_ids': ['rs1'],
+        'position': [100],
+    }).write_csv(positions_file)
+
+    annotations = load_annotations(
+        annot_path=str(annot_dir),
+        chromosome=1,
+        add_positions=True,
+        positions_file=str(positions_file),
+    )
+
+    assert annotations['POS'].to_list() == [100]
+    assert 'POS_right' not in annotations.columns
+    assert annotations['regions'].to_list() == [True]
+
+
+def test_load_annotations_thin_only_adds_positions_by_row_order(tmp_path):
+    """Thin-only annotations can be mapped through positions_file row order."""
+    annot_dir = tmp_path / "annot"
+    annot_dir.mkdir()
+    (annot_dir / "thin.1.annot").write_text(
+        "thin_a\tthin_b\n"
+        "1\t0\n"
+        "0\t1\n"
+    )
+    positions_file = tmp_path / "positions.csv"
+    pl.DataFrame({
+        'chrom': [1, 1],
+        'site_ids': ['rs1', 'rs2'],
+        'position': [100, 200],
+        'anc_alleles': ['A', 'C'],
+        'deriv_alleles': ['G', 'T'],
+    }).write_csv(positions_file)
+
+    annotations = load_annotations(
+        annot_path=str(annot_dir),
+        chromosome=1,
+        add_positions=True,
+        add_alleles=True,
+        positions_file=str(positions_file),
+        file_pattern="thin.{chrom}.annot",
+    )
+
+    assert annotations['SNP'].to_list() == ['rs1', 'rs2']
+    assert annotations['CHR'].to_list() == [1, 1]
+    assert annotations['POS'].to_list() == [100, 200]
+    assert annotations['A2'].to_list() == ['A', 'C']
+    assert annotations['A1'].to_list() == ['G', 'T']
+    assert annotations['thin_a'].to_list() == [True, False]
+    assert annotations['thin_b'].to_list() == [False, True]
+
+
+def test_load_annotations_thin_only_row_count_mismatch(tmp_path):
+    """Thin annotation row-order mapping must fail when row counts differ."""
+    annot_dir = tmp_path / "annot"
+    annot_dir.mkdir()
+    (annot_dir / "thin.1.annot").write_text(
+        "thin_a\n"
+        "1\n"
+        "0\n"
+    )
+    positions_file = tmp_path / "positions.csv"
+    pl.DataFrame({
+        'chrom': [1],
+        'site_ids': ['rs1'],
+        'position': [100],
+    }).write_csv(positions_file)
+
+    with pytest.raises(ValueError, match="Thin annotation row count"):
+        load_annotations(
+            annot_path=str(annot_dir),
+            chromosome=1,
+            add_positions=True,
+            positions_file=str(positions_file),
+            file_pattern="thin.{chrom}.annot",
+        )
 
 
 def test_read_bed(tmp_path):
