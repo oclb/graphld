@@ -669,19 +669,36 @@ def load_annotations(annot_path: str,
         annotations = annotations.with_columns(bool_exprs)
 
     if add_positions or add_alleles:
-        snplist_data = pl.read_csv(
-            positions_file,
-            separator=',',
-            columns=['chrom', 'site_ids', 'position', 'anc_alleles', 'deriv_alleles']
-        )
+        position_columns = ['chrom', 'site_ids', 'position']
+        if add_alleles:
+            position_columns += ['anc_alleles', 'deriv_alleles']
 
-        snplist_data = snplist_data.rename({
-                'chrom': 'CHR',
-                'site_ids': 'SNP',
-                'position': 'POS',
+        try:
+            snplist_data = pl.read_csv(
+                positions_file,
+                separator=',',
+                columns=position_columns
+            )
+        except pl.exceptions.ColumnNotFoundError as e:
+            if add_alleles:
+                raise ValueError(
+                    "positions_file must contain anc_alleles and deriv_alleles "
+                    "when add_alleles=True"
+                ) from e
+            raise
+
+        column_renames = {
+            'chrom': 'CHR',
+            'site_ids': 'SNP',
+            'position': 'POS',
+        }
+        if add_alleles:
+            column_renames.update({
                 'anc_alleles': 'A2',
-                'deriv_alleles': 'A1'
+                'deriv_alleles': 'A1',
             })
+
+        snplist_data = snplist_data.rename(column_renames)
 
         with_columns = ['SNP']
         if add_positions:
