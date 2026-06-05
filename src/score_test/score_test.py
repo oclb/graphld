@@ -253,7 +253,6 @@ class GeneAnnot(Annot):
         gene_ids = trait_data.df[merge_key].to_list()
 
         # Create one-hot encoding for each gene set
-        # TODO vectorize
         test_annot_dict = {}
         for set_name, gene_list in self.gene_sets.items():
             # Create binary indicator: 1 if gene is in set, 0 otherwise
@@ -271,24 +270,6 @@ class GeneAnnot(Annot):
         block_boundaries = get_block_boundaries(trait_data.df['jackknife_blocks'].to_numpy())
 
         return grad, None, None, test_annot, block_boundaries
-
-
-class GenomeAnnot(Annot):
-    """Genome region annotations (from BED files)."""
-
-    def __init__(self):
-        """TODO: Implement GenomeAnnot for BED file annotations."""
-        raise NotImplementedError("GenomeAnnot not yet implemented")
-
-    def merge(self, trait_data: TraitData) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Merge genome region annotations with TraitData.
-
-        Returns:
-            Tuple of (grad, correction, test_annot, block_boundaries)
-        """
-        # TODO: Implement BED file annotation logic
-        raise NotImplementedError("GenomeAnnot.merge() not yet implemented")
-
 
 def run_score_test(trait_data: TraitData,
     annot: Annot,
@@ -356,7 +337,7 @@ def _setup_logging(output_fp: str | None, verbose: bool):
 @click.argument('variant_stats_hdf5', type=click.Path(exists=True))
 @click.argument('output_fp', required=False, default=None)
 @click.option('-a', '--variant-annot-dir', 'variant_annot_dir', type=click.Path(exists=True),
-              help="Directory containing variant-level annotation files (.annot).")
+              help="Directory containing variant-level annotation files (.annot and/or .bed).")
 @click.option('-g', '--gene-annot-dir', 'gene_annot_dir', type=click.Path(exists=True),
               help="Directory containing gene-level annotations to convert to variant-level.")
 @click.option('--random-genes', 'random_genes',
@@ -411,7 +392,11 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
     if variant_annot_dir:
         if is_gene_level:
             raise click.UsageError("Cannot use --variant-annot-dir with gene-level HDF5 file")
-        annot = load_variant_annotations(variant_annot_dir, annot_names_filter)
+        annot = load_variant_annotations(
+            variant_annot_dir,
+            annot_names_filter,
+            variant_table=data_table,
+        )
         logging.info(f"Loaded {len(annot.annot_names)} variant annotations from {variant_annot_dir}")
         num_provided += 1
 

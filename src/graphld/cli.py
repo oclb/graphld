@@ -305,7 +305,8 @@ def _simulate(
         component_variance: List of variance components
         component_weight: List of weights for components
         alpha_param: Alpha parameter for polygenicity
-        annotation_dependent_polygenicity: Whether to use annotation-dependent polygenicity
+        annotation_dependent_polygenicity: Reserved for future support; currently
+            raises NotImplementedError when enabled.
         random_seed: Optional seed for reproducibility
         annotation_columns: Optional list of annotation columns
         num_processes: Number of processes for parallel computation
@@ -907,7 +908,7 @@ def _add_simulate_parser(subparsers):
     parser.add_argument(
         "--annotation-dependent-polygenicity",
         action="store_true",
-        help="Annotation dependent polygenicity"
+        help="Reserved for future annotation-dependent polygenicity support"
     )
     parser.add_argument(
         "--random-seed",

@@ -2,7 +2,7 @@
 
 GraphLD can simulate GWAS summary statistics directly from their asymptotic distribution without individual-level genotype data.
 
-Effect sizes are drawn from a flexible mixture distribution with support for annotation-dependent and frequency-dependent architectures.
+Effect sizes are drawn from a flexible mixture distribution with support for annotation-dependent effect-size scaling and frequency-dependent architectures.
 
 ```python
 import numpy as np
@@ -29,6 +29,8 @@ sumstats: pl.DataFrame = gld.run_simulate(
 `component_variance` and `component_weight` define the mixture. If the weights sum to less than one, the remaining variants have zero effect. `alpha_param` controls frequency dependence and typically ranges from `-1` to `1`.
 
 If annotations are included, `link_fn` should map annotations to relative per-variant heritability. Define custom link functions at module scope rather than as lambdas or nested functions so multiprocessing can import them.
+
+Annotation-dependent polygenicity is reserved for future support and currently raises `NotImplementedError` when enabled.
 
 See also:
 

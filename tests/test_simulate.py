@@ -18,6 +18,15 @@ def module_level_link_fn(x: np.ndarray) -> np.ndarray:
     return x[:, 0]
 
 
+def test_annotation_dependent_polygenicity_fails_early():
+    """Annotation-dependent polygenicity is a reserved, unimplemented option."""
+    with pytest.raises(NotImplementedError, match="not implemented yet"):
+        _SimulationSpecification(
+            sample_size=100_000,
+            annotation_dependent_polygenicity=True,
+        )
+
+
 def test_seeded_effect_size_rng_is_block_offset_specific_in_process_block():
     """Seeded effect-size draws should not repeat across identical blocks."""
     variant_info = pl.DataFrame({

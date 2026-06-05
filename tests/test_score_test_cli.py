@@ -8,7 +8,7 @@ import numpy as np
 import polars as pl
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-from score_test.score_test_io import save_trait_groups, get_trait_groups
+from score_test.score_test_io import get_trait_groups, load_variant_data, save_trait_groups
 
 REPO_ROOT = Path(__file__).parent.parent
 
@@ -138,6 +138,41 @@ def test_score_test_cli_random_variants_with_output(tmp_path):
     
     # Check that group columns are present (with _Z suffix)
     assert "body_Z" in df.columns
+    assert "cancer_Z" in df.columns
+
+
+def test_score_test_cli_bed_variant_annotations(tmp_path):
+    """Test score test CLI with BED-only variant annotations."""
+    source_data = REPO_ROOT / "data" / "test" / "test.scores.h5"
+    test_data = tmp_path / "test.scores.h5"
+    shutil.copy(source_data, test_data)
+    output_file = tmp_path / "bed_results"
+
+    variant_data = load_variant_data(str(test_data))
+    first_variant = variant_data.select("CHR", "POS").row(0, named=True)
+
+    annot_dir = tmp_path / "bed"
+    annot_dir.mkdir()
+    bed_file = annot_dir / "regions.bed"
+    bed_file.write_text(
+        f"chr{first_variant['CHR']}\t{first_variant['POS']}\t"
+        f"{first_variant['POS'] + 1}\n"
+    )
+
+    result = run_estest_from_cwd(
+        tmp_path,
+        "test",
+        test_data,
+        output_file,
+        "--variant-annot-dir",
+        annot_dir,
+    )
+
+    assert result.returncode == 0, f"Command failed with stderr: {result.stderr}"
+
+    output_txt = Path(str(output_file) + ".txt")
+    df = pl.read_csv(output_txt, separator='\t')
+    assert df["annotation"].to_list() == ["regions"]
     assert "cancer_Z" in df.columns
 
 
