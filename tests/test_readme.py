@@ -51,7 +51,9 @@ def test_heritability_snippet():
     """
     sumstats: pl.DataFrame = gld.read_ldsc_sumstats("data/test/example.sumstats")
     annotations: pl.DataFrame = gld.load_annotations(
-        "data/test/annot", chromosome=1
+        "data/test/annot",
+        chromosome=1,
+        positions_file="data/test/rsid_position.csv",
     )
 
     default_model_options = gld.ModelOptions()
