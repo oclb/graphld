@@ -462,6 +462,9 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
     # Run the score test
     results_dict = {'annotation' : annot.annot_names}
     trait_names = get_trait_names(variant_stats_hdf5, trait_name)
+    if trait_name:
+        available_trait_names = set(get_trait_names(variant_stats_hdf5))
+        trait_names = [trait for trait in trait_names if trait in available_trait_names]
 
     # Store results for each trait for meta-analysis
     trait_results = {}
@@ -488,10 +491,20 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
     for group_name, group_traits in trait_groups.items():
         # Filter to traits that were actually processed
         group_traits = [t for t in group_traits if t in trait_results]
+        z_col = f"{group_name}_Z"
+        if not group_traits:
+            warning = (
+                f"Meta-analysis group '{group_name}' has no processed traits; "
+                f"filling {z_col} with NaN"
+            )
+            logging.warning(warning)
+            click.echo(f"Warning: {warning}", err=True)
+            results_dict[z_col] = np.full(len(results_dict["annotation"]), np.nan)
+            continue
+
         meta = MetaAnalysis()
         for trait in group_traits:
             meta.update(*trait_results[trait])
-        z_col = f"{group_name}_Z"
         results_dict[z_col] = meta.z_scores.ravel()
         logging.info(f"Computed meta-analysis for group '{group_name}' with {len(group_traits)} traits")
 

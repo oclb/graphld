@@ -1,8 +1,10 @@
 """Tests for score test CLI functionality."""
 
+import shutil
 import subprocess
 import pytest
 from pathlib import Path
+import numpy as np
 import polars as pl
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -154,6 +156,80 @@ def test_score_test_with_trait_groups(tmp_path):
     # Check individual trait columns are also present (with _Z suffix)
     assert 'bmi_Z' in df.columns
     assert 'prca_Z' in df.columns
+
+
+def test_score_test_empty_processed_trait_group_outputs_nan(tmp_path):
+    """Test stale trait groups that filter to zero processed traits."""
+    test_data = Path(__file__).parent.parent / "data" / "test" / "test.scores.h5"
+    temp_hdf5 = tmp_path / "test.scores.h5"
+    output_file = tmp_path / "results"
+    shutil.copy(test_data, temp_hdf5)
+    save_trait_groups(str(temp_hdf5), {"stale": ["missing_trait"]})
+
+    result = subprocess.run(
+        ["uv", "run", "estest", str(temp_hdf5), str(output_file), "--random-variants", ".1"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, f"Command failed with stderr: {result.stderr}"
+    assert "Warning: Meta-analysis group 'stale' has no processed traits" in result.stderr
+
+    output_txt = Path(str(output_file) + ".txt")
+    df = pl.read_csv(output_txt, separator='\t')
+    assert "stale_Z" in df.columns
+    assert all(np.isnan(value) for value in df["stale_Z"].to_list())
+
+
+def test_score_test_selected_stale_trait_group_outputs_nan(tmp_path):
+    """Test explicitly selected stale trait groups do not load missing traits."""
+    test_data = Path(__file__).parent.parent / "data" / "test" / "test.scores.h5"
+    temp_hdf5 = tmp_path / "test.scores.h5"
+    output_file = tmp_path / "results"
+    shutil.copy(test_data, temp_hdf5)
+    save_trait_groups(str(temp_hdf5), {"stale": ["missing_trait"]})
+
+    result = subprocess.run(
+        [
+            "uv", "run", "estest", str(temp_hdf5), str(output_file),
+            "--random-variants", ".1", "--name", "stale",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, f"Command failed with stderr: {result.stderr}"
+    assert "Warning: Meta-analysis group 'stale' has no processed traits" in result.stderr
+
+    output_txt = Path(str(output_file) + ".txt")
+    df = pl.read_csv(output_txt, separator='\t')
+    assert "stale_Z" in df.columns
+    assert all(np.isnan(value) for value in df["stale_Z"].to_list())
+
+
+def test_score_test_selected_trait_outputs_nan_for_filtered_groups(tmp_path):
+    """Test unprocessed groups are retained as NaN columns under --name."""
+    test_data = Path(__file__).parent.parent / "data" / "test" / "test.scores.h5"
+    output_file = tmp_path / "results"
+
+    result = subprocess.run(
+        [
+            "uv", "run", "estest", str(test_data), str(output_file),
+            "--random-variants", ".1", "--name", "bmi",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, f"Command failed with stderr: {result.stderr}"
+    assert "Warning: Meta-analysis group 'cancer' has no processed traits" in result.stderr
+
+    output_txt = Path(str(output_file) + ".txt")
+    df = pl.read_csv(output_txt, separator='\t')
+    assert "body_Z" in df.columns
+    assert "cancer_Z" in df.columns
+    assert not np.isnan(df["body_Z"].to_list()[0])
+    assert all(np.isnan(value) for value in df["cancer_Z"].to_list())
 
 
 if __name__ == '__main__':
