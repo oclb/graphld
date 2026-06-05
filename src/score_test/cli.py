@@ -71,7 +71,7 @@ def cli():
 @click.option(
     "--gene-table",
     default="data/genes.tsv",
-    type=click.Path(exists=True),
+    type=click.Path(),
     help="Path to gene table TSV file (required for gene-level options).",
 )
 @click.option(

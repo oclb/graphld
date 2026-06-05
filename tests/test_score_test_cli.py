@@ -10,6 +10,17 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from score_test.score_test_io import save_trait_groups, get_trait_groups
 
+REPO_ROOT = Path(__file__).parent.parent
+
+
+def run_estest_from_cwd(tmp_path, *args):
+    return subprocess.run(
+        ["uv", "run", "--project", str(REPO_ROOT), "estest", *map(str, args)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+
 
 def test_score_test_cli_random_variants():
     """Test score test CLI with random variants."""
@@ -38,6 +49,59 @@ def test_score_test_cli_random_variants():
     
     # Check that at least one group is present
     assert "body" in result.stdout or "cancer" in result.stdout
+
+
+def test_score_test_legacy_random_variants_from_non_repo_cwd(tmp_path):
+    """Test legacy estest invocation does not require default gene table."""
+    test_data = REPO_ROOT / "data" / "test" / "test.scores.h5"
+
+    result = run_estest_from_cwd(
+        tmp_path, test_data, "--random-variants", ".1"
+    )
+
+    assert result.returncode == 0, f"Command failed with stderr: {result.stderr}"
+    assert "shape: (1, 9)" in result.stdout
+
+
+def test_score_test_subcommand_random_variants_from_non_repo_cwd(tmp_path):
+    """Test estest test does not require default gene table."""
+    test_data = REPO_ROOT / "data" / "test" / "test.scores.h5"
+
+    result = run_estest_from_cwd(
+        tmp_path, "test", test_data, "--random-variants", ".1"
+    )
+
+    assert result.returncode == 0, f"Command failed with stderr: {result.stderr}"
+    assert "shape: (1, 9)" in result.stdout
+
+
+def test_score_test_random_genes_requires_gene_table_from_non_repo_cwd(tmp_path):
+    """Test variant-level gene workflows still require a real gene table."""
+    test_data = REPO_ROOT / "data" / "test" / "test.scores.h5"
+
+    result = run_estest_from_cwd(
+        tmp_path, "test", test_data, "--random-genes", ".1"
+    )
+
+    assert result.returncode == 2
+    assert "--gene-table path 'data/genes.tsv' does not exist" in result.stderr
+    assert "--random-genes" in result.stderr
+
+
+def test_score_test_gene_annot_dir_requires_gene_table_from_non_repo_cwd(tmp_path):
+    """Test gene annotation conversion still requires a real gene table."""
+    test_data = REPO_ROOT / "data" / "test" / "test.scores.h5"
+    gmt_dir = tmp_path / "gmt"
+    gmt_dir.mkdir()
+    (gmt_dir / "test.gmt").write_text("set1\tDescription\tGENE1\n")
+
+    result = run_estest_from_cwd(
+        tmp_path, "test", test_data, "--gene-annot-dir", gmt_dir
+    )
+
+    assert result.returncode == 2
+    assert "--gene-table path 'data/genes.tsv' does not exist" in result.stderr
+    assert "--gene-annot-dir" in result.stderr
 
 
 def test_score_test_cli_random_variants_with_output(tmp_path):
