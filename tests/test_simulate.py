@@ -1,16 +1,62 @@
 """Test simulation functionality."""
 
+from multiprocessing import Value
+
 import numpy as np
 import polars as pl
 import pytest
+from scipy.sparse import csc_matrix
 
-from graphld import Simulate
+from graphld import PrecisionOperator, Simulate
+from graphld.multiprocessing_template import SharedData
+from graphld.simulate import _SimulationSpecification
 
 
 # Module-level function for testing workaround 3
 def module_level_link_fn(x: np.ndarray) -> np.ndarray:
     """Example module-level link function that can be pickled."""
     return x[:, 0]
+
+
+def test_seeded_effect_size_rng_is_block_offset_specific_in_process_block():
+    """Seeded effect-size draws should not repeat across identical blocks."""
+    variant_info = pl.DataFrame({
+        'index': np.arange(6),
+        'af': np.full(6, 0.2),
+    })
+    ldgm = PrecisionOperator(csc_matrix(np.eye(6)), variant_info)
+    spec = _SimulationSpecification(
+        sample_size=100_000,
+        heritability=0.5,
+        component_variance=[1.0],
+        component_weight=[1.0],
+        alpha_param=-1,
+        random_seed=42,
+    )
+    shared_data = SharedData({
+        'beta': 2 * len(variant_info),
+        'alpha': 2 * len(variant_info),
+        'noise': 2 * len(variant_info),
+    })
+
+    Simulate.process_block(
+        ldgm,
+        Value('i', 1),
+        shared_data,
+        block_offset=0,
+        worker_params=spec,
+    )
+    Simulate.process_block(
+        ldgm,
+        Value('i', 1),
+        shared_data,
+        block_offset=len(variant_info),
+        worker_params=spec,
+    )
+
+    beta_block_1 = shared_data['beta'][:len(variant_info)]
+    beta_block_2 = shared_data['beta'][len(variant_info):]
+    assert not np.array_equal(beta_block_1, beta_block_2)
 
 
 def test_simulate_with_annotations(metadata_path, create_annotations):

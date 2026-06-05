@@ -71,6 +71,7 @@ class _SimulationSpecification:
 
 def _simulate_beta_block(ldgm: PrecisionOperator,
                         spec: _SimulationSpecification,
+                        random_seed: Optional[int] = None,
                         ) -> tuple[np.ndarray, np.ndarray]:
     """Simulate effect sizes for a single LD block.
 
@@ -105,9 +106,8 @@ def _simulate_beta_block(ldgm: PrecisionOperator,
     weights = np.append(weights, [1 - total_weight])  # Add null component
     variances = np.append(variances, [0])  # Zero variance for null component
 
-    if spec.random_seed is not None:
-        np.random.seed(spec.random_seed)
-    component_assignments = np.random.choice(
+    rng = np.random.RandomState(random_seed)
+    component_assignments = rng.choice(
         len(variances), num_variants, p=weights
     )
 
@@ -123,7 +123,7 @@ def _simulate_beta_block(ldgm: PrecisionOperator,
     h2_per_variant *= variances[component_assignments]
 
     # Generate effect sizes for each variant
-    beta = np.random.randn(num_variants) * np.sqrt(h2_per_variant)
+    beta = rng.randn(num_variants) * np.sqrt(h2_per_variant)
     alpha = ldgm.variant_solve(beta)
 
     assert np.sum(np.isnan(alpha)) == 0, 'Simulated NaN effect sizes'
@@ -132,7 +132,7 @@ def _simulate_beta_block(ldgm: PrecisionOperator,
 
 
 def _simulate_noise_block(ldgm: PrecisionOperator,
-                   random_seed: int
+                   random_seed: Optional[int]
                    ) -> np.ndarray:
     """Simulate noise vector for a single LD block.
 
@@ -145,8 +145,8 @@ def _simulate_noise_block(ldgm: PrecisionOperator,
     """
 
     # Generate noise with variance equal to the LD matrix
-    np.random.seed(random_seed)
-    white_noise = np.random.randn(ldgm.shape[0])
+    rng = np.random.RandomState(random_seed)
+    white_noise = rng.randn(ldgm.shape[0])
     return ldgm.solve_Lt(white_noise)[ldgm.variant_indices].reshape(-1, 1)
 
 
@@ -270,11 +270,15 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
         # Get block slice using the number of indices
         block_slice = slice(variant_offset, variant_offset + num_variants)
 
-        # Simulate effect sizes using the merged data
-        beta, alpha = _simulate_beta_block(ldgm, worker_params)
-
         block_random_seed = None if worker_params.random_seed is None \
             else worker_params.random_seed + variant_offset
+
+        # Simulate effect sizes using the merged data
+        beta, alpha = _simulate_beta_block(
+            ldgm,
+            worker_params,
+            random_seed=block_random_seed,
+        )
         noise = _simulate_noise_block(ldgm, random_seed=block_random_seed)
 
         # Create zero-filled arrays for all variants in sumstats

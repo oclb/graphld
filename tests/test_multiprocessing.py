@@ -65,6 +65,33 @@ class SolveProcessor(ParallelProcessor):
         return solution.size
 
 
+class FirstAlleleFrequencyProcessor(ParallelProcessor):
+    """Processor that records the first loaded allele frequency in each block."""
+
+    @staticmethod
+    def create_shared_memory(metadata, block_data, **kwargs) -> SharedData:
+        """Create output for one allele frequency per metadata block."""
+        return SharedData({'af': len(metadata)})
+
+    @staticmethod
+    def prepare_block_data(metadata, **kwargs):
+        """Attach block indices for writing one output value per block."""
+        return [{'block_index': i} for i in range(len(metadata))]
+
+    @staticmethod
+    def supervise(manager: WorkerManager, shared_data: SharedData, block_data: list, **kwargs):
+        """Wait for workers and return recorded allele frequencies."""
+        manager.start_workers()
+        manager.await_workers()
+        return shared_data['af']
+
+    @staticmethod
+    def process_block(ldgm, flag, shared_data, block_offset, block_data=None, worker_params=None):
+        """Record the first loaded `af` value for this LDGM."""
+        block_index = block_data['block_index']
+        shared_data['af', slice(block_index, block_index + 1)] = [ldgm.variant_info['af'][0]]
+
+
 def solve_serial(metadata_file, population=None, chromosomes=None, seed=None):
     """Run serial solution for comparison."""
     # Read metadata
@@ -91,7 +118,7 @@ def solve_serial(metadata_file, population=None, chromosomes=None, seed=None):
 
     for block in metadata.iter_rows(named=True):
         # Load and factor LDGM
-        ldgm = load_ldgm(str(ldgm_path / block['name']))
+        ldgm = load_ldgm(str(ldgm_path / block['name']), population=block['population'])
 
         for _ in range(NUM_FACTORS):
             ldgm.del_factor()
@@ -142,3 +169,34 @@ def test_multiprocessing():
     assert np.allclose(parallel_results, serial_results, rtol=1e-10, atol=1e-10), \
         "Parallel and serial results do not match"
 
+
+def test_worker_loads_population_specific_allele_frequencies():
+    """Workers should load the population column from each metadata row."""
+    metadata_file = "data/test/metadata.csv"
+    metadata = read_ldgm_metadata(metadata_file, populations="EAS")
+    ldgm_path = Path(metadata_file).parent
+    expected = np.array([
+        load_ldgm(
+            str(ldgm_path / block['name']),
+            population=block['population'],
+        ).variant_info['af'][0]
+        for block in metadata.iter_rows(named=True)
+    ])
+    eur_default = np.array([
+        load_ldgm(str(ldgm_path / block['name'])).variant_info['af'][0]
+        for block in metadata.iter_rows(named=True)
+    ])
+    assert not np.array_equal(expected, eur_default)
+
+    parallel_af = FirstAlleleFrequencyProcessor.run(
+        ldgm_metadata_path=metadata_file,
+        populations="EAS",
+        num_processes=2,
+    )
+    serial_af = FirstAlleleFrequencyProcessor.run_serial(
+        ldgm_metadata_path=metadata_file,
+        populations="EAS",
+    )
+
+    np.testing.assert_array_equal(parallel_af, expected)
+    np.testing.assert_array_equal(serial_af, expected)
