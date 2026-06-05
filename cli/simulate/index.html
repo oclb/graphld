@@ -10,29 +10,31 @@
       
       
       
-        <link rel="canonical" href="https://oclb.github.io/graphld/">
+        <link rel="canonical" href="https://oclb.github.io/graphld/cli/simulate/">
       
       
+        <link rel="prev" href="../clump/">
       
-        <link rel="next" href="installation/">
+      
+        <link rel="next" href="../surrogates/">
       
       
         
       
       
-      <link rel="icon" href="assets/images/favicon.png">
+      <link rel="icon" href="../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
     
     
       
-        <title>GraphLD v1.2.0</title>
+        <title>Simulation - GraphLD v1.2.0</title>
       
     
     
-      <link rel="stylesheet" href="assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -51,9 +53,9 @@
       
     
     
-      <link rel="stylesheet" href="assets/_mkdocstrings.css">
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
     
-    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -78,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#graphld" class="md-skip">
+        <a href="#simulation-simulate" class="md-skip">
           Skip to content
         </a>
       
@@ -98,7 +100,7 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="." title="GraphLD v1.2.0" class="md-header__button md-logo" aria-label="GraphLD v1.2.0" data-md-component="logo">
+    <a href="../.." title="GraphLD v1.2.0" class="md-header__button md-logo" aria-label="GraphLD v1.2.0" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -118,7 +120,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Home
+              Simulation
             
           </span>
         </div>
@@ -234,7 +236,7 @@
 
 <nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="." title="GraphLD v1.2.0" class="md-nav__button md-logo" aria-label="GraphLD v1.2.0" data-md-component="logo">
+    <a href="../.." title="GraphLD v1.2.0" class="md-nav__button md-logo" aria-label="GraphLD v1.2.0" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -261,37 +263,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Home
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="." class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -307,109 +282,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#start-here" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Start Here
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#features" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Features
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#common-workflows" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Common Workflows
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Common Workflows">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#run-graphreml" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Run graphREML
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#run-the-score-test" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Run the score test
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#work-from-python" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Work from Python
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#documentation-map" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Documentation Map
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -421,7 +293,7 @@
   
   
     <li class="md-nav__item">
-      <a href="installation/" class="md-nav__link">
+      <a href="../../installation/" class="md-nav__link">
         
   
   
@@ -445,8 +317,10 @@
       
   
   
+    
   
   
+  
     
     
     
@@ -457,11 +331,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
           <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
@@ -482,7 +356,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -497,6 +371,8 @@
                 
   
   
+    
+  
   
   
     
@@ -506,11 +382,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_1" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_1" checked>
         
           
           <label class="md-nav__link" for="__nav_3_1" id="__nav_3_1_label" tabindex="0">
@@ -531,7 +407,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_1_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_1_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_3_1">
             <span class="md-nav__icon md-icon"></span>
             
@@ -549,7 +425,7 @@
   
   
     <li class="md-nav__item">
-      <a href="cli/" class="md-nav__link">
+      <a href="../" class="md-nav__link">
         
   
   
@@ -577,7 +453,7 @@
   
   
     <li class="md-nav__item">
-      <a href="cli/reml/" class="md-nav__link">
+      <a href="../reml/" class="md-nav__link">
         
   
   
@@ -605,7 +481,7 @@
   
   
     <li class="md-nav__item">
-      <a href="cli/blup/" class="md-nav__link">
+      <a href="../blup/" class="md-nav__link">
         
   
   
@@ -633,7 +509,7 @@
   
   
     <li class="md-nav__item">
-      <a href="cli/clump/" class="md-nav__link">
+      <a href="../clump/" class="md-nav__link">
         
   
   
@@ -658,10 +534,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="cli/simulate/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simulation
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -677,6 +580,59 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#basic-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Basic Usage
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#core-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core Options
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#annotation-dependent-simulation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Annotation-Dependent Simulation
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -689,7 +645,7 @@
   
   
     <li class="md-nav__item">
-      <a href="cli/surrogates/" class="md-nav__link">
+      <a href="../surrogates/" class="md-nav__link">
         
   
   
@@ -725,7 +681,7 @@
   
   
     <li class="md-nav__item">
-      <a href="score_test/" class="md-nav__link">
+      <a href="../../score_test/" class="md-nav__link">
         
   
   
@@ -802,7 +758,7 @@
   
   
     <li class="md-nav__item">
-      <a href="python_api/" class="md-nav__link">
+      <a href="../../python_api/" class="md-nav__link">
         
   
   
@@ -830,7 +786,7 @@
   
   
     <li class="md-nav__item">
-      <a href="python_api/heritability/" class="md-nav__link">
+      <a href="../../python_api/heritability/" class="md-nav__link">
         
   
   
@@ -858,7 +814,7 @@
   
   
     <li class="md-nav__item">
-      <a href="python_api/matrix_operations/" class="md-nav__link">
+      <a href="../../python_api/matrix_operations/" class="md-nav__link">
         
   
   
@@ -886,7 +842,7 @@
   
   
     <li class="md-nav__item">
-      <a href="python_api/io_and_merging/" class="md-nav__link">
+      <a href="../../python_api/io_and_merging/" class="md-nav__link">
         
   
   
@@ -914,7 +870,7 @@
   
   
     <li class="md-nav__item">
-      <a href="python_api/likelihood/" class="md-nav__link">
+      <a href="../../python_api/likelihood/" class="md-nav__link">
         
   
   
@@ -942,7 +898,7 @@
   
   
     <li class="md-nav__item">
-      <a href="python_api/clumping/" class="md-nav__link">
+      <a href="../../python_api/clumping/" class="md-nav__link">
         
   
   
@@ -970,7 +926,7 @@
   
   
     <li class="md-nav__item">
-      <a href="python_api/simulation/" class="md-nav__link">
+      <a href="../../python_api/simulation/" class="md-nav__link">
         
   
   
@@ -998,7 +954,7 @@
   
   
     <li class="md-nav__item">
-      <a href="python_api/blup/" class="md-nav__link">
+      <a href="../../python_api/blup/" class="md-nav__link">
         
   
   
@@ -1026,7 +982,7 @@
   
   
     <li class="md-nav__item">
-      <a href="python_api/parallel_processing/" class="md-nav__link">
+      <a href="../../python_api/parallel_processing/" class="md-nav__link">
         
   
   
@@ -1062,7 +1018,7 @@
   
   
     <li class="md-nav__item">
-      <a href="file_formats/" class="md-nav__link">
+      <a href="../../file_formats/" class="md-nav__link">
         
   
   
@@ -1149,7 +1105,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/graphld/" class="md-nav__link">
+      <a href="../../api/graphld/" class="md-nav__link">
         
   
   
@@ -1226,7 +1182,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/precision/" class="md-nav__link">
+      <a href="../../api/precision/" class="md-nav__link">
         
   
   
@@ -1254,7 +1210,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/likelihood/" class="md-nav__link">
+      <a href="../../api/likelihood/" class="md-nav__link">
         
   
   
@@ -1282,7 +1238,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/heritability/" class="md-nav__link">
+      <a href="../../api/heritability/" class="md-nav__link">
         
   
   
@@ -1310,7 +1266,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/io/" class="md-nav__link">
+      <a href="../../api/io/" class="md-nav__link">
         
   
   
@@ -1338,7 +1294,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/ldsc_io/" class="md-nav__link">
+      <a href="../../api/ldsc_io/" class="md-nav__link">
         
   
   
@@ -1366,7 +1322,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/vcf_io/" class="md-nav__link">
+      <a href="../../api/vcf_io/" class="md-nav__link">
         
   
   
@@ -1394,7 +1350,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/parquet_io/" class="md-nav__link">
+      <a href="../../api/parquet_io/" class="md-nav__link">
         
   
   
@@ -1422,7 +1378,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/simulate/" class="md-nav__link">
+      <a href="../../api/simulate/" class="md-nav__link">
         
   
   
@@ -1450,7 +1406,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/clumping/" class="md-nav__link">
+      <a href="../../api/clumping/" class="md-nav__link">
         
   
   
@@ -1478,7 +1434,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/blup/" class="md-nav__link">
+      <a href="../../api/blup/" class="md-nav__link">
         
   
   
@@ -1506,7 +1462,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/surrogates/" class="md-nav__link">
+      <a href="../../api/surrogates/" class="md-nav__link">
         
   
   
@@ -1534,7 +1490,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/genesets/" class="md-nav__link">
+      <a href="../../api/genesets/" class="md-nav__link">
         
   
   
@@ -1562,7 +1518,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/multiprocessing/" class="md-nav__link">
+      <a href="../../api/multiprocessing/" class="md-nav__link">
         
   
   
@@ -1590,7 +1546,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/score_test/" class="md-nav__link">
+      <a href="../../api/score_test/" class="md-nav__link">
         
   
   
@@ -1633,7 +1589,7 @@
   
   
     <li class="md-nav__item">
-      <a href="see_also/" class="md-nav__link">
+      <a href="../../see_also/" class="md-nav__link">
         
   
   
@@ -1680,10 +1636,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#start-here" class="md-nav__link">
+  <a href="#basic-usage" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Start Here
+        Basic Usage
       
     </span>
   </a>
@@ -1691,10 +1647,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#features" class="md-nav__link">
+  <a href="#core-options" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Features
+        Core Options
       
     </span>
   </a>
@@ -1702,60 +1658,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#common-workflows" class="md-nav__link">
+  <a href="#annotation-dependent-simulation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Common Workflows
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Common Workflows">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#run-graphreml" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Run graphREML
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#run-the-score-test" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Run the score test
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#work-from-python" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Work from Python
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#documentation-map" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Documentation Map
+        Annotation-Dependent Simulation
       
     </span>
   </a>
@@ -1782,60 +1688,78 @@
   
 
 
-<h1 id="graphld">GraphLD<a class="headerlink" href="#graphld" title="Permanent link">&para;</a></h1>
-<p>GraphLD provides LDGM-backed tools for working with GWAS summary statistics.</p>
-<p>You can use it from the command line for graphREML, BLUP, clumping, simulation, and surrogate-marker workflows, or from Python for lower-level LDGM and likelihood operations.</p>
-<h2 id="start-here">Start Here<a class="headerlink" href="#start-here" title="Permanent link">&para;</a></h2>
-<p>Choose the path that matches what you want to do:</p>
-<ul>
-<li>If you have new annotations that you wish to test for enrichment against a prespecified set of traits, go to <a href="score_test/">Enrichment Score Test</a>.</li>
-<li>If you have new annotations or new GWAS summary statistics and wish to estimate heritability enrichments, go to <a href="cli/reml/">CLI graphREML</a>.</li>
-<li>If you need to install GraphLD or download reference data, start with <a href="installation/">Installation</a>.</li>
-<li>If you want a broader overview of the terminal workflows, start with <a href="cli/">Command Line Interface</a>.</li>
-<li>If you want to use GraphLD from Python, start with the <a href="python_api/">Python Guide</a>.</li>
-<li>If you need exact signatures for modules, classes, or functions, use the autogenerated <a href="api/graphld/">API Reference</a>.</li>
-<li>If you are unsure what file layout GraphLD expects, check <a href="file_formats/">File Formats</a>.</li>
-</ul>
-<h2 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h2>
-<ul>
-<li><strong>graphREML</strong> for heritability partitioning and annotation enrichment from GWAS summary statistics.</li>
-<li><strong>Enrichment score tests</strong> for fast post-hoc annotation testing from precomputed derivative statistics.</li>
-<li><strong>LDGM matrix operations</strong> for precision-matrix and Schur-complement workflows without forming dense LD matrices.</li>
-<li><strong>Simulation</strong> for generating GWAS summary statistics under flexible mixture and annotation-dependent architectures.</li>
-<li><strong>LD clumping</strong> for thresholding and pruning variants into approximately independent index sets.</li>
-<li><strong>BLUP weights</strong> for infinitesimal-model effect-size estimation.</li>
-<li><strong>Surrogate markers</strong> for handling variants that are absent from the LDGM reference panel.</li>
-</ul>
-<h2 id="common-workflows">Common Workflows<a class="headerlink" href="#common-workflows" title="Permanent link">&para;</a></h2>
-<h3 id="run-graphreml">Run graphREML<a class="headerlink" href="#run-graphreml" title="Permanent link">&para;</a></h3>
-<p>Use the <code>graphld reml</code> command when you want heritability partitioning or enrichment estimates from summary statistics plus annotations.</p>
-<p>Start here:</p>
-<ul>
-<li><a href="cli/">CLI overview</a></li>
-<li><a href="cli/reml/">graphREML command reference</a></li>
-</ul>
-<h3 id="run-the-score-test">Run the score test<a class="headerlink" href="#run-the-score-test" title="Permanent link">&para;</a></h3>
-<p>Use <code>estest</code> when you already have score-statistics HDF5 files and want fast annotation testing without rerunning graphREML.</p>
-<p>Start here:</p>
-<ul>
-<li><a href="score_test/">Enrichment Score Test</a></li>
-</ul>
-<h3 id="work-from-python">Work from Python<a class="headerlink" href="#work-from-python" title="Permanent link">&para;</a></h3>
-<p>Use the manual Python docs when you want examples and the autogenerated reference when you want exact object-level details.</p>
-<p>Start here:</p>
-<ul>
-<li><a href="python_api/">Python Guide</a></li>
-<li><a href="api/graphld/">Reference overview</a></li>
-</ul>
-<h2 id="documentation-map">Documentation Map<a class="headerlink" href="#documentation-map" title="Permanent link">&para;</a></h2>
-<ul>
-<li><a href="installation/">Installation</a>: environment setup, dependencies, and data downloads</li>
-<li><a href="cli/">Command Line Interface</a>: shared CLI concepts plus per-subcommand pages</li>
-<li><a href="score_test/">Enrichment Score Test</a>: <code>estest</code> workflows and HDF5 score-stat usage</li>
-<li><a href="python_api/">Python Guide</a>: workflow-oriented examples for using GraphLD from Python</li>
-<li><a href="file_formats/">File Formats</a>: expected summary-statistics, annotation, and LDGM inputs</li>
-<li><a href="api/graphld/">Reference overview</a>: autogenerated module-level API documentation</li>
-</ul>
+<h1 id="simulation-simulate">Simulation (<code>simulate</code>)<a class="headerlink" href="#simulation-simulate" title="Permanent link">&para;</a></h1>
+<p>Use <code>graphld simulate</code> to generate GWAS summary statistics from the GraphLD simulation model.</p>
+<h2 id="basic-usage">Basic Usage<a class="headerlink" href="#basic-usage" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>uv<span class="w"> </span>run<span class="w"> </span>graphld<span class="w"> </span>simulate<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">    </span>output.sumstats<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span>--heritability<span class="w"> </span><span class="m">0</span>.5<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span>--component-variance<span class="w"> </span><span class="m">1</span>,10<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">    </span>--component-weight<span class="w"> </span><span class="m">0</span>.01,0.001
+</code></pre></div>
+<p>Unlike the other <code>graphld</code> subcommands, <code>simulate</code> takes an output summary-statistics path as its positional argument rather than an input sumstats file.</p>
+<h2 id="core-options">Core Options<a class="headerlink" href="#core-options" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-H, --heritability</code></td>
+<td><code>0.2</code></td>
+<td>Total trait heritability</td>
+</tr>
+<tr>
+<td><code>--component-variance</code></td>
+<td><code>1.0</code></td>
+<td>Comma-separated mixture variances</td>
+</tr>
+<tr>
+<td><code>--component-weight</code></td>
+<td><code>1.0</code></td>
+<td>Comma-separated mixture weights</td>
+</tr>
+<tr>
+<td><code>--alpha-param</code></td>
+<td><code>-0.5</code></td>
+<td>Frequency-dependence parameter</td>
+</tr>
+<tr>
+<td><code>--random-seed</code></td>
+<td><code>None</code></td>
+<td>Random seed</td>
+</tr>
+</tbody>
+</table>
+<h2 id="annotation-dependent-simulation">Annotation-Dependent Simulation<a class="headerlink" href="#annotation-dependent-simulation" title="Permanent link">&para;</a></h2>
+<p>Use annotation-driven architectures with:</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-a, --annot-dir</code></td>
+<td>Annotation directory</td>
+</tr>
+<tr>
+<td><code>--annotation-columns</code></td>
+<td>Comma-separated annotation columns</td>
+</tr>
+<tr>
+<td><code>--annotation-dependent-polygenicity</code></td>
+<td>Enable annotation-dependent polygenicity</td>
+</tr>
+</tbody>
+</table>
+<p>The shared options from the <a href="../">CLI overview</a> also apply.</p>
 
 
 
@@ -1891,10 +1815,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.sections", "navigation.top", "search.highlight", "content.code.copy"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": "1.2.0"}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "search.highlight", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": "1.2.0"}</script>
     
     
-      <script src="assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

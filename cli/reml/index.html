@@ -10,29 +10,31 @@
       
       
       
-        <link rel="canonical" href="https://oclb.github.io/graphld/">
+        <link rel="canonical" href="https://oclb.github.io/graphld/cli/reml/">
       
       
+        <link rel="prev" href="../">
       
-        <link rel="next" href="installation/">
+      
+        <link rel="next" href="../blup/">
       
       
         
       
       
-      <link rel="icon" href="assets/images/favicon.png">
+      <link rel="icon" href="../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
     
     
       
-        <title>GraphLD v1.2.0</title>
+        <title>graphREML - GraphLD v1.2.0</title>
       
     
     
-      <link rel="stylesheet" href="assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -51,9 +53,9 @@
       
     
     
-      <link rel="stylesheet" href="assets/_mkdocstrings.css">
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
     
-    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -78,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#graphld" class="md-skip">
+        <a href="#graphreml-reml" class="md-skip">
           Skip to content
         </a>
       
@@ -98,7 +100,7 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="." title="GraphLD v1.2.0" class="md-header__button md-logo" aria-label="GraphLD v1.2.0" data-md-component="logo">
+    <a href="../.." title="GraphLD v1.2.0" class="md-header__button md-logo" aria-label="GraphLD v1.2.0" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -118,7 +120,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Home
+              graphREML
             
           </span>
         </div>
@@ -234,7 +236,7 @@
 
 <nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="." title="GraphLD v1.2.0" class="md-nav__button md-logo" aria-label="GraphLD v1.2.0" data-md-component="logo">
+    <a href="../.." title="GraphLD v1.2.0" class="md-nav__button md-logo" aria-label="GraphLD v1.2.0" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -261,6 +263,193 @@
       
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_1" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3_1" id="__nav_3_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command Line Interface
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_1_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Command Line Interface
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
     
   
   
@@ -280,7 +469,7 @@
   <span class="md-ellipsis">
     
   
-    Home
+    graphREML
   
 
     
@@ -291,14 +480,14 @@
           <span class="md-nav__icon md-icon"></span>
         </label>
       
-      <a href="." class="md-nav__link md-nav__link--active">
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
   <span class="md-ellipsis">
     
   
-    Home
+    graphREML
   
 
     
@@ -324,10 +513,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#start-here" class="md-nav__link">
+  <a href="#basic-usage" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Start Here
+        Basic Usage
       
     </span>
   </a>
@@ -335,10 +524,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#features" class="md-nav__link">
+  <a href="#input-types" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Features
+        Input Types
       
     </span>
   </a>
@@ -346,60 +535,76 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#common-workflows" class="md-nav__link">
+  <a href="#output-files" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Common Workflows
+        Output Files
       
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Common Workflows">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#run-graphreml" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Run graphREML
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#run-the-score-test" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Run the score test
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#work-from-python" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Work from Python
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#documentation-map" class="md-nav__link">
+  <a href="#common-options" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Documentation Map
+        Common Options
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#optimization-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optimization Options
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#variant-matching-and-filtering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Variant Matching And Filtering
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#gene-set-annotations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Gene Set Annotations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#surrogate-markers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Surrogate Markers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parquet-multi-trait-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parquet Multi-Trait Files
       
     </span>
   </a>
@@ -413,161 +618,6 @@
     </li>
   
 
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="installation/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Installation
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-        
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
-        
-          
-          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    User Guide
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_3">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    User Guide
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    
-    
-    
-    
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_1" >
-        
-          
-          <label class="md-nav__link" for="__nav_3_1" id="__nav_3_1_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Command Line Interface
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_1_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_3_1">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Command Line Interface
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="cli/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Overview
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
               
             
               
@@ -577,35 +627,7 @@
   
   
     <li class="md-nav__item">
-      <a href="cli/reml/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    graphREML
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="cli/blup/" class="md-nav__link">
+      <a href="../blup/" class="md-nav__link">
         
   
   
@@ -633,7 +655,7 @@
   
   
     <li class="md-nav__item">
-      <a href="cli/clump/" class="md-nav__link">
+      <a href="../clump/" class="md-nav__link">
         
   
   
@@ -661,7 +683,7 @@
   
   
     <li class="md-nav__item">
-      <a href="cli/simulate/" class="md-nav__link">
+      <a href="../simulate/" class="md-nav__link">
         
   
   
@@ -689,7 +711,7 @@
   
   
     <li class="md-nav__item">
-      <a href="cli/surrogates/" class="md-nav__link">
+      <a href="../surrogates/" class="md-nav__link">
         
   
   
@@ -725,7 +747,7 @@
   
   
     <li class="md-nav__item">
-      <a href="score_test/" class="md-nav__link">
+      <a href="../../score_test/" class="md-nav__link">
         
   
   
@@ -802,7 +824,7 @@
   
   
     <li class="md-nav__item">
-      <a href="python_api/" class="md-nav__link">
+      <a href="../../python_api/" class="md-nav__link">
         
   
   
@@ -830,7 +852,7 @@
   
   
     <li class="md-nav__item">
-      <a href="python_api/heritability/" class="md-nav__link">
+      <a href="../../python_api/heritability/" class="md-nav__link">
         
   
   
@@ -858,7 +880,7 @@
   
   
     <li class="md-nav__item">
-      <a href="python_api/matrix_operations/" class="md-nav__link">
+      <a href="../../python_api/matrix_operations/" class="md-nav__link">
         
   
   
@@ -886,7 +908,7 @@
   
   
     <li class="md-nav__item">
-      <a href="python_api/io_and_merging/" class="md-nav__link">
+      <a href="../../python_api/io_and_merging/" class="md-nav__link">
         
   
   
@@ -914,7 +936,7 @@
   
   
     <li class="md-nav__item">
-      <a href="python_api/likelihood/" class="md-nav__link">
+      <a href="../../python_api/likelihood/" class="md-nav__link">
         
   
   
@@ -942,7 +964,7 @@
   
   
     <li class="md-nav__item">
-      <a href="python_api/clumping/" class="md-nav__link">
+      <a href="../../python_api/clumping/" class="md-nav__link">
         
   
   
@@ -970,7 +992,7 @@
   
   
     <li class="md-nav__item">
-      <a href="python_api/simulation/" class="md-nav__link">
+      <a href="../../python_api/simulation/" class="md-nav__link">
         
   
   
@@ -998,7 +1020,7 @@
   
   
     <li class="md-nav__item">
-      <a href="python_api/blup/" class="md-nav__link">
+      <a href="../../python_api/blup/" class="md-nav__link">
         
   
   
@@ -1026,7 +1048,7 @@
   
   
     <li class="md-nav__item">
-      <a href="python_api/parallel_processing/" class="md-nav__link">
+      <a href="../../python_api/parallel_processing/" class="md-nav__link">
         
   
   
@@ -1062,7 +1084,7 @@
   
   
     <li class="md-nav__item">
-      <a href="file_formats/" class="md-nav__link">
+      <a href="../../file_formats/" class="md-nav__link">
         
   
   
@@ -1149,7 +1171,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/graphld/" class="md-nav__link">
+      <a href="../../api/graphld/" class="md-nav__link">
         
   
   
@@ -1226,7 +1248,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/precision/" class="md-nav__link">
+      <a href="../../api/precision/" class="md-nav__link">
         
   
   
@@ -1254,7 +1276,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/likelihood/" class="md-nav__link">
+      <a href="../../api/likelihood/" class="md-nav__link">
         
   
   
@@ -1282,7 +1304,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/heritability/" class="md-nav__link">
+      <a href="../../api/heritability/" class="md-nav__link">
         
   
   
@@ -1310,7 +1332,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/io/" class="md-nav__link">
+      <a href="../../api/io/" class="md-nav__link">
         
   
   
@@ -1338,7 +1360,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/ldsc_io/" class="md-nav__link">
+      <a href="../../api/ldsc_io/" class="md-nav__link">
         
   
   
@@ -1366,7 +1388,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/vcf_io/" class="md-nav__link">
+      <a href="../../api/vcf_io/" class="md-nav__link">
         
   
   
@@ -1394,7 +1416,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/parquet_io/" class="md-nav__link">
+      <a href="../../api/parquet_io/" class="md-nav__link">
         
   
   
@@ -1422,7 +1444,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/simulate/" class="md-nav__link">
+      <a href="../../api/simulate/" class="md-nav__link">
         
   
   
@@ -1450,7 +1472,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/clumping/" class="md-nav__link">
+      <a href="../../api/clumping/" class="md-nav__link">
         
   
   
@@ -1478,7 +1500,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/blup/" class="md-nav__link">
+      <a href="../../api/blup/" class="md-nav__link">
         
   
   
@@ -1506,7 +1528,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/surrogates/" class="md-nav__link">
+      <a href="../../api/surrogates/" class="md-nav__link">
         
   
   
@@ -1534,7 +1556,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/genesets/" class="md-nav__link">
+      <a href="../../api/genesets/" class="md-nav__link">
         
   
   
@@ -1562,7 +1584,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/multiprocessing/" class="md-nav__link">
+      <a href="../../api/multiprocessing/" class="md-nav__link">
         
   
   
@@ -1590,7 +1612,7 @@
   
   
     <li class="md-nav__item">
-      <a href="api/score_test/" class="md-nav__link">
+      <a href="../../api/score_test/" class="md-nav__link">
         
   
   
@@ -1633,7 +1655,7 @@
   
   
     <li class="md-nav__item">
-      <a href="see_also/" class="md-nav__link">
+      <a href="../../see_also/" class="md-nav__link">
         
   
   
@@ -1680,10 +1702,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#start-here" class="md-nav__link">
+  <a href="#basic-usage" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Start Here
+        Basic Usage
       
     </span>
   </a>
@@ -1691,10 +1713,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#features" class="md-nav__link">
+  <a href="#input-types" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Features
+        Input Types
       
     </span>
   </a>
@@ -1702,60 +1724,76 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#common-workflows" class="md-nav__link">
+  <a href="#output-files" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Common Workflows
+        Output Files
       
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Common Workflows">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#run-graphreml" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Run graphREML
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#run-the-score-test" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Run the score test
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#work-from-python" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Work from Python
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#documentation-map" class="md-nav__link">
+  <a href="#common-options" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Documentation Map
+        Common Options
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#optimization-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optimization Options
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#variant-matching-and-filtering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Variant Matching And Filtering
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#gene-set-annotations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Gene Set Annotations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#surrogate-markers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Surrogate Markers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parquet-multi-trait-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parquet Multi-Trait Files
       
     </span>
   </a>
@@ -1782,60 +1820,210 @@
   
 
 
-<h1 id="graphld">GraphLD<a class="headerlink" href="#graphld" title="Permanent link">&para;</a></h1>
-<p>GraphLD provides LDGM-backed tools for working with GWAS summary statistics.</p>
-<p>You can use it from the command line for graphREML, BLUP, clumping, simulation, and surrogate-marker workflows, or from Python for lower-level LDGM and likelihood operations.</p>
-<h2 id="start-here">Start Here<a class="headerlink" href="#start-here" title="Permanent link">&para;</a></h2>
-<p>Choose the path that matches what you want to do:</p>
+<h1 id="graphreml-reml">graphREML (<code>reml</code>)<a class="headerlink" href="#graphreml-reml" title="Permanent link">&para;</a></h1>
+<p>Use <code>graphld reml</code> for heritability partitioning and annotation enrichment estimation.</p>
+<h2 id="basic-usage">Basic Usage<a class="headerlink" href="#basic-usage" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>uv<span class="w"> </span>run<span class="w"> </span>graphld<span class="w"> </span>reml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">    </span>/path/to/sumstats.sumstats<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span>output_prefix<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span>--annot-dir<span class="w"> </span>/path/to/annotations/
+</code></pre></div>
+<p>You must provide one annotation source:</p>
 <ul>
-<li>If you have new annotations that you wish to test for enrichment against a prespecified set of traits, go to <a href="score_test/">Enrichment Score Test</a>.</li>
-<li>If you have new annotations or new GWAS summary statistics and wish to estimate heritability enrichments, go to <a href="cli/reml/">CLI graphREML</a>.</li>
-<li>If you need to install GraphLD or download reference data, start with <a href="installation/">Installation</a>.</li>
-<li>If you want a broader overview of the terminal workflows, start with <a href="cli/">Command Line Interface</a>.</li>
-<li>If you want to use GraphLD from Python, start with the <a href="python_api/">Python Guide</a>.</li>
-<li>If you need exact signatures for modules, classes, or functions, use the autogenerated <a href="api/graphld/">API Reference</a>.</li>
-<li>If you are unsure what file layout GraphLD expects, check <a href="file_formats/">File Formats</a>.</li>
+<li><code>--annot-dir</code> for variant or region annotations</li>
+<li><code>--gene-annot-dir</code> for GMT gene sets</li>
 </ul>
-<h2 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h2>
+<h2 id="input-types">Input Types<a class="headerlink" href="#input-types" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>graphREML</strong> for heritability partitioning and annotation enrichment from GWAS summary statistics.</li>
-<li><strong>Enrichment score tests</strong> for fast post-hoc annotation testing from precomputed derivative statistics.</li>
-<li><strong>LDGM matrix operations</strong> for precision-matrix and Schur-complement workflows without forming dense LD matrices.</li>
-<li><strong>Simulation</strong> for generating GWAS summary statistics under flexible mixture and annotation-dependent architectures.</li>
-<li><strong>LD clumping</strong> for thresholding and pruning variants into approximately independent index sets.</li>
-<li><strong>BLUP weights</strong> for infinitesimal-model effect-size estimation.</li>
-<li><strong>Surrogate markers</strong> for handling variants that are absent from the LDGM reference panel.</li>
+<li>Summary statistics: <code>.sumstats</code>, <code>.vcf</code>, or <code>.parquet</code></li>
+<li>Variant annotations: per-chromosome <code>.annot</code> files, optionally alongside <code>.bed</code> files</li>
+<li>Gene annotations: <code>.gmt</code> files converted to variant-level annotations with nearest-gene weighting</li>
 </ul>
-<h2 id="common-workflows">Common Workflows<a class="headerlink" href="#common-workflows" title="Permanent link">&para;</a></h2>
-<h3 id="run-graphreml">Run graphREML<a class="headerlink" href="#run-graphreml" title="Permanent link">&para;</a></h3>
-<p>Use the <code>graphld reml</code> command when you want heritability partitioning or enrichment estimates from summary statistics plus annotations.</p>
-<p>Start here:</p>
+<h2 id="output-files">Output Files<a class="headerlink" href="#output-files" title="Permanent link">&para;</a></h2>
+<p>Default output:</p>
 <ul>
-<li><a href="cli/">CLI overview</a></li>
-<li><a href="cli/reml/">graphREML command reference</a></li>
+<li><code>output_prefix.tall.csv</code>: heritability, enrichment, and coefficient estimates</li>
+<li><code>output_prefix.convergence.csv</code>: optimization diagnostics</li>
 </ul>
-<h3 id="run-the-score-test">Run the score test<a class="headerlink" href="#run-the-score-test" title="Permanent link">&para;</a></h3>
-<p>Use <code>estest</code> when you already have score-statistics HDF5 files and want fast annotation testing without rerunning graphREML.</p>
-<p>Start here:</p>
+<p>With <code>--alt-output</code>:</p>
 <ul>
-<li><a href="score_test/">Enrichment Score Test</a></li>
+<li><code>output_prefix.heritability.csv</code></li>
+<li><code>output_prefix.enrichment.csv</code></li>
+<li><code>output_prefix.parameters.csv</code></li>
 </ul>
-<h3 id="work-from-python">Work from Python<a class="headerlink" href="#work-from-python" title="Permanent link">&para;</a></h3>
-<p>Use the manual Python docs when you want examples and the autogenerated reference when you want exact object-level details.</p>
-<p>Start here:</p>
-<ul>
-<li><a href="python_api/">Python Guide</a></li>
-<li><a href="api/graphld/">Reference overview</a></li>
-</ul>
-<h2 id="documentation-map">Documentation Map<a class="headerlink" href="#documentation-map" title="Permanent link">&para;</a></h2>
-<ul>
-<li><a href="installation/">Installation</a>: environment setup, dependencies, and data downloads</li>
-<li><a href="cli/">Command Line Interface</a>: shared CLI concepts plus per-subcommand pages</li>
-<li><a href="score_test/">Enrichment Score Test</a>: <code>estest</code> workflows and HDF5 score-stat usage</li>
-<li><a href="python_api/">Python Guide</a>: workflow-oriented examples for using GraphLD from Python</li>
-<li><a href="file_formats/">File Formats</a>: expected summary-statistics, annotation, and LDGM inputs</li>
-<li><a href="api/graphld/">Reference overview</a>: autogenerated module-level API documentation</li>
-</ul>
+<p>Use <code>--name</code> to label runs when appending to alternate output files or score-test HDF5 outputs.</p>
+<h2 id="common-options">Common Options<a class="headerlink" href="#common-options" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--intercept</code></td>
+<td><code>1.0</code></td>
+<td>LD score regression intercept</td>
+</tr>
+<tr>
+<td><code>--name</code></td>
+<td><code>None</code></td>
+<td>Run label for outputs and score-test artifacts</td>
+</tr>
+<tr>
+<td><code>--metadata</code></td>
+<td><code>data/ldgms/metadata.csv</code></td>
+<td>LDGM metadata CSV</td>
+</tr>
+<tr>
+<td><code>--score-test-filename</code></td>
+<td><code>None</code></td>
+<td>HDF5 file for score-test precomputation</td>
+</tr>
+<tr>
+<td><code>--surrogates</code></td>
+<td><code>None</code></td>
+<td>Precomputed surrogate-marker HDF5</td>
+</tr>
+<tr>
+<td><code>--no-save</code></td>
+<td><code>False</code></td>
+<td>Skip result-file writing or write logs only</td>
+</tr>
+</tbody>
+</table>
+<h2 id="optimization-options">Optimization Options<a class="headerlink" href="#optimization-options" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--num-iterations</code></td>
+<td><code>50</code></td>
+<td>Maximum optimization iterations</td>
+</tr>
+<tr>
+<td><code>--convergence-tol</code></td>
+<td><code>0.01</code></td>
+<td>Convergence tolerance</td>
+</tr>
+<tr>
+<td><code>--convergence-window</code></td>
+<td><code>3</code></td>
+<td>Iterations used for convergence checks</td>
+</tr>
+<tr>
+<td><code>--num-jackknife-blocks</code></td>
+<td><code>100</code></td>
+<td>Jackknife blocks for standard errors</td>
+</tr>
+<tr>
+<td><code>--xtrace-num-samples</code></td>
+<td><code>100</code></td>
+<td>Samples for stochastic gradient estimation</td>
+</tr>
+<tr>
+<td><code>--reset-trust-region</code></td>
+<td><code>False</code></td>
+<td>Reset trust-region size each iteration</td>
+</tr>
+<tr>
+<td><code>--initial-params</code></td>
+<td><code>None</code></td>
+<td>Comma-separated initial coefficient values</td>
+</tr>
+</tbody>
+</table>
+<h2 id="variant-matching-and-filtering">Variant Matching And Filtering<a class="headerlink" href="#variant-matching-and-filtering" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--match-by-position</code></td>
+<td><code>False</code></td>
+<td>Match variants by genomic position instead of RSID</td>
+</tr>
+<tr>
+<td><code>--maximum-missingness</code></td>
+<td><code>0.1</code></td>
+<td>Maximum missing-variant fraction allowed</td>
+</tr>
+<tr>
+<td><code>--max-chisq-threshold</code></td>
+<td><code>None</code></td>
+<td>Drop LD blocks above a chi-squared threshold</td>
+</tr>
+<tr>
+<td><code>--annotation-columns</code></td>
+<td>all</td>
+<td>Restrict to specific annotation columns</td>
+</tr>
+<tr>
+<td><code>--binary-annotations-only</code></td>
+<td><code>False</code></td>
+<td>Keep only 0/1-valued annotations</td>
+</tr>
+</tbody>
+</table>
+<h2 id="gene-set-annotations">Gene Set Annotations<a class="headerlink" href="#gene-set-annotations" title="Permanent link">&para;</a></h2>
+<p>Use <code>--gene-annot-dir</code> to supply GMT files:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>uv<span class="w"> </span>run<span class="w"> </span>graphld<span class="w"> </span>reml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span>/path/to/sumstats.sumstats<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span>output_prefix<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span>--gene-annot-dir<span class="w"> </span>/path/to/gmt/files/<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span>--gene-table<span class="w"> </span>data/genes.tsv
+</code></pre></div>
+<p>Related options:</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--gene-table</code></td>
+<td><code>data/genes.tsv</code></td>
+<td>Gene coordinate table</td>
+</tr>
+<tr>
+<td><code>--nearest-weights</code></td>
+<td><code>0.4,0.2,0.1,0.1,0.1,0.05,0.05</code></td>
+<td>Weights for nearest-gene mapping</td>
+</tr>
+</tbody>
+</table>
+<p>GMT rows are:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>gene_set_name&lt;TAB&gt;description&lt;TAB&gt;gene1&lt;TAB&gt;gene2&lt;TAB&gt;...
+</code></pre></div>
+<h2 id="surrogate-markers">Surrogate Markers<a class="headerlink" href="#surrogate-markers" title="Permanent link">&para;</a></h2>
+<p>When GWAS variants are missing from the LDGM reference, graphREML can use surrogate markers in high LD. To avoid recomputing them for repeated analyses:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>uv<span class="w"> </span>run<span class="w"> </span>graphld<span class="w"> </span>surrogates<span class="w"> </span>/path/to/sumstats.sumstats<span class="w"> </span>out.h5<span class="w"> </span>--population<span class="w"> </span>EUR
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>uv<span class="w"> </span>run<span class="w"> </span>graphld<span class="w"> </span>reml<span class="w"> </span>/path/to/sumstats.sumstats<span class="w"> </span>output_prefix<span class="w"> </span>--annot-dir<span class="w"> </span>/path/to/annot<span class="w"> </span>--surrogates<span class="w"> </span>out.h5
+</code></pre></div>
+<h2 id="parquet-multi-trait-files">Parquet Multi-Trait Files<a class="headerlink" href="#parquet-multi-trait-files" title="Permanent link">&para;</a></h2>
+<p>For multi-trait parquet inputs:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Process specific traits</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>uv<span class="w"> </span>run<span class="w"> </span>graphld<span class="w"> </span>reml<span class="w"> </span>sumstats.parquet<span class="w"> </span>output<span class="w"> </span>--name<span class="w"> </span>height,bmi
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># Process all traits</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>uv<span class="w"> </span>run<span class="w"> </span>graphld<span class="w"> </span>reml<span class="w"> </span>sumstats.parquet<span class="w"> </span>output
+</code></pre></div>
 
 
 
@@ -1891,10 +2079,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.sections", "navigation.top", "search.highlight", "content.code.copy"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": "1.2.0"}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "search.highlight", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": "1.2.0"}</script>
     
     
-      <script src="assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>
