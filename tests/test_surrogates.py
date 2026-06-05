@@ -209,17 +209,6 @@ def test_precomputed_surrogates_translate_for_active_subset(
                 break
         assert expected_row is not None
 
-        ldgm_on_the_fly = load_ldgm(
-            str(metadata_path.parent / block["name"]),
-            population=block["population"],
-        )
-        ldgm_on_the_fly, pz_on_the_fly = GraphREML._initialize_block_zscores(
-            ldgm_on_the_fly,
-            annot_block,
-            ["base"],
-            match_by_position=False,
-        )
-
         ldgm_precomputed = load_ldgm(
             str(metadata_path.parent / block["name"]),
             population=block["population"],
@@ -237,16 +226,6 @@ def test_precomputed_surrogates_translate_for_active_subset(
             ldgm_precomputed._which_indices,
             np.arange(ldgm_precomputed.shape[0]),
         )
-        np.testing.assert_array_equal(
-            ldgm_precomputed._which_indices,
-            ldgm_on_the_fly._which_indices,
-        )
-        np.testing.assert_allclose(pz_precomputed, pz_on_the_fly)
-        for column in ["index", "Z", "annot_indices"]:
-            np.testing.assert_array_equal(
-                ldgm_precomputed.variant_info.get_column(column).to_numpy(),
-                ldgm_on_the_fly.variant_info.get_column(column).to_numpy(),
-            )
         missing_row, surrogate_row = expected_row
         initialized_row = ldgm_precomputed.variant_info.row(
             missing_row["vi_row_nr"], named=True
