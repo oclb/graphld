@@ -85,8 +85,8 @@ class TraitData:
     df: pl.DataFrame  # Must contain 'gradient', optionally 'hessian' and annotation columns
     params: np.ndarray | None = None
     jk_params: np.ndarray | None = None
-    annot_names: List[str] = None  # Names of annotation columns in df
-    keys: List[str] = None  # Primary column names to use for merging
+    annot_names: list[str] | None = None  # Names of annotation columns in df
+    keys: list[str] | None = None  # Primary column names to use for merging
 
     @property
     def exclude_cols(self) -> set[str]:

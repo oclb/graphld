@@ -5,10 +5,13 @@ Input/output operations for LDGM files.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 
 import numpy as np
 import polars as pl
+
+if TYPE_CHECKING:
+    from .precision import PrecisionOperator
 
 
 def load_ldgm(filepath: str, snplist_path: Optional[str] = None, population: Optional[str] = "EUR",
