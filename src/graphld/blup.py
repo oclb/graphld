@@ -1,10 +1,11 @@
 from multiprocessing import Value
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import polars as pl
 
-from .io import partition_variants
+from .io import load_ldgm, merge_snplists, partition_variants, read_ldgm_metadata
 from .multiprocessing_template import ParallelProcessor, SharedData, WorkerManager
 from .precision import PrecisionOperator
 
@@ -12,6 +13,50 @@ from .precision import PrecisionOperator
 class BLUP(ParallelProcessor):
     """Computes the best linear unbiased predictor using LDGMs and GWAS summary statistics."""
 
+    @staticmethod
+    def _merge_sumstats(
+        ldgm: PrecisionOperator,
+        sumstats: pl.DataFrame,
+        match_by_position: bool,
+    ) -> tuple[PrecisionOperator, np.ndarray]:
+        """Merge a block's summary statistics into LDGM variant coordinates."""
+        return merge_snplists(
+            ldgm,
+            sumstats,
+            match_by_position=match_by_position,
+            pos_col='POS',
+            ref_allele_col='REF',
+            alt_allele_col='ALT',
+            add_allelic_cols=['Z'],
+        )
+
+    @classmethod
+    def _count_matched_effects(
+        cls,
+        ldgm_metadata_path: str,
+        sumstats: pl.DataFrame,
+        populations: Optional[Union[str, List[str]]],
+        chromosomes: Optional[Union[int, List[int]]],
+        match_by_position: bool,
+    ) -> int:
+        """Count unique LDGM effect indices used by BLUP after matching."""
+        metadata = read_ldgm_metadata(
+            ldgm_metadata_path,
+            populations=populations,
+            chromosomes=chromosomes,
+        )
+        block_data = cls.prepare_block_data(metadata, sumstats=sumstats)
+        ldgm_directory = Path(ldgm_metadata_path).parent
+
+        matched_effects = 0
+        for block, (block_sumstats, _) in zip(metadata.iter_rows(named=True), block_data, strict=False):
+            if len(block_sumstats) == 0:
+                continue
+            ldgm = load_ldgm(str(ldgm_directory / block['name']))
+            ldgm, _ = cls._merge_sumstats(ldgm, block_sumstats, match_by_position)
+            matched_effects += ldgm.variant_info.get_column('index').n_unique()
+
+        return matched_effects
 
     @classmethod
     def prepare_block_data(cls, metadata: pl.DataFrame, **kwargs: Any) -> list[tuple]:
@@ -57,22 +102,14 @@ class BLUP(ParallelProcessor):
                      block_data: tuple,
                      worker_params: tuple) -> None:
         """Run BLUP on a single block."""
-        sigmasq, sample_size, match_by_position = worker_params
-        assert isinstance(sigmasq, float), "sigmasq parameter must be a float"
+        per_effect_variance, sample_size, match_by_position = worker_params
+        assert isinstance(per_effect_variance, float), "per-effect variance must be a float"
         assert isinstance(block_data, tuple), "block_data must be a tuple"
         sumstats, variant_offset = block_data
         num_variants = len(sumstats)
 
         # Merge annotations with LDGM variant info and get indices of merged variants
-        from .io import merge_snplists
-        ldgm, sumstat_indices = merge_snplists(
-            ldgm, sumstats,
-            match_by_position=match_by_position,
-            pos_col='POS',
-            ref_allele_col='REF',
-            alt_allele_col='ALT',
-            add_allelic_cols=['Z'],
-        )
+        ldgm, sumstat_indices = cls._merge_sumstats(ldgm, sumstats, match_by_position)
 
         # Keep only first occurrence of each index
         first_index_mask = ldgm.variant_info.select(pl.col('index').is_first_distinct()).to_numpy().flatten()
@@ -84,8 +121,8 @@ class BLUP(ParallelProcessor):
 
         # Compute the BLUP for this block
         beta = ldgm @ z
-        ldgm.update_matrix(np.full(ldgm.shape[0], sample_size*sigmasq))
-        beta = np.sqrt(sample_size) * sigmasq * ldgm.solve(beta)
+        ldgm.update_matrix(np.full(ldgm.shape[0], sample_size * per_effect_variance))
+        beta = np.sqrt(sample_size) * per_effect_variance * ldgm.solve(beta)
         ldgm.del_factor()
 
         # Store results for variants that were successfully merged
@@ -107,7 +144,7 @@ class BLUP(ParallelProcessor):
             **kwargs: Additional arguments
             
         Returns:
-            DataFrame containing simulated summary statistics
+            DataFrame containing summary statistics with BLUP weights
         """
 
         manager.start_workers()
@@ -121,39 +158,69 @@ class BLUP(ParallelProcessor):
     def compute_blup(cls,
             ldgm_metadata_path: str,
             sumstats: pl.DataFrame,
-            sigmasq: float,
-            sample_size: float,
+            heritability: Optional[float] = None,
+            sample_size: Optional[float] = None,
             populations: Optional[Union[str, List[str]]] = None,
             chromosomes: Optional[Union[int, List[int]]] = None,
             num_processes: Optional[int] = None,
             run_in_serial: bool = False,
             match_by_position: bool = False,
             verbose: bool = False,
+            sigmasq: Optional[float] = None,
             ) -> pl.DataFrame:
-        """Simulate GWAS summary statistics for multiple LD blocks.
+        """Compute BLUP weights for multiple LD blocks.
         
         Args:
             ldgm_metadata_path: Path to metadata CSV file
             sumstats: Sumstats dataframe containing Z scores
+            heritability: Heritability for the analyzed variant scope. Internally, BLUP uses
+                D = (heritability / m) I, where m is the number of unique
+                matched LDGM effect indices.
+            sample_size: GWAS sample size
             populations: Optional population name
             chromosomes: Optional chromosome or list of chromosomes
             verbose: Print additional information if True
             
         Returns:
-            Array of BLUP effect sizes, same length as sumstats
+            DataFrame with BLUP weights added to the partitioned summary statistics.
         """
+        if sigmasq is not None:
+            raise ValueError(
+                "The BLUP sigmasq keyword is no longer supported. "
+                "Pass total heritability for the analyzed variant scope with heritability=."
+            )
+        if heritability is None:
+            raise ValueError("BLUP requires heritability for the analyzed variant scope")
+        if sample_size is None:
+            raise ValueError("BLUP requires sample_size")
+        if not 0 <= heritability <= 1:
+            raise ValueError(f"Heritability must be between 0 and 1, got {heritability}")
+
+        matched_effects = cls._count_matched_effects(
+            ldgm_metadata_path=ldgm_metadata_path,
+            sumstats=sumstats,
+            populations=populations,
+            chromosomes=chromosomes,
+            match_by_position=match_by_position,
+        )
+        if matched_effects == 0:
+            raise ValueError("No summary statistics matched LDGM variants for BLUP")
+
+        per_effect_variance = heritability / matched_effects
         run_fn = cls.run_serial if run_in_serial else cls.run
         result = run_fn(
             ldgm_metadata_path=ldgm_metadata_path,
             populations=populations,
             chromosomes=chromosomes,
             num_processes=num_processes,
-            worker_params=(sigmasq, sample_size, match_by_position),
+            worker_params=(per_effect_variance, sample_size, match_by_position),
             sumstats=sumstats
         )
 
         if verbose:
             print(f"Number of variants in summary statistics: {len(result)}")
+            print(f"Number of matched LDGM effect indices: {matched_effects}")
+            print(f"Per-effect variance: {per_effect_variance}")
             nonzero_count = (result['weight'] != 0).sum()
             print(f"Number of variants with nonzero weights: {nonzero_count}")
 

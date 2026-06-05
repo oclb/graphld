@@ -50,7 +50,7 @@ def _blup(
         out: Output file path
         metadata: Path to LDGM metadata file
         num_samples: Optional sample size override
-        heritability: Heritability parameter (between 0 and 1)
+        heritability: Heritability for the analyzed variant scope (between 0 and 1)
         num_processes: Number of processes for parallel computation
         run_in_serial: Whether to run in serial mode
         chromosome: Optional chromosome to filter analysis
@@ -104,7 +104,7 @@ def _blup(
     blup = gld.BLUP.compute_blup(
         ldgm_metadata_path=metadata,
         sumstats=sumstats,
-        sigmasq=heritability,
+        heritability=heritability,
         sample_size=sample_size,
         num_processes=num_processes,
         run_in_serial=run_in_serial,
@@ -811,7 +811,7 @@ def _add_blup_parser(subparsers):
         "-H", '--heritability',
         type=float,
         required=True,
-        help='Heritability parameter (between 0 and 1)',
+        help='Heritability for the analyzed variant scope (between 0 and 1)',
     )
 
     parser.set_defaults(func=_blup)

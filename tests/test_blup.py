@@ -1,26 +1,18 @@
-"""Test simulation functionality."""
+"""Test BLUP functionality."""
 
 import os
+from pathlib import Path
 from typing import List, Optional, Union
 
 import numpy as np
 import polars as pl
+import pytest
 
 from graphld import BLUP, read_ldgm_metadata
 
 
 def test_blup():
-    """Test simulation with variant annotations."""
-    # Note: Simulator configuration is not used in this test
-    # sim = Simulate(
-    #     sample_size=100_000,
-    #     heritability=0.5,
-    #     component_variance=[1.0],
-    #     component_weight=[0.3],
-    #     alpha_param=-1,
-    #     random_seed=42
-    # )
-
+    """Test BLUP on the packaged LDGM fixture."""
     def create_sumstats(
         ldgm_metadata_path: str,
         populations: Optional[Union[str, List[str]]]
@@ -59,12 +51,12 @@ def test_blup():
     assert isinstance(sumstats, pl.DataFrame)
     print(sumstats.head())
 
-    sigmasq = 0.01
+    heritability = 0.01
     sample_size = 10_000
     blup = BLUP.compute_blup(
         metadata_path,
         sumstats,
-        sigmasq,
+        heritability,
         sample_size,
         populations="EUR",
         run_in_serial=False,
@@ -72,3 +64,71 @@ def test_blup():
     )
 
     assert(len(blup) == np.sum(sumstats.select(pl.col('POS').is_first_distinct()).to_numpy()))
+
+
+def test_blup_heritability_scales_to_matched_effect_trace(tmp_path: Path):
+    """Total heritability is distributed over matched LDGM effect indices."""
+    metadata_path = tmp_path / "metadata.csv"
+    edgelist_path = tmp_path / "tiny.EUR.edgelist"
+    snplist_path = tmp_path / "tiny.snplist"
+
+    edgelist_path.write_text("0,0,1.0\n1,1,1.0\n")
+    pl.DataFrame({
+        "index": [0, 1],
+        "anc_alleles": ["A", "C"],
+        "deriv_alleles": ["G", "T"],
+        "EUR": [0.2, 0.3],
+        "site_ids": ["rs1", "rs2"],
+        "position": [10, 20],
+        "swap": ["+", "+"],
+    }).write_csv(snplist_path)
+    pl.DataFrame({
+        "chrom": [1],
+        "chromStart": [1],
+        "chromEnd": [100],
+        "name": [edgelist_path.name],
+        "snplistName": [snplist_path.name],
+        "population": ["EUR"],
+        "numVariants": [2],
+        "numIndices": [2],
+        "numEntries": [2],
+        "info": [""],
+    }).write_csv(metadata_path)
+
+    sumstats = pl.DataFrame({
+        "SNP": ["rs1", "rs2", "unmatched"],
+        "CHR": [1, 1, 1],
+        "POS": [10, 20, 30],
+        "REF": ["A", "C", "G"],
+        "ALT": ["G", "T", "A"],
+        "Z": [2.0, -1.0, 5.0],
+    })
+
+    heritability = 0.2
+    sample_size = 100.0
+    result = BLUP.compute_blup(
+        str(metadata_path),
+        sumstats,
+        heritability=heritability,
+        sample_size=sample_size,
+        populations="EUR",
+        run_in_serial=True,
+    )
+
+    per_effect_variance = heritability / 2
+    coefficient = np.sqrt(sample_size) * per_effect_variance / (
+        1 + sample_size * per_effect_variance
+    )
+    expected_weights = np.array([2.0, -1.0, 0.0]) * coefficient
+    np.testing.assert_allclose(result["weight"].to_numpy(), expected_weights)
+
+
+def test_blup_rejects_legacy_sigmasq_keyword():
+    """The public BLUP input is analyzed-scope heritability, not per-effect variance."""
+    with pytest.raises(ValueError, match="sigmasq keyword is no longer supported"):
+        BLUP.compute_blup(
+            "metadata.csv",
+            pl.DataFrame({"CHR": [], "POS": [], "SNP": [], "Z": []}),
+            sample_size=1000,
+            sigmasq=0.01,
+        )
