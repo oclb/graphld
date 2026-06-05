@@ -2,13 +2,33 @@ import numpy as np
 import polars as pl
 from scipy.sparse import csr_matrix
 
-# Handle imports when running either as a script or as a package
-try:
-    from .score_test_io import load_variant_data
-except ImportError:
-    pass
-
 POSITION_SCALE = 1e9  # Scale factor for chromosome positions
+
+def _nearest_indices_for_position(
+    position: np.integer,
+    gene_pos: np.ndarray,
+    gene_indices: np.ndarray,
+    num_nearest: int,
+) -> np.ndarray:
+    """Find nearest original gene indices from a sorted gene-position slice."""
+    ngene = gene_pos.size
+    if num_nearest > ngene:
+        raise ValueError("num_nearest cannot exceed number of genes")
+
+    insertion = np.searchsorted(gene_pos, position, side="left")
+    left = max(0, insertion - num_nearest)
+    right = min(ngene, insertion + num_nearest)
+
+    if right - left < num_nearest:
+        if left == 0:
+            right = min(ngene, num_nearest)
+        else:
+            left = max(0, ngene - num_nearest)
+
+    candidates = np.arange(left, right)
+    distances = np.abs(gene_pos[candidates] - position)
+    order = np.lexsort((gene_indices[candidates], distances))
+    return gene_indices[candidates[order[:num_nearest]]]
 
 def _get_nearest_genes(var_pos: np.ndarray,
                         gene_pos: np.ndarray,
@@ -23,33 +43,17 @@ def _get_nearest_genes(var_pos: np.ndarray,
     if not np.array_equal(gene_pos, np.sort(gene_pos)):
         raise ValueError("Gene positions must be sorted")
     nvar, ngene = var_pos.size, gene_pos.size
-
-    # how many genes come before each variant?
-    order = np.argsort(np.concatenate((var_pos, gene_pos)))
-    perm = np.empty(nvar + ngene)
-    perm[order] = np.arange(nvar + ngene) # number of genes or variants before
-    num_genes_before = perm[:nvar] - np.arange(nvar)
-
-    dist_k_flanking = np.empty((nvar, 2*num_nearest), dtype=np.int32)
-    genes_k_flanking = np.empty((nvar, 2*num_nearest), dtype=np.int32)
-    for k in range(-num_nearest, num_nearest):
-        # fancy indexing + wraparound
-        genes_k_flanking[:,k] = (num_genes_before + k) % ngene
-        dist_k_flanking[:,k] = abs(var_pos - gene_pos[genes_k_flanking[:,k]])
-
-    dist_k_flanking = dist_k_flanking.ravel()
-    genes_k_flanking = genes_k_flanking.ravel()
+    if num_nearest <= 0 or num_nearest > ngene:
+        raise ValueError("num_nearest must be between 1 and the number of genes")
 
     result = np.empty((nvar, num_nearest), dtype=np.int32)
-    left_contestant = np.arange(0, 2*nvar*num_nearest, 2*num_nearest, dtype=np.int32)
-    right_contestant = left_contestant + num_nearest*2-1
-    for k in range(num_nearest):
-        right_wins = dist_k_flanking[right_contestant] < dist_k_flanking[left_contestant]
-        left_wins = ~right_wins
-        result[right_wins,k] = genes_k_flanking[right_contestant[right_wins]]
-        result[left_wins,k] = genes_k_flanking[left_contestant[left_wins]]
-        right_contestant -= right_wins
-        left_contestant += left_wins
+    gene_indices = np.arange(ngene, dtype=np.int32)
+    var_pos = var_pos.astype(np.int64, copy=False)
+    gene_pos = gene_pos.astype(np.int64, copy=False)
+    for i, position in enumerate(var_pos):
+        result[i] = _nearest_indices_for_position(
+            position, gene_pos, gene_indices, num_nearest
+        )
 
     return result
 
@@ -98,6 +102,66 @@ def _compute_positions(table: pl.DataFrame) -> np.ndarray:
         raise ValueError(f"POS values must be less than POSITION_SCALE: {POSITION_SCALE}")
     return (table['POS'] + table['CHR'].cast(pl.Int64) * POSITION_SCALE).to_numpy().astype(np.int64)
 
+def _get_chromosome_aware_nearest_genes(
+    variant_table: pl.DataFrame,
+    gene_table: pl.DataFrame,
+    num_nearest: int,
+) -> np.ndarray:
+    """Find nearest gene indices, prioritizing same-chromosome genes."""
+    nvar, ngene = len(variant_table), len(gene_table)
+    if num_nearest <= 0 or num_nearest > ngene:
+        raise ValueError("num_nearest must be between 1 and the number of genes")
+
+    variant_chr = variant_table["CHR"].cast(pl.Int64).to_numpy()
+    gene_chr = gene_table["CHR"].cast(pl.Int64).to_numpy()
+    variant_positions = _compute_positions(variant_table)
+    gene_positions = _compute_positions(gene_table)
+
+    all_sorted_indices = np.argsort(gene_positions, kind="stable").astype(np.int32)
+    genes_by_chr = {
+        chromosome: np.flatnonzero(gene_chr == chromosome).astype(np.int32)
+        for chromosome in np.unique(gene_chr)
+    }
+    for chromosome, indices in genes_by_chr.items():
+        order = np.argsort(gene_positions[indices], kind="stable")
+        genes_by_chr[chromosome] = indices[order]
+
+    fallback_by_chr: dict[int, np.ndarray] = {}
+    for chromosome in np.unique(variant_chr):
+        other = all_sorted_indices[gene_chr[all_sorted_indices] != chromosome]
+        fallback_by_chr[int(chromosome)] = other.astype(np.int32, copy=False)
+
+    nearest = np.empty((nvar, num_nearest), dtype=np.int32)
+    for i, (chromosome, position) in enumerate(zip(variant_chr, variant_positions)):
+        same_chr_indices = genes_by_chr.get(chromosome, np.array([], dtype=np.int32))
+        n_same = min(num_nearest, same_chr_indices.size)
+        selected: list[int] = []
+
+        if n_same:
+            selected.extend(
+                _nearest_indices_for_position(
+                    position,
+                    gene_positions[same_chr_indices],
+                    same_chr_indices,
+                    n_same,
+                ).tolist()
+            )
+
+        if len(selected) < num_nearest:
+            fallback_indices = fallback_by_chr[int(chromosome)]
+            selected.extend(
+                _nearest_indices_for_position(
+                    position,
+                    gene_positions[fallback_indices],
+                    fallback_indices,
+                    num_nearest - len(selected),
+                ).tolist()
+            )
+
+        nearest[i] = np.asarray(selected, dtype=np.int32)
+
+    return nearest
+
 def gene_variant_matrix(variant_table: pl.DataFrame, gene_table: pl.DataFrame,
                         nearest_weights: np.ndarray) -> csr_matrix:
     """Compute gene-variant matrix from data.
@@ -110,9 +174,16 @@ def gene_variant_matrix(variant_table: pl.DataFrame, gene_table: pl.DataFrame,
     Returns:
         Sparse matrix mapping genes to variants (ngenes x nvariants)
     """
-    variant_positions = _compute_positions(variant_table)
-    gene_positions = _compute_positions(gene_table)
-    return _get_gene_variant_matrix(variant_positions, gene_positions, nearest_weights)
+    nvar, ngene = len(variant_table), len(gene_table)
+    num_nearest = len(nearest_weights)
+    if num_nearest <= 0 or num_nearest > ngene:
+        raise ValueError("nearest_weights length must be between 1 and the number of genes")
+
+    nearest = _get_chromosome_aware_nearest_genes(variant_table, gene_table, num_nearest)
+    rows = np.repeat(np.arange(nvar, dtype=np.int32), num_nearest)
+    cols = nearest.ravel()
+    data = np.tile(nearest_weights, nvar)
+    return csr_matrix((data, (rows, cols)), shape=(nvar, ngene))
 
 
 
@@ -218,4 +289,3 @@ def convert_gene_to_variant_annotations(gene_annot: object,
         return VariantAnnot(df_annot, annot_names)
     else:
         return df_annot
-
