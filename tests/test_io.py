@@ -429,6 +429,10 @@ def test_load_annotations(test_data_dir):
     assert 'POS' in annotations.columns
     assert 'A1' in annotations.columns
     assert 'A2' in annotations.columns
+    known_snp = annotations.filter(pl.col('SNP') == 'rs199745162').row(0, named=True)
+    assert known_snp['POS'] == 16949
+    assert known_snp['A1'] == 'C'
+    assert known_snp['A2'] == 'A'
 
     # Verify data types are correct
     assert annotations['SNP'].dtype == pl.Utf8
@@ -446,7 +450,7 @@ def test_load_annotations(test_data_dir):
     custom_pattern_annotations = load_annotations(
         annot_path=str(test_data_dir / "annot"),
         chromosome=1,
-        file_pattern='baselineLD.{chrom}.annot',
+        file_pattern='3_annotations.{chrom}.annot',
         add_positions=False
     )
     assert len(custom_pattern_annotations) > 0
@@ -481,6 +485,64 @@ def test_load_annotations_positions_without_alleles(test_data_dir, tmp_path):
     assert 'POS' in annotations.columns
     assert 'A1' not in annotations.columns
     assert 'A2' not in annotations.columns
+
+
+def test_load_annotations_missing_allele_columns(test_data_dir, tmp_path):
+    """Test missing allele columns produce a clear error when alleles are requested."""
+    positions_file = tmp_path / "rsid_position.csv"
+    pl.read_csv("data/test/rsid_position.csv").select(
+        ["chrom", "site_ids", "position"]
+    ).write_csv(positions_file)
+
+    with pytest.raises(ValueError, match="anc_alleles and deriv_alleles"):
+        load_annotations(
+            annot_path=str(test_data_dir / "annot"),
+            chromosome=1,
+            add_positions=True,
+            add_alleles=True,
+            positions_file=str(positions_file),
+        )
+
+
+def test_load_annotations_alleles_without_positions(test_data_dir):
+    """Test adding alleles while keeping annotation coordinates."""
+    annotations = load_annotations(
+        annot_path=str(test_data_dir / "annot"),
+        chromosome=1,
+        add_positions=False,
+        add_alleles=True,
+        positions_file="data/test/rsid_position.csv",
+    )
+
+    known_snp = annotations.filter(pl.col('SNP') == 'rs199745162').row(0, named=True)
+    assert known_snp['POS'] == 16949
+    assert known_snp['A1'] == 'C'
+    assert known_snp['A2'] == 'A'
+
+
+def test_load_annotations_respects_file_pattern(tmp_path):
+    """Test file_pattern selects the intended annotation files."""
+    annot_dir = tmp_path / "annot"
+    annot_dir.mkdir()
+    (annot_dir / "keep.1.annot").write_text(
+        "CHR\tBP\tSNP\tCM\tbase\tkeep_col\n"
+        "1\t100\trs_keep\t0\t1\t1\n"
+    )
+    (annot_dir / "drop.1.annot").write_text(
+        "CHR\tBP\tSNP\tCM\tbase\tdrop_col\n"
+        "1\t200\trs_drop\t0\t1\t1\n"
+    )
+
+    annotations = load_annotations(
+        annot_path=str(annot_dir),
+        chromosome=1,
+        add_positions=False,
+        file_pattern="keep.{chrom}.annot",
+    )
+
+    assert annotations['SNP'].to_list() == ['rs_keep']
+    assert 'keep_col' in annotations.columns
+    assert 'drop_col' not in annotations.columns
 
 
 def test_load_annotations_with_bed(test_data_dir, tmp_path):

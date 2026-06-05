@@ -589,7 +589,7 @@ def load_annotations(annot_path: str,
                     add_alleles: bool = False,
                     add_positions: bool = True,
                     positions_file: str = POSITIONS_FILE,
-                    file_pattern: str = "baselineLD.{chrom}.annot",
+                    file_pattern: str = "*.{chrom}.annot",
                     exclude_bed: bool = False
                     ) -> pl.DataFrame:
     """Load annotation data for specified chromosome(s) and merge with LDGMs data.
@@ -621,8 +621,8 @@ def load_annotations(annot_path: str,
     # Find matching files
     annotations = []
     for chromosome in chromosomes:
-        file_pattern = f"*.{chromosome}.annot"
-        matching_files = Path(annot_path).glob(file_pattern)
+        chromosome_pattern = file_pattern.format(chrom=chromosome)
+        matching_files = sorted(Path(annot_path).glob(chromosome_pattern))
 
         # Read all matching files for this chromosome
         dfs = []
@@ -708,8 +708,9 @@ def load_annotations(annot_path: str,
 
         snplist_data = snplist_data.select(with_columns)
 
-        # Existing coordinates might be in wrong genome build
-        annotations = annotations.drop(['CHR', 'BP'])
+        if add_positions:
+            # Existing coordinates might be in wrong genome build
+            annotations = annotations.drop(['CHR', 'BP'])
 
         # Merge with positions
         annotations = annotations.join(
