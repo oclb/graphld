@@ -2,8 +2,6 @@ import numpy as np
 import polars as pl
 from scipy.sparse import csr_matrix
 from typing import List
-import click
-import logging
 
 try:
     from .score_test_io import get_trait_names, get_trait_groups, save_trait_groups, load_trait_data, load_variant_data, save_trait_data, load_gene_table
@@ -68,26 +66,3 @@ def convert_hdf5(variant_stats_hdf5: str,
     groups = get_trait_groups(variant_stats_hdf5)
     if groups:
         save_trait_groups(gene_stats_hdf5, groups)
-
-
-@click.command()
-@click.argument('variant_stats_hdf5', type=click.Path(exists=True))
-@click.argument('gene_stats_hdf5', type=click.Path())
-@click.option('--gene-table', default='data/genes.tsv', type=click.Path(exists=True),
-              help="Path to gene table TSV file")
-@click.option('--nearest-weights', default='0.3,0.2,0.1,0.1,0.1,0.04,0.04,0.04,0.04,0.04',
-              help="Comma-separated weights for k-nearest genes")
-@click.option('-v', '--verbose', is_flag=True,
-              help='Enable verbose output')
-def main(variant_stats_hdf5, gene_stats_hdf5, gene_table, nearest_weights, verbose):
-    """Convert variant-level statistics to gene-level statistics."""
-    log_level = logging.INFO if verbose else logging.WARNING
-    logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - %(message)s')
-
-    weights = [float(w) for w in nearest_weights.split(',')]
-    convert_hdf5(variant_stats_hdf5, gene_stats_hdf5, gene_table, weights)
-    logging.info("Conversion complete!")
-
-
-if __name__ == '__main__':
-    main()
