@@ -186,6 +186,52 @@ def test_precision_operator_pcg_subset_with_stale_factor():
     assert x_pcg.shape == b.shape
     np.testing.assert_allclose(P_sub @ x_pcg, b, rtol=1e-8, atol=1e-8)
 
+def test_precision_operator_pcg_preserves_subset_order():
+    """Test PCG respects explicit list-index order for subsetted operators."""
+    data = np.array([
+        4.0, -1.0,
+        -1.0, 4.0, -1.0,
+        -1.0, 4.0, -1.0,
+        -1.0, 4.0,
+    ], dtype=np.float64)
+    indices = np.array([0, 1, 0, 1, 2, 1, 2, 3, 2, 3])
+    indptr = np.array([0, 2, 5, 8, 10])
+    matrix = csc_matrix((data, indices, indptr), shape=(4, 4))
+    variant_info = pl.DataFrame({
+        'variant_id': ['rs1', 'rs2', 'rs3', 'rs4'],
+        'position': [1, 2, 3, 4],
+        'chromosome': ['1', '1', '1', '1']
+    })
+
+    P = PrecisionOperator(matrix.copy(), variant_info)
+    P_sub = P[[2, 0]]
+    b = np.array([2.0, -0.5])
+
+    x_direct = P_sub.solve(b, method='direct')
+    x_pcg = P_sub.solve(b, method='pcg', tol=1e-10)
+
+    np.testing.assert_allclose(x_pcg, x_direct, rtol=1e-8, atol=1e-8)
+    np.testing.assert_allclose(P_sub @ x_pcg, b, rtol=1e-8, atol=1e-8)
+
+def test_precision_operator_pcg_accepts_vector_initialization():
+    """Test PCG reshapes 1-D initial guesses for vector right-hand sides."""
+    data = np.array([2.0, -1.0, -1.0, 2.0], dtype=np.float64)
+    indices = np.array([0, 1, 0, 1])
+    indptr = np.array([0, 2, 4])
+    matrix = csc_matrix((data, indices, indptr), shape=(2, 2))
+    variant_info = pl.DataFrame({
+        'variant_id': ['rs1', 'rs2'],
+        'position': [1, 2],
+        'chromosome': ['1', '1']
+    })
+
+    P = PrecisionOperator(matrix.copy(), variant_info)
+    b = np.array([1.0, 0.5])
+    initialization = np.zeros_like(b)
+
+    x_pcg = P.solve(b, method='pcg', initialization=initialization)
+    np.testing.assert_allclose(P @ x_pcg, b, rtol=1e-8, atol=1e-8)
+
 def test_precision_operator_inverse_diagonal_subset_with_stale_factor():
     """Test stochastic inverse-diagonal estimates on a subsetted stale-factor operator."""
     data = np.array([

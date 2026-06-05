@@ -275,11 +275,12 @@ class PrecisionOperator(LinearOperator):
 
         # Schur complement (P/P11) * x
         mask = self._get_mask
-        first_term = self._matrix[mask][:, mask] @ x
-        second_term = self._matrix[~mask][:, mask] @ x
+        selected = self._which_indices
+        first_term = self._matrix[selected][:, selected] @ x
+        second_term = self._matrix[~mask][:, selected] @ x
         P11 = self._matrix[~mask][:, ~mask]
         second_term = cholesky(P11)(second_term)
-        second_term = self._matrix[mask][:, ~mask] @ second_term
+        second_term = self._matrix[selected][:, ~mask] @ second_term
         return first_term - second_term
 
     def _rmatvec(self, x: np.ndarray) -> np.ndarray:
@@ -401,6 +402,10 @@ class PrecisionOperator(LinearOperator):
                 solution = solution[self._which_indices, :]
         elif method == "pcg":
             y = self._reshape_rhs(b)
+            initialization = (
+                self._reshape_rhs(initialization)
+                if initialization is not None else None
+            )
             if self._solver is None:
                 self.factor()  # Some factorization is needed for use as a preconditioner
             solution = self._pcg(y, tol=tol, callback=callback, initialization=initialization)
