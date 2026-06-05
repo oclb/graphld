@@ -417,7 +417,7 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
 
     if gene_annot_dir:
         gene_annot: GeneAnnot = load_gene_annotations(
-            gene_annot_dir, data_table, gene_table, weights, annot_names_filter
+            gene_annot_dir, annot_names_filter
         )
         if is_gene_level:
             # For gene-level data, use gene annotations directly
