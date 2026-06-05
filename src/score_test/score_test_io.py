@@ -327,7 +327,7 @@ def _variant_table_as_annotation_table(
     if variant_table is None:
         raise ValueError("variant_table is required for BED-only annotation directories")
 
-    required_cols = {"CHR", "POS", "RSID"}
+    required_cols = {"CHR", "POS"}
     missing_cols = required_cols - set(variant_table.columns)
     if missing_cols:
         missing = ", ".join(sorted(missing_cols))
@@ -335,14 +335,17 @@ def _variant_table_as_annotation_table(
             f"variant_table missing required column(s) for BED annotations: {missing}"
         )
 
-    return variant_table.filter(
-        pl.col("CHR").cast(pl.Int64).is_in(list(chromosomes))
-    ).select(
+    select_cols = [
         pl.col("CHR").cast(pl.Int64),
         pl.col("POS").cast(pl.Int64).alias("BP"),
-        pl.col("RSID").cast(pl.Utf8).alias("SNP"),
         pl.lit(0.0).alias("CM"),
-    )
+    ]
+    if "RSID" in variant_table.columns:
+        select_cols.append(pl.col("RSID").cast(pl.Utf8).alias("SNP"))
+
+    return variant_table.filter(
+        pl.col("CHR").cast(pl.Int64).is_in(list(chromosomes))
+    ).select(select_cols)
 
 
 def load_gene_table(
@@ -446,6 +449,11 @@ def load_variant_annotations(
     if "SNP" in df_annot.columns:
         df_annot = df_annot.rename({"SNP": "RSID"})
 
+    merge_key: str | list[str] = "RSID"
+    if "RSID" not in df_annot.columns and {"CHR", "BP"}.issubset(df_annot.columns):
+        df_annot = df_annot.rename({"BP": "POS"})
+        merge_key = ["CHR", "POS"]
+
     # Exclude positional and identifier columns from annotations
     exclude_cols = ["CHR", "BP", "POS", "RSID", "CM"]
 
@@ -455,7 +463,7 @@ def load_variant_annotations(
     else:
         annot_names = [col for col in df_annot.columns if col not in exclude_cols]
 
-    return VariantAnnot(df_annot, annot_names)
+    return VariantAnnot(df_annot, annot_names, other_key=merge_key)
 
 
 def load_gene_annotations(

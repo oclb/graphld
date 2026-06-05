@@ -415,6 +415,28 @@ class TestLoadVariantAnnotations:
 
         assert variant_annot.df['regions'].to_list() == [True, True, False, True]
 
+    def test_load_variant_annotations_with_zero_based_bed_boundaries(self, tmp_path):
+        """BED-only loading should respect UCSC 0-based half-open coordinates."""
+        annot_dir = tmp_path / "annot"
+        annot_dir.mkdir()
+        self._write_bed(
+            annot_dir,
+            "regions",
+            ["chr1\t99\t100", "chr1\t101\t102"],
+        )
+
+        variant_data = pl.DataFrame({
+            'CHR': [1, 1, 1],
+            'POS': [100, 101, 102],
+            'RSID': ['rs1', 'rs2', 'rs3'],
+        })
+
+        variant_annot = load_variant_annotations(
+            str(annot_dir), variant_table=variant_data
+        )
+
+        assert variant_annot.df['regions'].to_list() == [True, False, True]
+
     def test_load_annotations_bed_only_filters_chromosome(self, tmp_path):
         """BED-only loading should respect the chromosome filter."""
         annot_dir = tmp_path / "annot"
@@ -446,6 +468,40 @@ class TestLoadVariantAnnotations:
 
         with pytest.raises(ValueError, match="variant_table is required"):
             load_variant_annotations(str(annot_dir))
+
+    def test_load_variant_annotations_bed_only_without_rsid_merges_on_coordinates(self, tmp_path):
+        """BED-only annotations can merge against coordinate-keyed trait data."""
+        from score_test.score_test import TraitData, run_score_test
+
+        annot_dir = tmp_path / "annot"
+        annot_dir.mkdir()
+        self._write_bed(annot_dir, "regions", ["chr1\t99\t100", "chr1\t101\t102"])
+
+        variant_data = pl.DataFrame({
+            'CHR': [1, 1, 1],
+            'POS': [100, 101, 102],
+        })
+        variant_annot = load_variant_annotations(
+            str(annot_dir), variant_table=variant_data
+        )
+
+        trait_data = TraitData(
+            df=pl.DataFrame({
+                'CHR': [1, 1, 1],
+                'POS': [100, 101, 102],
+                'gradient': [1.0, 2.0, 3.0],
+                'hessian': [1.0, 1.0, 1.0],
+                'jackknife_blocks': [0, 0, 1],
+            }),
+            keys=['CHR', 'POS'],
+            annot_names=[],
+        )
+
+        point_estimate, _ = run_score_test(trait_data, variant_annot)
+
+        assert variant_annot.other_key == ['CHR', 'POS']
+        assert variant_annot.df['regions'].to_list() == [True, False, True]
+        assert point_estimate.tolist() == [[4.0]]
 
     def test_load_variant_annotations_filters_bed_names(self, tmp_path):
         """Test filtering specific BED annotation names."""

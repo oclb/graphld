@@ -29,6 +29,9 @@ import polars as pl
 # Suppress numpy runtime warnings globally
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 # Handle imports when running either as a script or as a package
 try:
     from .score_test_io import (
@@ -109,9 +112,9 @@ class TraitData:
 class Annot:
     """Base class for annotations that can be merged with TraitData."""
     annot_names: List[str]
-    other_key: str
+    other_key: str | list[str]
 
-    def __init__(self, annot_names: List[str], other_key: str):
+    def __init__(self, annot_names: List[str], other_key: str | list[str]):
         """
         Args:
             annot_names: List of annotation column names to test
@@ -133,13 +136,19 @@ class VariantAnnot(Annot):
     """Variant-level annotations."""
     df: pl.DataFrame
 
-    def __init__(self, df: pl.DataFrame, annot_names: List[str]):
+    def __init__(
+        self,
+        df: pl.DataFrame,
+        annot_names: List[str],
+        other_key: str | list[str] = 'RSID',
+    ):
         """
         Args:
-            df: DataFrame with variant annotations (must have 'RSID' column)
+            df: DataFrame with variant annotations
             annot_names: List of annotation column names to test
+            other_key: Column name(s) to use for merging with trait data
         """
-        super().__init__(annot_names, other_key='RSID')
+        super().__init__(annot_names, other_key=other_key)
         self.df = df
 
     def perturb(self, fraction: float, seed: int | None = None):
@@ -180,18 +189,26 @@ class VariantAnnot(Annot):
             Note: correction is None if hessian is not available
         """
         # Check if trait_data has the required key
-        if self.other_key not in trait_data.keys:
-            raise ValueError(f"TraitData does not have required key '{self.other_key}'. Available keys: {trait_data.keys}")
+        merge_keys = [self.other_key] if isinstance(self.other_key, str) else self.other_key
+        missing_trait_keys = [key for key in merge_keys if key not in trait_data.keys]
+        if missing_trait_keys:
+            raise ValueError(
+                f"TraitData does not have required key(s) {missing_trait_keys}. "
+                f"Available keys: {trait_data.keys}"
+            )
 
         # Verify merge key exists in annotation DataFrame
-        if self.other_key not in self.df.columns:
-            raise ValueError(f"Merge key '{self.other_key}' not found in annotation DataFrame. "
-                           f"Available columns: {self.df.columns}")
+        missing_annot_keys = [key for key in merge_keys if key not in self.df.columns]
+        if missing_annot_keys:
+            raise ValueError(
+                f"Merge key(s) {missing_annot_keys} not found in annotation DataFrame. "
+                f"Available columns: {self.df.columns}"
+            )
 
         df_merged = trait_data.df.join(
             self.df,
-            left_on=self.other_key,
-            right_on=self.other_key,
+            left_on=merge_keys,
+            right_on=merge_keys,
             how='inner',
             maintain_order='left'
         )

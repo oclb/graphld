@@ -68,7 +68,7 @@ def add_bed_annotations(
             )
             positions = annotations.filter(annotations["CHR"] == chrom)[position_col].to_numpy()
             new_annot[chrom_indices] = _get_range_mask(
-                values=positions,
+                values=positions - 1,
                 start=bed_regions[:, 0],
                 end=bed_regions[:, 1],
             )
