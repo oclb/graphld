@@ -34,7 +34,7 @@ def test_clumping(create_sumstats):
     )
 
     # Basic sanity checks
-    assert(len(clumped) == np.sum(sumstats.select(pl.col('POS').is_first_distinct()).to_numpy()))
+    assert len(clumped) == len(sumstats)
     assert 'is_index' in clumped.columns
     assert clumped.select('is_index').to_numpy().dtype == bool
 
@@ -81,3 +81,91 @@ def test_clumping(create_sumstats):
         clumped.select('is_index').to_numpy(),
         clumped_alt_z.select('is_index').to_numpy()
     ), "Results differ with alternative Z score column"
+
+
+def test_clumping_preserves_input_rows(create_sumstats):
+    """Clumping results should align with the caller's input rows."""
+    metadata_path = "data/test/metadata.csv"
+    sumstats = create_sumstats(metadata_path, populations="EUR").head(5)
+    lead_snp = sumstats.row(4, named=True)["SNP"]
+    sumstats = sumstats.with_columns(
+        pl.when(pl.col("SNP") == lead_snp).then(10.0).otherwise(0.0).alias("Z")
+    )
+    out_of_block = sumstats.head(1).with_columns(
+        pl.lit("out_of_block").alias("SNP"),
+        pl.lit(1, dtype=pl.Int64).alias("CHR"),
+        pl.lit(999_999_999, dtype=pl.Int64).alias("POS"),
+        pl.lit(0.0).alias("Z"),
+    )
+    unsorted_sumstats = pl.concat(
+        [
+            sumstats.slice(3, 1),
+            out_of_block,
+            sumstats.slice(1, 1),
+            sumstats.slice(0, 1),
+            sumstats.slice(4, 1),
+            sumstats.slice(2, 1),
+        ]
+    ).with_columns(
+        pl.int_range(pl.len()).alias("input_order"),
+        (pl.int_range(pl.len()) + 100).alias("row_nr"),
+        pl.lit("caller-row").alias("__graphld_clump_row_nr"),
+        pl.lit(True).alias("__graphld_clump_is_index"),
+    )
+
+    clumped = LDClumper.clump(
+        unsorted_sumstats,
+        ldgm_metadata_path=metadata_path,
+        populations="EUR",
+        chisq_threshold=1.0,
+        run_in_serial=True,
+    )
+    clumped_parallel = LDClumper.clump(
+        unsorted_sumstats,
+        ldgm_metadata_path=metadata_path,
+        populations="EUR",
+        chisq_threshold=1.0,
+        num_processes=2,
+        run_in_serial=False,
+    )
+
+    assert len(clumped) == len(unsorted_sumstats)
+    assert clumped.to_dict(as_series=False) == clumped_parallel.to_dict(as_series=False)
+    assert clumped.select("input_order").to_series().to_list() == list(range(6))
+    assert clumped.select("row_nr").to_series().to_list() == list(range(100, 106))
+    assert clumped.select("__graphld_clump_row_nr").to_series().to_list() == (
+        ["caller-row"] * 6
+    )
+    assert clumped.select("__graphld_clump_is_index").to_series().to_list() == (
+        [True] * 6
+    )
+    assert clumped.select("SNP").to_series().to_list() == (
+        unsorted_sumstats.select("SNP").to_series().to_list()
+    )
+    assert clumped.select("is_index").to_numpy().dtype == bool
+    assert clumped.filter(pl.col("SNP") == lead_snp).select("is_index").item()
+    assert not clumped.filter(pl.col("SNP") == "out_of_block").select("is_index").item()
+
+
+def test_clumping_retains_rows_when_all_blocks_are_empty(create_sumstats):
+    """Rows on chromosomes absent from metadata should return as non-index rows."""
+    metadata_path = "data/test/metadata.csv"
+    sumstats = (
+        create_sumstats(metadata_path, populations="EUR")
+        .head(3)
+        .with_columns(
+            pl.lit(2, dtype=pl.Int64).alias("CHR"),
+            pl.int_range(pl.len()).alias("input_order"),
+        )
+    )
+
+    clumped = LDClumper.clump(
+        sumstats,
+        ldgm_metadata_path=metadata_path,
+        populations="EUR",
+        run_in_serial=True,
+    )
+
+    assert len(clumped) == len(sumstats)
+    assert clumped.select("input_order").to_series().to_list() == [0, 1, 2]
+    assert not clumped.select("is_index").to_series().any()

@@ -14,6 +14,19 @@ from .precision import PrecisionOperator
 class LDClumper(ParallelProcessor):
     """Fast LD clumping to find unlinked lead SNPs from GWAS summary statistics."""
 
+    _ROW_NR_COL = "__graphld_clump_row_nr"
+    _IS_INDEX_COL = "__graphld_clump_is_index"
+
+    @staticmethod
+    def _temporary_column(existing_columns: list[str], base_name: str) -> str:
+        """Return a temporary column name that does not collide with user data."""
+        column = base_name
+        suffix = 1
+        while column in existing_columns:
+            column = f"{base_name}_{suffix}"
+            suffix += 1
+        return column
+
     @classmethod
     def prepare_block_data(cls, metadata: pl.DataFrame, **kwargs: Any) -> list[tuple]:
         """Split summary statistics into blocks whose positions match the LDGMs.
@@ -27,9 +40,11 @@ class LDClumper(ParallelProcessor):
             List of block-specific sumstats DataFrames and their offsets
         """
         sumstats = kwargs.get('sumstats')
+        row_nr_col = cls._temporary_column(sumstats.columns, cls._ROW_NR_COL)
+        indexed_sumstats = sumstats.with_row_index(name=row_nr_col)
 
         # Partition annotations into blocks
-        sumstats_blocks: list[pl.DataFrame] = partition_variants(metadata, sumstats)
+        sumstats_blocks: list[pl.DataFrame] = partition_variants(metadata, indexed_sumstats)
 
         cumulative_num_variants = np.cumsum(np.array([len(df) for df in sumstats_blocks]))
         cumulative_num_variants = [0] + list(cumulative_num_variants[:-1])
@@ -74,6 +89,8 @@ class LDClumper(ParallelProcessor):
         assert isinstance(block_data, tuple), "block_data must be a tuple"
         sumstats, variant_offset = block_data
         num_variants = len(sumstats)
+        if num_variants == 0:
+            return
 
         # Merge variants with LDGM variant info and get indices of merged variants
         ldgm, sumstat_indices = merge_snplists(
@@ -160,12 +177,46 @@ class LDClumper(ParallelProcessor):
         manager.start_workers()
         manager.await_workers()
         is_index = shared_data['is_index']
+        sumstats = kwargs['sumstats']
+        row_nr_col = cls._temporary_column(sumstats.columns, cls._ROW_NR_COL)
+        result_col = cls._temporary_column(
+            sumstats.columns + [row_nr_col], cls._IS_INDEX_COL
+        )
 
-        # Concatenate the original sumstats DataFrames in order
-        sumstats = pl.concat([df for df, _ in block_data])
+        block_results = []
+        for df, variant_offset in block_data:
+            if len(df) == 0:
+                continue
+            block_slice = slice(variant_offset, variant_offset + len(df))
+            block_results.append(
+                df.select(row_nr_col).with_columns(
+                    pl.Series(result_col, is_index[block_slice].astype(bool))
+                )
+            )
 
-        # Add is_index column with results, converting back to boolean
-        return sumstats.with_columns(pl.Series('is_index', is_index.astype(bool)))
+        indexed_sumstats = sumstats.with_row_index(name=row_nr_col)
+        if block_results:
+            clump_results = (
+                pl.concat(block_results)
+                .group_by(row_nr_col)
+                .agg(pl.col(result_col).any())
+            )
+            indexed_sumstats = indexed_sumstats.join(
+                clump_results, on=row_nr_col, how='left'
+            )
+        else:
+            indexed_sumstats = indexed_sumstats.with_columns(
+                pl.lit(None, dtype=pl.Boolean).alias(result_col)
+            )
+
+        return (
+            indexed_sumstats
+            .sort(row_nr_col)
+            .with_columns(
+                pl.col(result_col).fill_null(False).cast(pl.Boolean).alias('is_index')
+            )
+            .drop([row_nr_col, result_col])
+        )
 
     @classmethod
     def clump(cls,
@@ -191,14 +242,18 @@ class LDClumper(ParallelProcessor):
             chisq_threshold: χ² threshold for significance (default 30.0)
             populations: Optional population name(s)
             chromosomes: Optional chromosome(s)
-            num_processes: Optional number of processes
             run_in_serial: Whether to run in serial mode
+            num_processes: Optional number of processes
             z_col: Name of column containing Z scores
             match_by_position: Whether to match SNPs by position instead of ID
             variant_id_col: Name of column containing variant IDs if not matching by position
+            verbose: Whether to print progress information
             
         Returns:
-            DataFrame with additional column 'is_index' indicating index variants
+            Input DataFrame in its original row order with an additional boolean
+            'is_index' column indicating index variants. Variants outside the
+            selected LDGM blocks, unmatched variants, and allele-mismatched
+            variants are retained with 'is_index=False'.
         """
 
         run_fn = cls.run_serial if run_in_serial else cls.run
@@ -227,6 +282,9 @@ def run_clump(*args: Any, **kwargs: Any) -> pl.DataFrame:
         **kwargs: Keyword arguments for :meth:`LDClumper.clump`.
 
     Returns:
-        DataFrame with clumped summary statistics and index variant information.
+        Input DataFrame in its original row order with an additional boolean
+        'is_index' column. Variants outside the selected LDGM blocks,
+        unmatched variants, and allele-mismatched variants are retained with
+        'is_index=False'.
     """
     return LDClumper.clump(*args, **kwargs)
