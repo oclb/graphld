@@ -3,24 +3,46 @@ from typing import Optional
 import polars as pl
 
 
-def split_sample_column(df: pl.DataFrame) -> pl.DataFrame:
-    # Get the FORMAT from the first row
-    format_columns = df.head(1).select('FORMAT').row(0)[0].split(':')
+def _get_sample_column(df: pl.DataFrame) -> str:
+    if 'FORMAT' not in df.columns:
+        raise ValueError("GWAS-VCF file must contain a FORMAT column")
 
-    # Validate the FORMAT columns
-    validate_vcf_format_columns(format_columns, verbose=False)
+    format_index = df.columns.index('FORMAT')
+    sample_columns = df.columns[format_index + 1:]
+    if len(sample_columns) != 1:
+        raise ValueError(
+            "GWAS-VCF reader supports exactly one sample column after FORMAT; "
+            f"found {len(sample_columns)}: {sample_columns}"
+        )
 
-    # Split the SAMPLE column and unnest into new columns
-    result = df.with_columns(
-        pl.col("SAMPLE")
-        .str.split_exact(":", len(format_columns)-1)
-        .struct.rename_fields(format_columns)
-        .alias("fields")
-    ).unnest("fields")
+    return sample_columns[0]
 
 
-    # Cast columns to Float64 where possible
-    for col in format_columns:
+def split_sample_column(df: pl.DataFrame, *, verbose: bool = False) -> pl.DataFrame:
+    sample_col = _get_sample_column(df)
+    df = df.with_row_index('__row_nr')
+    parsed = []
+    all_format_columns = set()
+
+    for format_value in df.get_column('FORMAT').unique().to_list():
+        format_columns = format_value.split(':')
+        validate_vcf_format_columns(format_columns, verbose=verbose)
+        all_format_columns.update(format_columns)
+
+        parsed.append(
+            df.filter(pl.col('FORMAT') == format_value)
+            .with_columns(
+                pl.col(sample_col)
+                .str.split_exact(":", len(format_columns)-1)
+                .struct.rename_fields(format_columns)
+                .alias("fields")
+            )
+            .unnest("fields")
+        )
+
+    result = pl.concat(parsed, how='diagonal_relaxed').sort('__row_nr').drop('__row_nr')
+
+    for col in all_format_columns:
         result = result.with_columns(
             pl.col(col).cast(pl.Float64, strict=False)
         )
@@ -159,7 +181,7 @@ def read_gwas_vcf(
         n_rows=num_rows
     )
 
-    df = split_sample_column(df)
+    df = split_sample_column(df, verbose=verbose)
     df = process_chromosome_column(df)
 
     # Filter based on missingness using NS (number of samples)

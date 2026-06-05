@@ -212,18 +212,16 @@ def merge_snplists(precision_op: "PrecisionOperator",
         ref_allele_col = 'A2'
         alt_allele_col = 'A1'
 
-    # Find position column
-    pos_options = ['position', 'POS', 'BP']
-    if pos_col is not None:
-        pos_options.insert(0, pos_col)
-    pos_col = next((col for col in pos_options if col in sumstats.columns), None)
-    if pos_col is None:
-        raise ValueError(
-            f"Could not find position column. Tried: {', '.join(pos_options)}"
-        )
-
     # Validate inputs
     if match_by_position:
+        pos_options = ['position', 'POS', 'BP']
+        if pos_col is not None:
+            pos_options.insert(0, pos_col)
+        pos_col = next((col for col in pos_options if col in sumstats.columns), None)
+        if pos_col is None:
+            raise ValueError(
+                f"Could not find position column. Tried: {', '.join(pos_options)}"
+            )
         if pos_col not in sumstats.columns:
             msg = (f"Summary statistics must contain {pos_col} column "
                   f"for position matching. Found columns: {', '.join(sumstats.columns)}")
@@ -366,36 +364,21 @@ def partition_variants(
     # First sort variants by chromosome and position
     sorted_variants = variant_data.sort([chrom_col, pos_col])
 
-    # Group blocks by chromosome
-    chrom_blocks = {}
+    partitioned = []
+    chrom_variant_cache = {}
     for block in ldgm_metadata.iter_rows(named=True):
         chrom = block['chrom']
-        if chrom not in chrom_blocks:
-            chrom_blocks[chrom] = []
-        chrom_blocks[chrom].append(block)
-
-    # Process each chromosome's blocks at once
-    partitioned = []
-    for chrom, blocks in chrom_blocks.items():
-        # Get all variants for this chromosome
-        chrom_variants = sorted_variants.filter(pl.col(chrom_col) == chrom)
+        if chrom not in chrom_variant_cache:
+            chrom_variant_cache[chrom] = sorted_variants.filter(pl.col(chrom_col) == chrom)
+        chrom_variants = chrom_variant_cache[chrom]
         if len(chrom_variants) == 0:
-            partitioned.extend([pl.DataFrame()] * len(blocks))
+            partitioned.append(pl.DataFrame())
             continue
 
-        # Get positions array for binary search
         positions = chrom_variants.get_column(pos_col).to_numpy()
-
-        # Process each block
-        for block in blocks:
-            # Binary search for block boundaries
-            start_idx = np.searchsorted(positions, block['chromStart'])
-            end_idx = np.searchsorted(positions, block['chromEnd'])
-
-            # Extract variants for this block
-            block_variants = chrom_variants.slice(start_idx, end_idx - start_idx)
-            partitioned.append(block_variants)
-
+        start_idx = np.searchsorted(positions, block['chromStart'])
+        end_idx = np.searchsorted(positions, block['chromEnd'])
+        partitioned.append(chrom_variants.slice(start_idx, end_idx - start_idx))
 
     return partitioned
 
@@ -571,19 +554,112 @@ def _get_range_mask(values: np.ndarray, start: np.ndarray, end: np.ndarray) -> n
     result = np.zeros_like(values, dtype=bool)
     if len(end) == 0:
         return result
-    range_idx = 0
-    for i in range(len(values)):
-        while values[i] >= end[range_idx]:
-            range_idx += 1
-            if range_idx == len(end):
-                break
-        if range_idx == len(end):
-            break
-        result[i] = values[i] >= start[range_idx]
+
+    order = np.lexsort((end, start))
+    start = start[order]
+    end = end[order]
+
+    merged_start = []
+    merged_end = []
+    for interval_start, interval_end in zip(start, end, strict=False):
+        if not merged_start or interval_start > merged_end[-1]:
+            merged_start.append(interval_start)
+            merged_end.append(interval_end)
+        else:
+            merged_end[-1] = max(merged_end[-1], interval_end)
+
+    start = np.asarray(merged_start)
+    end = np.asarray(merged_end)
+    range_idx = np.searchsorted(start, values, side='right') - 1
+    valid = range_idx >= 0
+    result[valid] = values[valid] < end[range_idx[valid]]
 
     return result
 
 POSITIONS_FILE = 'data/rsid_position.csv'
+
+
+def _read_annotation_positions(positions_file: str, add_alleles: bool) -> pl.DataFrame:
+    position_columns = ['chrom', 'site_ids', 'position']
+    if add_alleles:
+        position_columns += ['anc_alleles', 'deriv_alleles']
+
+    try:
+        snplist_data = pl.read_csv(
+            positions_file,
+            separator=',',
+            columns=position_columns
+        )
+    except pl.exceptions.ColumnNotFoundError as e:
+        if add_alleles:
+            raise ValueError(
+                "positions_file must contain anc_alleles and deriv_alleles "
+                "when add_alleles=True"
+            ) from e
+        raise
+
+    column_renames = {
+        'chrom': 'CHR',
+        'site_ids': 'SNP',
+        'position': 'POS',
+    }
+    if add_alleles:
+        column_renames.update({
+            'anc_alleles': 'A2',
+            'deriv_alleles': 'A1',
+        })
+
+    return snplist_data.rename(column_renames)
+
+
+def _attach_annotation_positions(
+    annotations: pl.DataFrame,
+    snplist_data: pl.DataFrame,
+    chromosome: int,
+    *,
+    add_positions: bool,
+    add_alleles: bool,
+) -> pl.DataFrame:
+    with_columns = ['SNP']
+    if add_positions:
+        with_columns += ['CHR', 'POS']
+    if add_alleles:
+        with_columns += ['A2', 'A1']
+
+    if 'SNP' in annotations.columns:
+        if add_positions:
+            drop_cols = [col for col in ['CHR', 'BP'] if col in annotations.columns]
+            if drop_cols:
+                # Existing coordinates might be in the wrong genome build.
+                annotations = annotations.drop(drop_cols)
+
+        return annotations.join(
+            snplist_data.select(with_columns),
+            on='SNP',
+            how='inner'
+        )
+
+    chrom_snplist = snplist_data.filter(pl.col('CHR') == chromosome)
+    if len(annotations) != len(chrom_snplist):
+        raise ValueError(
+            "Thin annotation row count does not match positions_file for "
+            f"chromosome {chromosome}: {len(annotations)} annotation rows, "
+            f"{len(chrom_snplist)} position rows"
+        )
+
+    duplicate_cols = [col for col in with_columns if col in annotations.columns]
+    if duplicate_cols:
+        annotations = annotations.drop(duplicate_cols)
+
+    return pl.concat(
+        [
+            annotations,
+            chrom_snplist.select(with_columns),
+        ],
+        how='horizontal'
+    )
+
+
 def load_annotations(annot_path: str,
                     chromosome: Optional[int] = None,
                     infer_schema_length: int = 100_000,
@@ -619,6 +695,8 @@ def load_annotations(annot_path: str,
     else:
         chromosomes = range(1, 23)  # Assuming chromosomes 1-22
 
+    snplist_data = None
+
     # Find matching files
     annotations = []
     for chromosome in chromosomes:
@@ -640,7 +718,17 @@ def load_annotations(annot_path: str,
 
         # Horizontally concatenate all dataframes for this chromosome
         if dfs:
-            combined_df = pl.concat(dfs, how="horizontal")
+            combined_df = pl.concat(dfs, how="horizontal").collect()
+            if add_positions or add_alleles:
+                if snplist_data is None:
+                    snplist_data = _read_annotation_positions(positions_file, add_alleles)
+                combined_df = _attach_annotation_positions(
+                    combined_df,
+                    snplist_data,
+                    chromosome,
+                    add_positions=add_positions,
+                    add_alleles=add_alleles,
+                )
             annotations.append(combined_df)
 
     # Check if any files were found
@@ -650,7 +738,7 @@ def load_annotations(annot_path: str,
         )
 
     # Concatenate all chromosome dataframes and handle different schemas
-    annotations = pl.concat(annotations, how="diagonal_relaxed").collect()
+    annotations = pl.concat(annotations, how="diagonal_relaxed")
 
     # Convert binary columns to boolean to save memory
     numeric_types = (pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.Float32, pl.Float64)
@@ -669,58 +757,7 @@ def load_annotations(annot_path: str,
         bool_exprs = [pl.col(col).cast(pl.Boolean) for col in binary_cols]
         annotations = annotations.with_columns(bool_exprs)
 
-    if add_positions or add_alleles:
-        position_columns = ['chrom', 'site_ids', 'position']
-        if add_alleles:
-            position_columns += ['anc_alleles', 'deriv_alleles']
-
-        try:
-            snplist_data = pl.read_csv(
-                positions_file,
-                separator=',',
-                columns=position_columns
-            )
-        except pl.exceptions.ColumnNotFoundError as e:
-            if add_alleles:
-                raise ValueError(
-                    "positions_file must contain anc_alleles and deriv_alleles "
-                    "when add_alleles=True"
-                ) from e
-            raise
-
-        column_renames = {
-            'chrom': 'CHR',
-            'site_ids': 'SNP',
-            'position': 'POS',
-        }
-        if add_alleles:
-            column_renames.update({
-                'anc_alleles': 'A2',
-                'deriv_alleles': 'A1',
-            })
-
-        snplist_data = snplist_data.rename(column_renames)
-
-        with_columns = ['SNP']
-        if add_positions:
-            with_columns += ['CHR', 'POS']
-        if add_alleles:
-            with_columns += ['A2', 'A1']
-
-        snplist_data = snplist_data.select(with_columns)
-
-        if add_positions:
-            # Existing coordinates might be in wrong genome build
-            annotations = annotations.drop(['CHR', 'BP'])
-
-        # Merge with positions
-        annotations = annotations.join(
-            snplist_data,
-            on='SNP',
-            how='inner'
-        )
-
-    if not add_positions:
+    if not add_positions and 'BP' in annotations.columns:
         annotations = annotations.rename({'BP': 'POS'})
 
     bed_files = glob.glob(os.path.join(annot_path, "*.bed"))
