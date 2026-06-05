@@ -291,6 +291,41 @@ def test_multi_propagates_incomplete_trait(tmp_path):
         read_parquet_sumstats_multi(path)
 
 
+def test_all_nan_beta_se_returns_empty(tmp_path):
+    """All-null BETA/SE produces an empty DataFrame after Z-finite filtering."""
+    path = _write_parquet(
+        tmp_path,
+        "all_nan.parquet",
+        SNP=['rs1', 'rs2'],
+        POS=[100, 200],
+        trait1_BETA=[None, None],
+        trait1_SE=[None, None],
+    )
+    df = read_parquet_sumstats(path, trait='trait1')
+    assert df.height == 0
+    assert 'Z' in df.columns
+
+
+def test_alias_priority_pinned(tmp_path):
+    """When multiple aliases coexist, the first in alias-tuple order wins."""
+    path = _write_parquet(
+        tmp_path,
+        "alias_priority.parquet",
+        site_ids=['rs1', 'rs2'],
+        SNP=['ignored1', 'ignored2'],
+        position=[100, 200],
+        POS=[999, 999],
+        ref=['A', 'C'],
+        REF=['Z', 'Z'],
+        trait1_BETA=[0.1, 0.2],
+        trait1_SE=[0.05, 0.04],
+    )
+    df = read_parquet_sumstats(path, trait='trait1')
+    assert df['SNP'].to_list() == ['rs1', 'rs2']  # site_ids wins over SNP
+    assert df['POS'].to_list() == [100, 200]      # position wins over POS
+    assert df['REF'].to_list() == ['A', 'C']      # ref wins over REF
+
+
 def test_multi_export_from_top_level():
     """`read_parquet_sumstats_multi` is importable from the top-level package."""
     import graphld

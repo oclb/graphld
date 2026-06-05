@@ -68,9 +68,12 @@ def read_parquet_sumstats(
         Polars DataFrame containing:
           * `Z` (always): computed as BETA / SE, restricted to finite values.
           * `SNP` and/or position columns (`CHR`, `POS`): at least one of `SNP`
-            or `POS` is guaranteed to be present so the result is usable by
-            `merge_snplists`. `CHR` is present only if a chromosome column was
-            mapped.
+            or `POS` is guaranteed to be present. Callers must select a
+            `merge_snplists` mode matching what is present: `SNP` enables
+            SNP-ID merge, `POS` enables position-based merge. A file containing
+            only `POS` is read successfully here but will fail downstream if
+            the caller fixes `match_by_position=False`. `CHR` is present only
+            if a chromosome column was mapped.
           * `REF`, `ALT`: present only if matching allele columns were mapped.
           * `N`: present if an `N`/`n` column was mapped; added as a null
             Float64 column if not.
