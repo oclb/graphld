@@ -28,6 +28,11 @@ import polars as pl
 # Suppress numpy runtime warnings globally
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 
+if __package__ in {None, ""}:
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 # Handle imports when running either as a script or as a package
 try:
     from .score_test_io import (
@@ -327,7 +332,7 @@ def _setup_logging(output_fp: str | None, verbose: bool):
 @click.argument('variant_stats_hdf5', type=click.Path(exists=True))
 @click.argument('output_fp', required=False, default=None)
 @click.option('-a', '--variant-annot-dir', 'variant_annot_dir', type=click.Path(exists=True),
-              help="Directory containing variant-level annotation files (.annot).")
+              help="Directory containing variant-level annotation files (.annot and/or .bed).")
 @click.option('-g', '--gene-annot-dir', 'gene_annot_dir', type=click.Path(exists=True),
               help="Directory containing gene-level annotations to convert to variant-level.")
 @click.option('--random-genes', 'random_genes',
@@ -382,7 +387,11 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
     if variant_annot_dir:
         if is_gene_level:
             raise click.UsageError("Cannot use --variant-annot-dir with gene-level HDF5 file")
-        annot = load_variant_annotations(variant_annot_dir, annot_names_filter)
+        annot = load_variant_annotations(
+            variant_annot_dir,
+            annot_names_filter,
+            variant_table=data_table,
+        )
         logging.info(f"Loaded {len(annot.annot_names)} variant annotations from {variant_annot_dir}")
         num_provided += 1
 
