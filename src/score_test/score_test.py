@@ -118,7 +118,8 @@ class Annot:
         """
         Args:
             annot_names: List of annotation column names to test
-            other_key: Column name to use for merging (e.g., 'SNP', 'gene_id', 'gene_name')
+            other_key: Column name(s) to use for merging (e.g., 'RSID', 'gene_id',
+                or ['CHR', 'POS'])
         """
         self.annot_names = annot_names
         self.other_key = other_key

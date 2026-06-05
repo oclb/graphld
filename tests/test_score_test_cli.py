@@ -1,5 +1,6 @@
 """Tests for score test CLI functionality."""
 
+import os
 import shutil
 import subprocess
 import pytest
@@ -20,6 +21,23 @@ def run_estest_from_cwd(tmp_path, *args):
         capture_output=True,
         text=True,
     )
+
+
+def test_score_test_script_help_without_pythonpath():
+    """Test documented direct script invocation without installing the package."""
+    script_path = REPO_ROOT / "src" / "score_test" / "score_test.py"
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+
+    result = subprocess.run(
+        [sys.executable, str(script_path), "--help"],
+        capture_output=True,
+        env=env,
+        text=True,
+    )
+
+    assert result.returncode == 0, f"Command failed with stderr: {result.stderr}"
+    assert "--variant-annot-dir" in result.stdout
 
 
 def test_score_test_cli_random_variants():
