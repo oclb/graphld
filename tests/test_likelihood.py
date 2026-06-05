@@ -268,7 +268,8 @@ def test_gaussian_likelihood_gradient_methods():
 
     # Create a random sparse positive definite matrix
     A = np.sqrt(2) * rng.randn(n, n)  # Match MATLAB's randn variance
-    A = A @ A.T + np.diag(np.arange(1, n+1))  # Make it positive definite
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        A = A @ A.T + np.diag(np.arange(1, n+1))  # Make it positive definite
     matrix = csc_matrix(A)
 
     # Create variant info

@@ -1,6 +1,7 @@
 """Tests for packaged console-script entry points."""
 
 import importlib
+import importlib.util
 import tomllib
 from pathlib import Path
 
@@ -20,3 +21,7 @@ def test_packaged_console_scripts_are_supported() -> None:
         module_name, object_name = target.split(":", maxsplit=1)
         module = importlib.import_module(module_name)
         assert callable(getattr(module, object_name))
+
+
+def test_stale_heritability_testing_module_is_not_packaged() -> None:
+    assert importlib.util.find_spec("graphld.heritability_testing") is None

@@ -398,7 +398,8 @@ def test_precision_operator_inverse_diagonal_methods():
     # Create a random sparse positive definite matrix
     # Scale randn to match MATLAB's distribution
     A = np.sqrt(2) * rng.randn(n, n)  # MATLAB's randn has variance 1, numpy's has variance 1/2
-    A = A @ A.T + np.diag(np.arange(1, n+1))  # Make it positive definite
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        A = A @ A.T + np.diag(np.arange(1, n+1))  # Make it positive definite
     A = csc_matrix(A)
 
     # Create variant info DataFrame

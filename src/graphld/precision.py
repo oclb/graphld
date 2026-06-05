@@ -558,27 +558,29 @@ class PrecisionOperator(LinearOperator):
 
         # Z = A @ Q
         Z = self.solve(Q, method="pcg")
-        T = Z.T @ v
 
-        # Column-normalize inverse of R transpose
-        invR = np.linalg.inv(R).T
-        S = invR / np.linalg.norm(invR, axis=0, keepdims=True)
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+            T = Z.T @ v
 
-        # Compute diagonal products efficiently
-        dQZ = np.sum(Q.conj() * Z, axis=1)  # diag(Q.H @ Z)
-        dQSSZ = np.sum((Q @ S).conj() * (Z @ S), axis=1)  # diag((Q @ S).H @ (Z @ S))
+            # Column-normalize inverse of R transpose
+            invR = np.linalg.inv(R).T
+            S = invR / np.linalg.norm(invR, axis=0, keepdims=True)
 
-        # For dOmQT, we need diag(v.H @ (Q @ T))
-        dOmQT = np.sum(v.conj() * (Q @ T), axis=1)
-        dOmY = np.sum(v.conj() * Y, axis=1)  # diag(v.H @ Y)
+            # Compute diagonal products efficiently
+            dQZ = np.sum(Q.conj() * Z, axis=1)  # diag(Q.H @ Z)
+            dQSSZ = np.sum((Q @ S).conj() * (Z @ S), axis=1)  # diag((Q @ S).H @ (Z @ S))
 
-        # Compute S @ diag(S.H @ T)
-        ST_diag = np.sum(S.conj() * T, axis=1)  # diag(S.H @ T)
+            # For dOmQT, we need diag(v.H @ (Q @ T))
+            dOmQT = np.sum(v.conj() * (Q @ T), axis=1)
+            dOmY = np.sum(v.conj() * Y, axis=1)  # diag(v.H @ Y)
 
-        # Compute dOmQSST = diag(v.H @ (Q @ S @ diag(S.H @ T)))
-        dOmQSST = np.sum(v.conj() * (Q @ S @ np.diag(ST_diag)), axis=1)
+            # Compute S @ diag(S.H @ T)
+            ST_diag = np.sum(S.conj() * T, axis=1)  # diag(S.H @ T)
 
-        # Final diagonal estimate
-        diag_est = dQZ + (-dQSSZ + dOmY - dOmQT + dOmQSST) / m
+            # Compute dOmQSST = diag(v.H @ (Q @ S @ diag(S.H @ T)))
+            dOmQSST = np.sum(v.conj() * (Q @ S @ np.diag(ST_diag)), axis=1)
+
+            # Final diagonal estimate
+            diag_est = dQZ + (-dQSSZ + dOmY - dOmQT + dOmQSST) / m
 
         return np.real(diag_est), Y

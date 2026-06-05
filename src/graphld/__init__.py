@@ -25,10 +25,6 @@ Example::
     )
 """
 
-# Globally silence numerical runtime warnings (e.g., divide by zero, invalid value)
-from numpy import seterr
-seterr(divide="ignore", invalid="ignore", over="warn", under="ignore")
-
 from graphld.blup import BLUP, run_blup
 from graphld.clumping import LDClumper, run_clump
 from graphld.io import load_annotations, load_ldgm, merge_snplists, read_ldgm_metadata, partition_variants
