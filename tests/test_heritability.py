@@ -10,6 +10,7 @@ import polars as pl
 import pytest
 
 from graphld.heritability import (
+    FLAGS,
     GraphREML,
     MethodOptions,
     ModelOptions,
@@ -19,6 +20,7 @@ from graphld.heritability import (
     run_graphREML,
 )
 from graphld.io import read_ldgm_metadata
+from graphld.multiprocessing_template import SharedData
 
 
 def test_run_graphREML(metadata_path, create_annotations, create_sumstats):
@@ -324,16 +326,16 @@ def test_max_z_squared_threshold(metadata_path, create_annotations, create_sumst
     assert result is not None
 
 
-def test_variant_specific_statistics(metadata_path, create_annotations, create_sumstats):
-    """Test computation of variant-specific gradient and Hessian diagonal."""
+def _create_variant_specific_statistics_hdf5(
+    metadata_path, create_annotations, create_sumstats
+) -> str:
+    """Run GraphREML once and return the generated score-test HDF5 path."""
     sumstats = create_sumstats(str(metadata_path), 'EUR')
     annotations = create_annotations(metadata_path, 'EUR')
 
-    # Create a temporary HDF5 file for variant-specific statistics output
     with tempfile.NamedTemporaryFile(suffix='.h5', delete=False) as tmp:
         variant_stats_path = tmp.name
 
-    # Run GraphREML with variant-specific statistics computation enabled
     model = ModelOptions(
         params=np.zeros((1,1)),
         sample_size=1000,
@@ -355,25 +357,59 @@ def test_variant_specific_statistics(metadata_path, create_annotations, create_s
         populations='EUR'
     )
 
-    # Verify that variant-specific statistics were computed
     assert result is not None
-
-    # Verify that the HDF5 file exists and has the required structure
-    assert os.path.exists(variant_stats_path), f"HDF5 file {variant_stats_path} does not exist"
-
-    with h5py.File(variant_stats_path, 'r') as f:
-        # Verify that the file contains required blocks
-        assert 'traits' in f, "HDF5 file missing 'traits' group"
-        assert 'row_data' in f, "HDF5 file missing 'row_data' group"
-
-    # Return the path to the HDF5 file for use in the score test
     return variant_stats_path
+
+
+def test_variant_specific_statistics(metadata_path, create_annotations, create_sumstats):
+    """Score-test HDF5 output contains usable row and trait statistics."""
+    variant_stats_path = _create_variant_specific_statistics_hdf5(
+        metadata_path,
+        create_annotations,
+        create_sumstats,
+    )
+
+    try:
+        assert os.path.exists(variant_stats_path), (
+            f"HDF5 file {variant_stats_path} does not exist"
+        )
+
+        with h5py.File(variant_stats_path, 'r') as f:
+            assert f.attrs['data_type'] == 'variant'
+            assert 'traits' in f, "HDF5 file missing 'traits' group"
+            assert 'row_data' in f, "HDF5 file missing 'row_data' group"
+            assert 'test' in f['traits']
+
+            row_data = f['row_data']
+            for name in ['CHR', 'POS', 'RSID', 'jackknife_blocks']:
+                assert name in row_data
+
+            n_rows = row_data['CHR'].shape[0]
+            assert n_rows > 0
+            assert row_data['POS'].shape[0] == n_rows
+            assert row_data['RSID'].shape[0] == n_rows
+            assert row_data['jackknife_blocks'].shape == (n_rows,)
+            assert row_data['jackknife_blocks'][:].min() >= 0
+
+            gradient = f['traits/test/gradient'][:]
+            assert gradient.shape == (n_rows,)
+            assert np.all(np.isfinite(gradient))
+
+        method = MethodOptions(
+            score_test_hdf5_file_name=variant_stats_path,
+            score_test_hdf5_trait_name='test',
+        )
+        with pytest.raises(ValueError, match="traits/test"):
+            GraphREML._write_trait_stats(method, np.zeros(n_rows))
+
+    finally:
+        if os.path.exists(variant_stats_path):
+            os.unlink(variant_stats_path)
 
 
 def test_score_test(metadata_path, create_annotations, create_sumstats):
     """Test the score test functionality using the refactored run_score_test function."""
-    # Generate the HDF5 file with variant statistics
-    variant_stats_path = test_variant_specific_statistics(
+    variant_stats_path = _create_variant_specific_statistics_hdf5(
         metadata_path,
         create_annotations,
         create_sumstats
@@ -418,3 +454,116 @@ def test_score_test(metadata_path, create_annotations, create_sumstats):
         # Clean up the variant statistics file
         if os.path.exists(variant_stats_path):
             os.unlink(variant_stats_path)
+
+
+def test_trust_region_rejects_bad_step_before_accepting(monkeypatch):
+    """Rejected trust-region steps should restore params before retrying."""
+    class FakeTrustRegionManager:
+        def __init__(self, shared_data):
+            self.shared_data = shared_data
+            self.likelihood_only_calls = 0
+            self.flags = []
+
+        def start_workers(self, flag=None):
+            self.flags.append(flag)
+            if flag == FLAGS["INITIALIZE"]:
+                self.shared_data["likelihood"] = np.array([0.0, 0.0])
+                self.shared_data["gradient"] = np.array([1.0, 0.0])
+                self.shared_data["hessian"] = np.array([-1.0, 0.0])
+                self.shared_data["variant_data"] = np.array([0.2, 0.2])
+            elif flag == FLAGS["COMPUTE_LIKELIHOOD_ONLY"]:
+                self.likelihood_only_calls += 1
+                if self.likelihood_only_calls == 1:
+                    self.shared_data["likelihood"] = np.array([-1.0, 0.0])
+                else:
+                    self.shared_data["likelihood"] = np.array([0.1, 0.0])
+
+        def await_workers(self):
+            pass
+
+    monkeypatch.setattr(
+        GraphREML,
+        "_annotation_heritability",
+        staticmethod(lambda variant_h2, annot, ref_col: (
+            np.array([0.4]),
+            np.array([1.0]),
+        )),
+    )
+    monkeypatch.setattr(
+        GraphREML,
+        "_compute_pseudojackknife",
+        staticmethod(lambda gradient_blocks, hessian_blocks, params: np.array([
+            params,
+            params + 0.01,
+        ])),
+    )
+    monkeypatch.setattr(
+        GraphREML,
+        "_compute_jackknife_heritability",
+        staticmethod(lambda block_data, jackknife_params, model: (
+            np.array([[0.4], [0.41]]),
+            np.array([[1.0], [1.0]]),
+        )),
+    )
+
+    shared_data = SharedData({
+        "likelihood": 2,
+        "gradient": 2,
+        "hessian": 2,
+        "variant_data": 2,
+        "params": 1,
+    })
+    manager = FakeTrustRegionManager(shared_data)
+    block_data = [
+        {
+            "sumstats": pl.DataFrame({
+                "SNP": ["rs1"],
+                "CHR": [1],
+                "POS": [10],
+                "base": [1.0],
+            }),
+            "variant_offset": 0,
+        },
+        {
+            "sumstats": pl.DataFrame({
+                "SNP": ["rs2"],
+                "CHR": [1],
+                "POS": [20],
+                "base": [1.0],
+            }),
+            "variant_offset": 1,
+        },
+    ]
+    model = ModelOptions(
+        annotation_columns=["base"],
+        params=np.zeros((1, 1)),
+        sample_size=1000,
+    )
+    method = MethodOptions(
+        num_iterations=1,
+        trust_region_size=1.0,
+        trust_region_scalar=5.0,
+        max_trust_iterations=3,
+        num_jackknife_blocks=2,
+    )
+
+    result = GraphREML.supervise(
+        manager,
+        shared_data,
+        block_data,
+        num_iterations=1,
+        num_params=1,
+        verbose=False,
+        method=method,
+        model=model,
+    )
+
+    assert manager.flags == [
+        FLAGS["INITIALIZE"],
+        FLAGS["COMPUTE_LIKELIHOOD_ONLY"],
+        FLAGS["COMPUTE_LIKELIHOOD_ONLY"],
+    ]
+    assert manager.likelihood_only_calls == 2
+    np.testing.assert_allclose(result["parameters"], np.array([1.0 / 6.0]))
+    np.testing.assert_allclose(shared_data["params"], np.array([1.0 / 6.0]))
+    assert result["log"]["trust_region_lambdas"] == [5.0]

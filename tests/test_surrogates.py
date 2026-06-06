@@ -93,6 +93,52 @@ def test_get_surrogate_markers(metadata_path, create_sumstats):
                 assert np.all(mapping[missing_indices] != missing_indices)
 
 
+def test_get_surrogate_markers_writes_identity_for_zero_candidate_blocks(
+    metadata_path, monkeypatch
+):
+    """Blocks with no candidate variants still get contract-valid datasets."""
+    metadata = read_ldgm_metadata(str(metadata_path), populations="EUR")
+    empty_sumstats = pl.DataFrame(
+        schema={
+            "SNP": pl.Utf8,
+            "CHR": pl.Int64,
+            "POS": pl.Int64,
+            "REF": pl.Utf8,
+            "ALT": pl.Utf8,
+        }
+    )
+
+    def fail_surrogate_search(*args, **kwargs):
+        raise AssertionError("surrogate search should not run without candidates")
+
+    monkeypatch.setattr("graphld.surrogates._surrogate_marker", fail_surrogate_search)
+
+    with tempfile.NamedTemporaryFile(suffix=".h5") as tmp:
+        h5_path = get_surrogate_markers(
+            metadata_path,
+            empty_sumstats,
+            population="EUR",
+            run_serial=True,
+            output_path=tmp.name,
+        )
+
+        with h5py.File(h5_path, "r") as h5:
+            assert h5.attrs["graphld_surrogate_format"] == "1"
+            assert h5.attrs["coordinate_system"] == "ldgm_full_index"
+            assert set(h5.keys()) == set(metadata.get_column("name").to_list())
+
+            for row in metadata.iter_rows(named=True):
+                ldgm = load_ldgm(
+                    str(metadata_path.parent / row["name"]),
+                    population=row["population"],
+                )
+                mapping = h5[row["name"]][:]
+                np.testing.assert_array_equal(
+                    mapping,
+                    np.arange(ldgm.shape[0], dtype=mapping.dtype),
+                )
+
+
 def test_unversioned_surrogate_map_is_rejected(metadata_path):
     metadata = read_ldgm_metadata(str(metadata_path), populations="EUR")
     block_name = metadata.row(0, named=True)["name"]
