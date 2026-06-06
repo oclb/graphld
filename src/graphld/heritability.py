@@ -350,9 +350,6 @@ def _project_out(y: np.ndarray, x: np.ndarray):
     with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
         beta = np.linalg.solve(x.T @ x, x.T @ y.reshape(-1, 1))
         y -= (x @ beta).reshape(y.shape)
-    # assert np.allclose(x.T @ y, np.zeros(x.shape[1]), rtol=1e-3)
-    print(f"Sum of y: {np.sum(y)}")
-    print(f"Shape of y: {y.shape}")
 
 
 class GraphREML(ParallelProcessor):

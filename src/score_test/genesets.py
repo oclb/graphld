@@ -328,42 +328,6 @@ def gene_sets_to_variant_annotation_frame(
     )
 
 
-def convert_gene_set_to_gene_annotations(gene_sets: dict[str, list[str]],
-                                         gene_table: pl.DataFrame,
-                                         ) -> pl.DataFrame:
-    """Convert gene sets to gene-level annotations.
-    
-    Returns a DataFrame with one row per gene and one column per gene set,
-    plus a gene_id or gene_name column for merging.
-    """
-    # Determine if using gene IDs or gene symbols from first gene in first set
-    if not gene_sets:
-        raise ValueError("gene_sets must contain at least one gene set")
-
-    first_gene = next(
-        (gene for genes in gene_sets.values() for gene in genes),
-        "",
-    )
-    use_gene_id = _is_gene_id(first_gene)
-    gene_key = 'gene_id' if use_gene_id else 'gene_name'
-
-    if gene_key in gene_sets:
-        raise ValueError(f"The gene key '{gene_key}' is also the name of a gene set.")
-
-    columns: dict[str, np.ndarray] = {}
-    columns[gene_key] = gene_table[gene_key].unique().to_numpy()
-    gene_indices = {gene: i for i, gene in enumerate(columns[gene_key])}
-
-    num_genes = len(gene_indices)
-    for name, genes in gene_sets.items():
-        columns[name] = np.zeros(num_genes, dtype=np.float64)
-        for gene in genes:
-            if gene in gene_indices:
-                columns[name][gene_indices[gene]] = 1.0
-
-    return pl.DataFrame(columns)
-
-
 def convert_gene_to_variant_annotations(gene_annot: object,
                                         variant_table: pl.DataFrame,
                                         gene_table: pl.DataFrame,

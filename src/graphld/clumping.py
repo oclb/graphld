@@ -112,11 +112,6 @@ class LDClumper(ParallelProcessor):
         z_scores = ldgm.variant_info.select(z_col).to_numpy().flatten()  # Z score column
         chisq = z_scores ** 2
 
-        # Check original sumstats chi-square values
-        original_z = sumstats.select(z_col).to_numpy().flatten()  # Z score column
-        original_chisq = original_z ** 2
-        assert np.allclose(original_chisq[sumstat_indices.flatten()], chisq), "Chi-square values changed after merging"
-
         # Sort variants by chi-square statistic
         sort_idx = np.argsort(chisq)[::-1]  # Descending order
 

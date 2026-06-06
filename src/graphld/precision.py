@@ -565,7 +565,7 @@ class PrecisionOperator(LinearOperator):
         Returns:
             Array of diagonal elements of the inverse
         """
-        if method not in ["exact", "hutchinson", "xnys", "xdiag"]:
+        if method not in ["exact", "hutchinson", "xdiag"]:
             raise ValueError(f"Unknown method: {method}")
 
         # Slow, exact inversion
@@ -598,9 +598,6 @@ class PrecisionOperator(LinearOperator):
 
         elif method.lower() == "xdiag":
             diag_estimate, y = self._xdiag_estimator(v, initialization=pv)
-
-        else:
-            raise NotImplementedError
 
         return (diag_estimate, y) if initialization is not None else diag_estimate
 
