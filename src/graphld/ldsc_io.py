@@ -63,9 +63,11 @@ def read_ldsc_sumstats(
         file: Path to LDSC sumstats file
         add_positions: If True, merge with external file to add positions
         positions_file: File containing RSIDs and positions, defaults to data/rsid_position.csv
+        maximum_missingness: Maximum fraction of missing samples allowed.
+            Variants with N below (1 - maximum_missingness) * max(N) are removed.
 
     Returns:
-        DataFrame with columns: SNP, N, Z, A1, A2
+        DataFrame with columns: SNP, N, Z, ALT, REF
         If add_positions=True, also includes: CHR, POS
     """
     print(f"Reading LDSC sumstats file: {file} with max missingness: {maximum_missingness}")

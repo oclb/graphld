@@ -50,12 +50,11 @@ sumstats = gld.read_parquet_sumstats("path/to/file.parquet")
 
 #### CLI Usage with Multi-Trait Parquet
 
-```bash
-# Process specific traits
-uv run graphld reml sumstats.parquet output --name height,bmi
+When writing graphREML output files from a multi-trait parquet input, select
+the trait to analyze:
 
-# Process all traits
-uv run graphld reml sumstats.parquet output
+```bash
+uv run graphld reml sumstats.parquet output --name height
 ```
 
 ## Annotations
@@ -66,7 +65,9 @@ Per-chromosome annotation files in [LDSC format](https://github.com/bulik/ldsc/w
 
 Download BaselineLD model annotations (GRCh38) from the [Price lab Google Cloud bucket](https://console.cloud.google.com/storage/browser/broad-alkesgroup-public-requester-pays/LDSCORE/GRCh38).
 
-Both standard and `thin-annot` formats (without variant IDs) are supported.
+Standard `.annot` files with variant IDs are supported. `thin-annot` files
+without variant IDs can be loaded when a matching positions file supplies
+coordinates in the same row order.
 
 Read with:
 ```python
@@ -105,7 +106,7 @@ PATHWAY_B    Description of pathway B    GENE4    GENE5
 Read with:
 ```python
 from score_test.score_test_io import load_gene_annotations
-gene_annotations = load_gene_annotations("path/to/file.gmt")
+gene_annotations = load_gene_annotations("path/to/gmt_dir/")
 ```
 
 ## LDGM Files

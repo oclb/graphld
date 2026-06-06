@@ -20,9 +20,10 @@ Accepted inputs:
 - [`.parquet`](../file_formats.md#parquet-format-parquet)
 - [`.snplist`](../file_formats.md#snp-list-format)
 
-## Important Requirement
+## Population
 
-`--population` is required for this subcommand.
+Surrogate lookup is population-specific. The CLI defaults to `EUR`; pass
+`--population` explicitly when precomputing surrogates for another population.
 
 ## Output
 

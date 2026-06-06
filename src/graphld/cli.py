@@ -70,7 +70,7 @@ def _blup(
     """Run BLUP (Best Linear Unbiased Prediction) command.
     
     Args:
-        sumstats: Path to summary statistics file (.vcf or .sumstats)
+        sumstats: Path to summary statistics file (.vcf, .parquet, or .sumstats)
         out: Output file path
         metadata: Path to LDGM metadata file
         num_samples: Optional sample size override
@@ -163,7 +163,7 @@ def _clump(
     """Run LD clumping command to identify independent variants.
     
     Args:
-        sumstats: Path to summary statistics file (.vcf or .sumstats)
+        sumstats: Path to summary statistics file (.vcf, .parquet, or .sumstats)
         out: Output file path
         metadata: Path to LDGM metadata file
         num_samples: Optional sample size override
@@ -242,7 +242,7 @@ def _surrogates(
     """Run surrogate marker identification command.
     
     Args:
-        sumstats: Path to summary statistics file (.vcf or .sumstats)
+        sumstats: Path to summary statistics file (.vcf, .parquet, .sumstats, or .snplist)
         out: Output file path
         metadata: Path to LDGM metadata file
         num_processes: Number of processes for parallel computation
@@ -250,9 +250,10 @@ def _surrogates(
         population: Population to use for surrogate analysis
         verbose: Whether to print verbose output
         quiet: Whether to suppress all output except errors
+        chromosome: Optional chromosome to filter analysis
     
     Raises:
-        ValueError: If input file format is invalid or population is not provided
+        ValueError: If input file format is invalid or population is None
         FileNotFoundError: If input files don't exist
     """
     if not quiet:
@@ -328,7 +329,7 @@ def _simulate(
         heritability: Total heritability of simulated trait
         component_variance: List of variance components
         component_weight: List of weights for components
-        alpha_param: Alpha parameter for polygenicity
+        alpha_param: Allele-frequency architecture parameter
         annotation_dependent_polygenicity: Reserved for future support; currently
             raises NotImplementedError when enabled.
         random_seed: Optional seed for reproducibility
@@ -339,7 +340,7 @@ def _simulate(
         population: Optional population to filter analysis
         verbose: Whether to print verbose output
         quiet: Whether to suppress all output except errors
-        sample_size: Number of samples to simulate (default: 1000)
+        sample_size: Number of samples to simulate
         annotations: Path to annotation file for simulation
     
     Raises:
@@ -545,7 +546,8 @@ def _run_reml_single_trait(
         trait_name: Name of the trait being analyzed
         
     Returns:
-        Dictionary containing REML results
+        Tuple of (results, model_options), where results is the GraphREML
+        results dictionary and model_options is the fitted ModelOptions object.
     """
     num_snps_annot = len(annotations)
 

@@ -7,20 +7,23 @@ depletion.
 
 Main Functions:
     run_score_test: Run the enrichment score test on annotations
-    load_variant_data: Load precomputed variant-level score statistics
+    load_variant_data: Load precomputed row-level score statistics
     load_trait_data: Load trait-specific score statistics
     load_annotations: Load annotation data from LDSC format files
     load_gene_table: Load gene position table
     load_gene_sets_from_gmt: Load gene sets from GMT format files
+    gene_variant_matrix: Build variant-to-gene nearest-gene weight matrices
     convert_gene_to_variant_annotations: Convert gene-level to variant-level annotations
 
 Example::
 
-    from score_test import run_score_test, load_variant_data, load_annotations
+    from score_test import load_trait_data, load_variant_data, run_score_test
+    from score_test.score_test_io import load_variant_annotations
 
-    variant_data = load_variant_data("path/to/scores.h5")
-    annotations = load_annotations("path/to/annot_dir/")
-    results = run_score_test(variant_data, annotations)
+    row_data = load_variant_data("path/to/scores.h5")
+    trait_data = load_trait_data("path/to/scores.h5", "height", row_data)
+    annot = load_variant_annotations("path/to/annot_dir/", variant_table=row_data)
+    results = run_score_test(trait_data, annot)
 """
 
 from .score_test import run_score_test
