@@ -1,12 +1,8 @@
 # Command Line Interface
 
-GraphLD provides a `graphld` CLI for LDGM-backed workflows and a separate `estest` CLI for enrichment score tests.
+GraphLD provides a `graphld` CLI for LDGM-backed workflows and a separate `estest` CLI for enrichment score tests, which operate on precomputed scores instead of LDGMs. For the enrichment score test CLI, see [Enrichment Score Test](score_test.md).
 
-Use this page as the shared overview. For subcommand-specific details, follow the topic pages below.
-
-For the enrichment score test CLI, see [Enrichment Score Test](score_test.md).
-
-## Topics
+## Subcommands
 
 - [graphREML (`reml`)](cli/reml.md)
 - [BLUP (`blup`)](cli/blup.md)
@@ -35,9 +31,9 @@ uv run graphld <subcommand> SUMSTATS OUT [options]
 
 The main `graphld` analysis commands accept summary statistics in:
 
-- LDSC `.sumstats` format
-- GWAS-VCF `.vcf` format
-- Parquet `.parquet` format
+- [LDSC `.sumstats` format](file_formats.md#ldsc-format-sumstats)
+- [GWAS-VCF `.vcf` format](file_formats.md#gwas-vcf-format-vcf)
+- [Parquet `.parquet` format](file_formats.md#parquet-format-parquet)
 
 GraphLD uses LDGM metadata to locate LD blocks. By default this is:
 
@@ -49,9 +45,9 @@ Override it with `--metadata` when needed.
 
 For annotation-driven workflows, GraphLD supports:
 
-- LDSC `.annot` files
-- UCSC `.bed` region annotations
-- GMT gene-set annotations via `--gene-annot-dir`
+- [LDSC `.annot` files](file_formats.md#ldsc-format-annot)
+- [UCSC `.bed` region annotations](file_formats.md#bed-format-bed)
+- [GMT gene-set annotations](file_formats.md#gmt-format-gmt) via `--gene-annot-dir`
 
 See [File Formats](file_formats.md) for details.
 
@@ -77,11 +73,3 @@ Many subcommands share these options:
 Commands that consume summary statistics typically write a single tab-separated output file or HDF5 artifact to the `OUT` path you pass on the command line.
 
 The main exception is `reml`, which writes multiple result files with a shared prefix.
-
-## Choosing A Command
-
-- Use [`reml`](cli/reml.md) for heritability partitioning and enrichment estimation.
-- Use [`blup`](cli/blup.md) for infinitesimal-model effect-size weights.
-- Use [`clump`](cli/clump.md) for thresholding and LD pruning.
-- Use [`simulate`](cli/simulate.md) for synthetic GWAS summary statistics.
-- Use [`surrogates`](cli/surrogates.md) to precompute missing-variant substitutions for repeated graphREML runs.

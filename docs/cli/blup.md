@@ -20,7 +20,7 @@ uv run graphld blup \
 
 ## Inputs And Output
 
-- Input summary statistics: `.sumstats`, `.vcf`, or `.parquet`
+- Input summary statistics: `.sumstats`, `.vcf`, or `.parquet`; see [Summary Statistics](../file_formats.md#summary-statistics)
 - Output: a tab-separated file of BLUP weights at the path you pass as `OUT`
 
 BLUP also uses the shared LDGM options documented in the [CLI overview](../cli.md).

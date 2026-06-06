@@ -21,7 +21,7 @@ uv run graphld clump \
 
 ## Inputs And Output
 
-- Input summary statistics: `.sumstats`, `.vcf`, or `.parquet`
+- Input summary statistics: `.sumstats`, `.vcf`, or `.parquet`; see [Summary Statistics](../file_formats.md#summary-statistics)
 - Output: a tab-separated file of retained index variants
 
 All shared LDGM and runtime options from the [CLI overview](../cli.md) also apply here.

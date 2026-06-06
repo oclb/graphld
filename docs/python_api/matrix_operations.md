@@ -2,7 +2,7 @@
 
 LD matrix operations are centered on `PrecisionOperator`, which subclasses SciPy's [`LinearOperator`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.linalg.LinearOperator.html). It represents an LDGM precision matrix or its [Schur complement](https://en.wikipedia.org/wiki/Schur_complement).
 
-If you need `correlation_matrix[indices, indices] @ vector`, use `ldgm[indices].solve(vector)`. If you need `inv(correlation_matrix[indices, indices]) @ vector`, use `ldgm[indices] @ vector`. Do not index the dense matrix manually: the submatrix of an inverse is not the inverse of a submatrix.
+If you need `correlation_matrix[indices, indices] @ vector`, use `ldgm[indices].solve(vector)`. If you need `inv(correlation_matrix[indices, indices]) @ vector`, use `ldgm[indices] @ vector`. Do not index the matrix stored inside of the LDGM object manually: the submatrix of an inverse is not the inverse of a submatrix (instead, it is the inverse of the Schur complement).
 
 ```python
 import numpy as np
