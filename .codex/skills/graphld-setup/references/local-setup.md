@@ -3,7 +3,6 @@
 Use `uv` from the repo root:
 
 ```bash
-uv venv
 uv sync --extra dev
 ```
 
@@ -16,7 +15,9 @@ uv run estest --help
 uv run --extra dev pytest tests/test_precision.py -q
 ```
 
-Full GraphLD imports depend on `scikit-sparse`, which depends on SuiteSparse/CHOLMOD. On macOS, SuiteSparse is commonly installed with Homebrew:
+Full GraphLD imports depend on `scikit-sparse`, which depends on SuiteSparse/CHOLMOD. GraphLD supports Python 3.11-3.13. On macOS, use Homebrew or another system Python in that range so source builds use the active Command Line Tools SDK instead of stale compiler flags from an older uv-managed Python.
+
+On macOS, SuiteSparse is commonly installed with Homebrew:
 
 ```bash
 brew install suitesparse
