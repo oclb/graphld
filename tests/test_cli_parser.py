@@ -2,6 +2,8 @@
 
 import argparse
 
+import pytest
+
 from graphld import cli
 from graphld._cli_dispatch import dispatch_command
 from graphld._cli_parser import build_parser
@@ -31,6 +33,33 @@ def test_cli_module_preserves_private_parser_imports():
     cli._add_blup_parser(subparsers)
     args = parser.parse_args(["blup", "trait.sumstats", "weights.tsv", "-H", "0.4"])
     assert args.func is cli._blup
+
+
+def test_cli_main_help_smoke(monkeypatch, capsys):
+    """The packaged entrypoint target should still reach parser construction."""
+    monkeypatch.setattr("sys.argv", ["graphld", "--help"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 0
+    assert "Subcommands for graphld" in capsys.readouterr().out
+
+
+def test_cli_build_parser_attaches_production_handlers():
+    parser = cli.build_parser()
+
+    cases = [
+        (["blup", "trait.sumstats", "weights.tsv", "-H", "0.4"], cli._blup),
+        (["clump", "trait.sumstats", "clumped.tsv"], cli._clump),
+        (["surrogates", "trait.snplist", "surrogates.h5"], cli._surrogates),
+        (["simulate", "sim.sumstats"], cli._simulate),
+        (["reml", "trait.sumstats", "out/reml", "--annot-dir", "annotations"], cli._reml),
+    ]
+
+    for argv, expected_handler in cases:
+        args = parser.parse_args(argv)
+        assert args.func is expected_handler
 
 
 def test_build_parser_parses_all_graphld_subcommands():
@@ -98,6 +127,23 @@ def test_build_parser_parses_all_graphld_subcommands():
     assert reml_args.annotation_columns == ["base", "coding"]
     assert reml_args.initial_params == [0.1, 0.2]
     assert reml_args.func is handlers["reml"]
+
+    reml_no_out_args = parser.parse_args(
+        ["reml", "trait.sumstats", "--annot-dir", "annotations"]
+    )
+    assert reml_no_out_args.cmd == "reml"
+    assert reml_no_out_args.out is None
+    assert reml_no_out_args.annot_dir == "annotations"
+    assert reml_no_out_args.func is handlers["reml"]
+
+    reml_gene_args = parser.parse_args(
+        ["reml", "trait.sumstats", "--gene-annot-dir", "gene_sets"]
+    )
+    assert reml_gene_args.cmd == "reml"
+    assert reml_gene_args.out is None
+    assert reml_gene_args.annot_dir is None
+    assert reml_gene_args.gene_annot_dir == "gene_sets"
+    assert reml_gene_args.func is handlers["reml"]
 
 
 def test_dispatch_command_uses_existing_command_call_shapes():
