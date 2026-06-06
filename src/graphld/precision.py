@@ -37,6 +37,8 @@ class PrecisionOperator(LinearOperator):
     _which_indices: Optional[np.ndarray] = None
     _solver: Optional[cholesky] = None
     _cholesky_is_up_to_date: bool = False
+    _matrix_version: Optional[list[int]] = None
+    _factor_version: int = -1
 
     @property
     def shape(self):
@@ -100,12 +102,47 @@ class PrecisionOperator(LinearOperator):
             end = self._matrix.indptr[i + 1]
             diag_pos = start + np.where(self._matrix.indices[start:end] == i)[0][0]
             diag_indices.append(diag_pos)
-        return np.array(diag_indices)[self._get_mask]
+        diag_indices = np.array(diag_indices)
+        if self._which_indices is None:
+            return diag_indices
+        return diag_indices[self._which_indices]
+
+
+    def _invalidate_selection_cache(self) -> None:
+        """Clear cached values derived from the current index selection."""
+        self.__dict__.pop("_get_mask", None)
+        self.__dict__.pop("diagonal_indices", None)
+
+    def _matrix_state(self) -> list[int]:
+        """Get shared matrix mutation state for operators backed by the same matrix."""
+        if self._matrix_version is None:
+            self._matrix_version = getattr(self._matrix, "_graphld_matrix_version", None)
+            if self._matrix_version is None:
+                self._matrix_version = [0]
+                self._matrix._graphld_matrix_version = self._matrix_version
+        return self._matrix_version
+
+    def _current_matrix_version(self) -> int:
+        """Get the current shared matrix version."""
+        return self._matrix_state()[0]
+
+    def _bump_matrix_version(self) -> None:
+        """Mark the shared backing matrix as changed."""
+        self._matrix_state()[0] += 1
+
+    def _factor_is_current(self) -> bool:
+        """Return whether the cached factorization matches the current matrix."""
+        return (
+            self._solver is not None
+            and self._cholesky_is_up_to_date
+            and self._factor_version == self._current_matrix_version()
+        )
 
 
     def times_scalar(self, multiplier: float) -> None:
         """Multiply the precision matrix by a scalar in place."""
         self._matrix *= multiplier
+        self._bump_matrix_version()
         self.del_factor()
 
     def update_matrix(self, update: np.ndarray) -> None:
@@ -119,20 +156,21 @@ class PrecisionOperator(LinearOperator):
         Raises:
             ValueError: If update shape doesn't match or would make diagonal non-positive
         """
+        update = np.asarray(update).reshape(-1)
         if len(update) != self.shape[0]:
             msg = f"Update vector length {len(update)} does not match matrix shape {self.shape}"
             raise ValueError(msg)
 
-        # if np.allclose(update, 0):
-        #     return
+        diagonal_indices = self.diagonal_indices
+        updated_diagonal = self._matrix.data[diagonal_indices] + update
 
-        for idx, entry in zip(self.diagonal_indices, update, strict=False):
-            self._matrix.data[idx] += entry
-
-        if np.any(self._matrix.data[self.diagonal_indices] <= 0):
+        if np.any(updated_diagonal <= 0):
             raise ValueError("Update would make a diagonal element non-positive")
 
+        self._matrix.data[diagonal_indices] = updated_diagonal
+        self._bump_matrix_version()
         self._cholesky_is_up_to_date = False
+        self._factor_version = -1
 
     def update_element(self, index: int, value: float) -> None:
         """Update a single diagonal element of the precision matrix.
@@ -158,15 +196,21 @@ class PrecisionOperator(LinearOperator):
             msg = f"Update would make diagonal element at index {global_index} non-positive"
             raise ValueError(msg)
 
+        factor_was_current = self._factor_is_current()
         self._matrix.data[diag_pos] = new_val
+        self._bump_matrix_version()
 
-        if not self._cholesky_is_up_to_date:
+        if not factor_was_current:
+            self._cholesky_is_up_to_date = False
+            self._factor_version = -1
             return
 
         # Update Cholesky factorization
         shape = (self._matrix.shape[0], 1)
         e_sparse = csc_matrix(([np.sqrt(np.abs(value))], ([global_index], [0])), shape=shape)
         self._solver.update_inplace(e_sparse, value < 0)
+        self._cholesky_is_up_to_date = True
+        self._factor_version = self._current_matrix_version()
 
     def factor(self) -> None:
         """Update the Cholesky factorization of the precision matrix."""
@@ -175,11 +219,13 @@ class PrecisionOperator(LinearOperator):
         else:
             self._solver.cholesky_inplace(self._matrix)
         self._cholesky_is_up_to_date = True
+        self._factor_version = self._current_matrix_version()
 
     def del_factor(self) -> None:
         """Free the memory used by the Cholesky factorization."""
         self._solver = None
         self._cholesky_is_up_to_date = False
+        self._factor_version = -1
 
     def logdet(self) -> float:
         """Compute log determinant of the Schur complement.
@@ -187,7 +233,7 @@ class PrecisionOperator(LinearOperator):
         Returns:
             Log determinant of the Schur complement
         """
-        if not self._cholesky_is_up_to_date:
+        if not self._factor_is_current():
             self.factor()
 
         # Get boolean mask for current selection
@@ -298,9 +344,10 @@ class PrecisionOperator(LinearOperator):
     def copy(self):
         """Copy the current LDGM instance."""
         which_indices = self._which_indices.copy() if self._which_indices is not None else None
-        solver = self._solver if self._solver is not None else None
-        return PrecisionOperator(self._matrix.copy(), self.variant_info.clone(),
-                                which_indices, solver, self._cholesky_is_up_to_date)
+        matrix = self._matrix.copy()
+        matrix._graphld_matrix_version = [0]
+        return PrecisionOperator(matrix, self.variant_info.clone(),
+                                which_indices, None, False, matrix._graphld_matrix_version)
 
     def __getitem__(self, key: Union[list, slice, np.ndarray]) -> 'PrecisionOperator':
         """Sets the _which_indices class attribute.
@@ -321,7 +368,8 @@ class PrecisionOperator(LinearOperator):
             self.variant_info,
             self._which_indices,
             None,
-            False
+            False,
+            self._matrix_state()
         )
         result.set_which_indices(key)
         return result
@@ -370,6 +418,7 @@ class PrecisionOperator(LinearOperator):
             raise TypeError("Invalid key type. Use integer, list, slice, or numpy array.")
 
         self._which_indices = indices
+        self._invalidate_selection_cache()
 
 
     def solve(self,
@@ -395,7 +444,7 @@ class PrecisionOperator(LinearOperator):
 
         if method == "direct":
             y = self._expand_vector(b)
-            if not self._cholesky_is_up_to_date:
+            if not self._factor_is_current():
                 self.factor()
             solution = self._solver(y)
             if self._which_indices is not None:
@@ -456,7 +505,7 @@ class PrecisionOperator(LinearOperator):
         Returns:
             Solution vector x
         """
-        if not self._cholesky_is_up_to_date:
+        if not self._factor_is_current():
             self.factor()
 
         y = self._expand_vector(b)
