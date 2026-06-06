@@ -17,8 +17,8 @@ The likelihood functions operate on precision-premultiplied summary statistics:
 Available functions:
 
 - `gaussian_likelihood(pz, M)`: compute the log-likelihood
-- `gaussian_likelihood_gradient(pz, M, del_M_del_a=None)`: compute the gradient with respect to either the diagonal of `M` or parameters `a`
-- `gaussian_likelihood_hessian(pz, M, del_M_del_a)`: compute an approximate Hessian with respect to `a`
+- `gaussian_likelihood_gradient(pz, M, del_M_del_a=None, n_samples=10, seed=None, trace_estimator="xdiag")`: compute the gradient with respect to either the diagonal of `M` or parameters `a`
+- `gaussian_likelihood_hessian(pz, M, del_M_del_a=None, trace_estimator="xdiag")`: compute an approximate Hessian with respect to `a`, or diagonal-only Hessian output when `del_M_del_a` is omitted
 
 The Hessian approximation is minus the average of the Fisher information matrix and the observed information matrix, and is most useful near the optimum.
 

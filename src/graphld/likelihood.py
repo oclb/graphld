@@ -1,10 +1,19 @@
 """Functions for computing likelihoods in the LDGM model."""
 
+import warnings
 from typing import Optional
 
 import numpy as np
 
 from .precision import PrecisionOperator
+
+
+class _TraceEstimatorDefault:
+    def __repr__(self) -> str:
+        return "'xdiag'"
+
+
+_TRACE_ESTIMATOR_DEFAULT = _TraceEstimatorDefault()
 
 
 def gaussian_likelihood(
@@ -92,9 +101,11 @@ def gaussian_likelihood_hessian(
     pz: np.ndarray,
     M: PrecisionOperator,
     del_M_del_a: Optional[np.ndarray] = None,
-    diagonal_method: Optional[str]=None,
-    n_samples: int=100,
+    trace_estimator: str = _TRACE_ESTIMATOR_DEFAULT,
+    n_samples: int = 100,
     seed: Optional[int] = None,
+    *,
+    diagonal_method: Optional[str] = None,
 ) -> np.ndarray:
     """Computes the average information matrix of the Gaussian log-likelihood.
 
@@ -109,18 +120,32 @@ def gaussian_likelihood_hessian(
         M: PrecisionOperator. This should be the covariance of pz.
         del_M_del_a: Matrix of derivatives of M's diagonal elements wrt parameters a.
             If None, only the diagonal elements are computed.
-        diagonal_method: Method for computing the diagonal of the Hessian when
+        trace_estimator: Method for computing the diagonal trace estimator when
             del_M_del_a is None. Options accepted by PrecisionOperator include
-            "exact", "hutchinson", and "xdiag". The current default None is
-            forwarded to PrecisionOperator; pass an explicit method when asking
-            for diagonal-only output.
+            "exact", "hutchinson", and "xdiag". Defaults to "xdiag".
         n_samples: Number of probe vectors for Hutchinson's method or xdiag
         seed: Random seed for generating probe vectors
+        diagonal_method: Deprecated alias for trace_estimator.
 
     Returns:
         Matrix of second derivatives wrt parameters a, or array of diagonal elements
         if del_M_del_a is None
     """
+    trace_estimator_was_supplied = trace_estimator is not _TRACE_ESTIMATOR_DEFAULT
+    if diagonal_method is not None:
+        if trace_estimator_was_supplied and trace_estimator != diagonal_method:
+            raise ValueError(
+                "trace_estimator and diagonal_method specify different Hessian "
+                "diagonal estimators; use trace_estimator only."
+            )
+        warnings.warn(
+            "diagonal_method is deprecated; use trace_estimator instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        trace_estimator = diagonal_method
+    elif not trace_estimator_was_supplied:
+        trace_estimator = "xdiag"
 
     # Compute b = M^(-1) * pz
     b = M.solve(pz)
@@ -129,7 +154,9 @@ def gaussian_likelihood_hessian(
 
     # If del_M_del_a is None, compute only the diagonal of the Hessian
     if del_M_del_a is None:
-        minv_diag = M.inverse_diagonal(method=diagonal_method, n_samples=n_samples, seed=seed)
+        minv_diag = M.inverse_diagonal(
+            method=trace_estimator, n_samples=n_samples, seed=seed
+        )
         hess_diag = -0.5 * minv_diag.flatten() * b.flatten()**2
         return hess_diag
 
@@ -144,4 +171,3 @@ def gaussian_likelihood_hessian(
         hess = -0.5 * (b_scaled.T @ minv_b_scaled)
 
     return hess
-
