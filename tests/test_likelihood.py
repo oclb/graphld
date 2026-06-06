@@ -14,6 +14,27 @@ from graphld.likelihood import (
 from graphld.precision import PrecisionOperator
 
 
+def _create_2x2_likelihood_case():
+    """Create a small positive definite likelihood problem."""
+    data = np.array([2.0, -1.0, -1.0, 2.0], dtype=np.float32)
+    indices = np.array([0, 1, 0, 1])
+    indptr = np.array([0, 2, 4])
+    matrix = csc_matrix((data, indices, indptr), shape=(2, 2))
+    variant_info = pl.DataFrame({
+        'variant_id': ['rs1', 'rs2'],
+        'position': [1, 2],
+        'chromosome': ['1', '1'],
+        'index': [0, 1],
+    })
+    z = np.array([0.1, 0.1], dtype=np.float32)
+    sigmasq = np.array([1.0, 1.0], dtype=np.float32)
+    nn = 10.0
+    M = PrecisionOperator(matrix.copy() / nn, variant_info)
+    M.update_matrix(sigmasq)
+    pz = matrix @ z / np.sqrt(nn)
+    return pz, M, sigmasq
+
+
 def test_gaussian_likelihood_basic():
     """Test basic functionality of gaussian_likelihood."""
     # Create a simple positive definite matrix
@@ -243,7 +264,7 @@ def test_gaussian_likelihood_hessian_diagonal():
 
     # Compute Hessian diagonal directly (without del_M_del_a)
     hess_diag = gaussian_likelihood_hessian(pz, M, del_M_del_a=None,
-                                           diagonal_method='exact')
+                                           trace_estimator='exact')
 
     # Create del_sigma_del_a matrix - each column is gradient of sigmasq w.r.t a parameter
     # For testing, use identity matrix (each parameter affects one sigmasq element)
@@ -258,6 +279,51 @@ def test_gaussian_likelihood_hessian_diagonal():
     print(f"Hessian diagonal: {hess_diag}")
     print(f"Expected: {expected_diag}")
     np.testing.assert_allclose(hess_diag, expected_diag, rtol=1e-5)
+
+
+def test_gaussian_likelihood_hessian_diagonal_method_alias():
+    """The old diagonal_method keyword remains a deprecated alias."""
+    pz, M, _ = _create_2x2_likelihood_case()
+
+    with pytest.warns(DeprecationWarning, match='diagonal_method is deprecated'):
+        alias_diag = gaussian_likelihood_hessian(
+            pz, M, del_M_del_a=None, diagonal_method='exact'
+        )
+    trace_diag = gaussian_likelihood_hessian(
+        pz, M, del_M_del_a=None, trace_estimator='exact'
+    )
+
+    np.testing.assert_allclose(alias_diag, trace_diag, rtol=1e-12)
+
+
+def test_gaussian_likelihood_hessian_rejects_conflicting_estimators():
+    """Supplying both estimator names with different values fails clearly."""
+    pz, M, _ = _create_2x2_likelihood_case()
+
+    with pytest.raises(ValueError, match='trace_estimator and diagonal_method'):
+        gaussian_likelihood_hessian(
+            pz,
+            M,
+            del_M_del_a=None,
+            trace_estimator='hutchinson',
+            diagonal_method='exact',
+        )
+
+
+def test_gaussian_likelihood_hessian_diagonal_defaults_to_xdiag(monkeypatch):
+    """Diagonal-only Hessian output forwards xdiag as the default estimator."""
+    pz, M, _ = _create_2x2_likelihood_case()
+    calls = []
+
+    def fake_inverse_diagonal(*, method, n_samples, seed, **kwargs):
+        calls.append({'method': method, 'n_samples': n_samples, 'seed': seed})
+        return np.ones(M.shape[0])
+
+    monkeypatch.setattr(M, 'inverse_diagonal', fake_inverse_diagonal)
+
+    gaussian_likelihood_hessian(pz, M, del_M_del_a=None)
+
+    assert calls == [{'method': 'xdiag', 'n_samples': 100, 'seed': None}]
 
 
 def test_gaussian_likelihood_gradient_methods():

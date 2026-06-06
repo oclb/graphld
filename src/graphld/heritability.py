@@ -786,7 +786,7 @@ class GraphREML(ParallelProcessor):
             Pz,
             ldgm,
             del_M_del_a=None,
-            diagonal_method="xdiag",
+            trace_estimator="xdiag",
             n_samples=many_samples,
             seed=seed,
         )
