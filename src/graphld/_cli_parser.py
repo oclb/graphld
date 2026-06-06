@@ -4,29 +4,52 @@ import argparse
 from collections.abc import Callable, Mapping
 
 
-def _add_common_arguments(parser):
+_COMMON_DEFAULTS = {
+    "metadata": "data/ldgms/metadata.csv",
+    "chromosome": None,
+    "population": "EUR",
+    "verbose": False,
+    "quiet": False,
+}
+
+
+def _common_default(name: str, *, suppress_defaults: bool):
+    if suppress_defaults:
+        return argparse.SUPPRESS
+    return _COMMON_DEFAULTS[name]
+
+
+def _add_common_arguments(parser, *, suppress_defaults: bool = False):
     """Add arguments that are common to all subcommands."""
     parser.add_argument("-n", "--num-samples", type=int,
+                      default=argparse.SUPPRESS if suppress_defaults else None,
                       help="Sample size")
-    parser.add_argument("--metadata", type=str, default="data/ldgms/metadata.csv",
+    parser.add_argument("--metadata", type=str,
+                      default=_common_default("metadata", suppress_defaults=suppress_defaults),
                       help="Path to LDGM metadata file")
     parser.add_argument("--num-processes", type=int,
+                      default=argparse.SUPPRESS if suppress_defaults else None,
                       help="Number of processes (default: None)")
     parser.add_argument("--run-in-serial", action="store_true",
+                      default=argparse.SUPPRESS if suppress_defaults else False,
                       help="Run in serial mode")
-    parser.add_argument("-c", "--chromosome", type=int, default=None,
+    parser.add_argument("-c", "--chromosome", type=int,
+                      default=_common_default("chromosome", suppress_defaults=suppress_defaults),
                       help="Chromosome to filter analysis")
-    parser.add_argument("-p", "--population", type=str, default="EUR",
+    parser.add_argument("-p", "--population", type=str,
+                      default=_common_default("population", suppress_defaults=suppress_defaults),
                       help="Population to filter analysis")
-    parser.add_argument("-v", "--verbose", action="store_true", default=False)
-    parser.add_argument("-q", "--quiet", action="store_true", default=False)
+    parser.add_argument("-v", "--verbose", action="store_true",
+                      default=_common_default("verbose", suppress_defaults=suppress_defaults))
+    parser.add_argument("-q", "--quiet", action="store_true",
+                      default=_common_default("quiet", suppress_defaults=suppress_defaults))
 
 
 def _add_io_arguments(parser, out_required=True):
     """Add common input/output arguments."""
     parser.add_argument(
         'sumstats',
-        help='Path to summary statistics file (.vcf or .sumstats)',
+        help='Path to summary statistics file (.sumstats, .vcf/.vcf.gz, or .parquet)',
     )
     if out_required:
         parser.add_argument(
@@ -65,7 +88,7 @@ def _add_blup_parser(subparsers, handler: Callable | None = None):
     _add_io_arguments(parser)
 
     # Add common arguments
-    _add_common_arguments(parser)
+    _add_common_arguments(parser, suppress_defaults=True)
 
     # Add BLUP-specific arguments
     parser.add_argument(
@@ -90,7 +113,7 @@ def _add_surrogates_parser(subparsers, handler: Callable | None = None):
     _add_io_arguments(parser)
 
     # Add common arguments
-    _add_common_arguments(parser)
+    _add_common_arguments(parser, suppress_defaults=True)
 
     _set_handler(parser, handler)
 
@@ -107,7 +130,7 @@ def _add_clump_parser(subparsers, handler: Callable | None = None):
     _add_io_arguments(parser)
 
     # Add common arguments
-    _add_common_arguments(parser)
+    _add_common_arguments(parser, suppress_defaults=True)
 
     # Add clump-specific arguments
     parser.add_argument(
@@ -141,7 +164,7 @@ def _add_simulate_parser(subparsers, handler: Callable | None = None):
     )
 
     # Add common arguments
-    _add_common_arguments(parser)
+    _add_common_arguments(parser, suppress_defaults=True)
 
     # Simulation-specific arguments
     parser.add_argument(
@@ -215,7 +238,7 @@ def _add_reml_parser(subparsers, handler: Callable | None = None):
     )
 
     # Add common arguments
-    _add_common_arguments(parser)
+    _add_common_arguments(parser, suppress_defaults=True)
 
     # Optional arguments specific to reml
     parser.add_argument(

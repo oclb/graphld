@@ -146,6 +146,58 @@ def test_build_parser_parses_all_graphld_subcommands():
     assert reml_gene_args.func is handlers["reml"]
 
 
+def test_top_level_shared_options_survive_subparser_defaults():
+    """Shared options before the command should reach dispatch unchanged."""
+    calls = []
+    parser = build_parser({"blup": _recording_handler(calls, "blup")})
+
+    args = parser.parse_args([
+        "--metadata",
+        "custom/metadata.csv",
+        "--num-samples",
+        "123",
+        "--num-processes",
+        "4",
+        "--run-in-serial",
+        "--chromosome",
+        "22",
+        "--population",
+        "EAS",
+        "--quiet",
+        "blup",
+        "trait.sumstats",
+        "weights.tsv",
+        "-H",
+        "0.4",
+    ])
+
+    assert args.metadata == "custom/metadata.csv"
+    assert args.num_samples == 123
+    assert args.num_processes == 4
+    assert args.run_in_serial is True
+    assert args.chromosome == 22
+    assert args.population == "EAS"
+    assert args.quiet is True
+
+    dispatch_command(args)
+    assert calls.pop() == (
+        "blup",
+        (
+            "trait.sumstats",
+            "weights.tsv",
+            "custom/metadata.csv",
+            123,
+            0.4,
+            4,
+            True,
+            22,
+            "EAS",
+            False,
+            True,
+        ),
+    )
+
+
 def test_dispatch_command_uses_existing_command_call_shapes():
     calls = []
     handlers = {
