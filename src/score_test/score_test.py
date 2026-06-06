@@ -124,11 +124,14 @@ class Annot:
         self.annot_names = annot_names
         self.other_key = other_key
 
-    def merge(self, trait_data: TraitData) -> tuple[pl.DataFrame, np.ndarray, np.ndarray, np.ndarray]:
+    def merge(
+        self, trait_data: TraitData
+    ) -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None, np.ndarray, np.ndarray]:
         """Merge with TraitData and return extracted arrays.
 
         Returns:
-            Tuple of (merged_df, test_annot, model_annot, block_boundaries)
+            Tuple of (grad, hessian, model_annot, test_annot, block_boundaries).
+            hessian and model_annot can be None when unavailable.
         """
         raise NotImplementedError("Subclasses must implement merge()")
 
@@ -182,12 +185,15 @@ class VariantAnnot(Annot):
 
         self.annot_names = kept_names
 
-    def merge(self, trait_data: TraitData) -> tuple[np.ndarray, np.ndarray | None, np.ndarray, np.ndarray]:
+    def merge(
+        self, trait_data: TraitData
+    ) -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None, np.ndarray, np.ndarray]:
         """Merge variant annotations with TraitData.
 
         Returns:
-            Tuple of (grad, correction, test_annot, block_boundaries)
-            Note: correction is None if hessian is not available
+            Tuple of (grad, hessian, model_annot, test_annot, block_boundaries).
+            hessian is None if not available; model_annot is None if the
+            fitted model has no conditioning annotations.
         """
         # Check if trait_data has the required key
         merge_keys = [self.other_key] if isinstance(self.other_key, str) else self.other_key
@@ -247,14 +253,17 @@ class GeneAnnot(Annot):
 
         super().__init__(list(gene_sets.keys()), self.other_key)
 
-    def merge(self, trait_data: TraitData) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def merge(
+        self, trait_data: TraitData
+    ) -> tuple[np.ndarray, None, None, np.ndarray, np.ndarray]:
         """Merge gene annotations with gene-level TraitData.
 
-        Creates one-hot encodings for each gene set and returns unmodified grad/correction
-        from the TraitData.
+        Creates one-hot encodings for each gene set and returns unmodified
+        gradients from the TraitData.
 
         Returns:
-            Tuple of (grad, correction, test_annot, block_boundaries)
+            Tuple of (grad, hessian, model_annot, test_annot, block_boundaries).
+            hessian and model_annot are currently None for gene-set tests.
         """
         # Check if trait_data has the required key
         if self.other_key not in trait_data.keys:
@@ -295,7 +304,8 @@ def run_score_test(trait_data: TraitData,
     """
     Run approximate score test for hypothesis testing of new annotation or functional category.
 
-    Unlike run_score_test, this function does not adjust for uncertainty in the fitted model parameters.
+    This function tests annotations against precomputed gradient statistics. It
+    does not adjust for uncertainty in fitted model parameters.
 
     Args:
         trait_data: TraitData object containing variant data with gradients

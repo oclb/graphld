@@ -515,7 +515,7 @@ class ParallelProcessor(ABC):
             num_processes: Optional[int] = None,
             worker_params: Any = None,
             **kwargs: Any) -> Any:
-        """Run computation in a single process for debugging.
+        """Run computation block-by-block in the current process for debugging.
 
         Args:
             ldgm_metadata_path: Path to metadata file

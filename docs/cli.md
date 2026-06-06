@@ -66,7 +66,8 @@ Many subcommands share these options:
 | `-v, --verbose` | Print detailed progress |
 | `-q, --quiet` | Suppress normal progress output |
 
-`surrogates` also requires `--population`, because surrogate lookup depends on the reference population.
+`surrogates` is population-specific. The CLI defaults to `EUR`; pass
+`--population` explicitly for other reference populations.
 
 ## Shared Output Pattern
 

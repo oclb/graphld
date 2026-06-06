@@ -43,9 +43,10 @@ class _SimulationSpecification:
             annotations to modify the proportion of causal variants. Currently raises
             NotImplementedError when enabled.
         link_fn: Function mapping annotation vector to relative per-variant heritability.
-            Default is softmax: x -> log(1 + exp(sum(x))). Must be defined at module level
-            (not as lambda or nested function) to work with multiprocessing
-        component_random_seed: Random seed for component assignments
+            Default is the softplus-like mapping x -> log(1 + exp(sum(x))).
+            Must be defined at module level (not as lambda or nested function)
+            to work with multiprocessing
+        random_seed: Random seed for component assignments
         annotation_columns: List of column names to use as annotations. Annotations are
             expected to be in the LDGM variant_info DataFrame
     """
@@ -443,8 +444,9 @@ def run_simulate(
             annotations to modify the proportion of causal variants. Currently raises
             NotImplementedError when enabled.
         link_fn: Function mapping annotation vector to relative per-variant heritability.
-            Default is softmax: x -> log(1 + exp(sum(x))). Must be defined at module level
-            (not as lambda or nested function) to work with multiprocessing
+            Default is the softplus-like mapping x -> log(1 + exp(sum(x))).
+            Must be defined at module level (not as lambda or nested function)
+            to work with multiprocessing
         random_seed: Random seed for reproducibility
         annotation_columns: List of column names to use as annotations
         ldgm_metadata_path: Path to LDGM metadata file

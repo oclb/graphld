@@ -61,18 +61,19 @@ class BLUP(ParallelProcessor):
     @classmethod
     def prepare_block_data(cls, metadata: pl.DataFrame, **kwargs: Any) -> list[tuple]:
         """Split summary statistics into blocks whose positions match the LDGMs.
-        
+
         Args:
             metadata: DataFrame containing LDGM metadata
             **kwargs: Additional arguments from run(), including:
-                annotations: Optional DataFrame containing variant annotations
-                
+                sumstats: DataFrame containing summary statistics
+
         Returns:
-            List of block-specific annotation DataFrames, or None if no annotations
+            List of tuples containing a block-specific summary-statistics
+            DataFrame and its offset in the concatenated output.
         """
         sumstats = kwargs.get('sumstats')
 
-        # Partition annotations into blocks
+        # Partition summary statistics into blocks
         sumstats_blocks: list[pl.DataFrame] = partition_variants(metadata, sumstats)
 
         cumulative_num_variants = np.cumsum(np.array([len(df) for df in sumstats_blocks]))
@@ -82,13 +83,16 @@ class BLUP(ParallelProcessor):
 
     @staticmethod
     def create_shared_memory(metadata: pl.DataFrame, block_data: list[tuple], **kwargs: Any) -> SharedData:
-        """Create output array with length number of variants in the summary statistics that 
-        migtht match to one of the blocks.
-        
+        """Create the BLUP output array for partitioned summary statistics.
+
         Args:
             metadata: Metadata DataFrame containing block information
-            block_data: List of block-specific sumstats DataFrames
+            block_data: List of block-specific summary-statistics DataFrames
+                and offsets
             **kwargs: Not used
+
+        Returns:
+            SharedData containing the BLUP weight array.
         """
         total_variants = sum([len(df) for df, _ in block_data])
         return SharedData({
@@ -172,14 +176,18 @@ class BLUP(ParallelProcessor):
         
         Args:
             ldgm_metadata_path: Path to metadata CSV file
-            sumstats: Sumstats dataframe containing Z scores
+            sumstats: Summary-statistics DataFrame containing Z scores
             heritability: Heritability for the analyzed variant scope. Internally, BLUP uses
                 D = (heritability / m) I, where m is the number of unique
                 matched LDGM effect indices.
             sample_size: GWAS sample size
-            populations: Optional population name
+            populations: Optional population name(s)
             chromosomes: Optional chromosome or list of chromosomes
+            num_processes: Optional number of processes
+            run_in_serial: Whether to run in serial mode
+            match_by_position: Whether to match variants by position instead of ID
             verbose: Print additional information if True
+            sigmasq: Removed compatibility keyword. Passing it raises ValueError.
             
         Returns:
             DataFrame with BLUP weights added to the partitioned summary statistics.
