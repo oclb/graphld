@@ -314,6 +314,53 @@ def test_reproducibility(metadata_path, create_annotations):
     )
 
 
+def test_serial_and_parallel_simulation_match_fixed_seed(
+    metadata_path, create_annotations
+):
+    """Serial and multiprocessing runs should produce identical seeded output."""
+    annotations = create_annotations(metadata_path, populations="EUR")
+    kwargs = dict(
+        sample_size=100_000,
+        heritability=0.5,
+        component_variance=[1.0],
+        component_weight=[0.3],
+        alpha_param=-1,
+        random_seed=42,
+    )
+
+    serial = Simulate(**kwargs).simulate(
+        ldgm_metadata_path=metadata_path,
+        populations="EUR",
+        annotations=annotations,
+        run_in_serial=True,
+    )
+    parallel = Simulate(**kwargs).simulate(
+        ldgm_metadata_path=metadata_path,
+        populations="EUR",
+        annotations=annotations,
+        run_in_serial=False,
+        num_processes=2,
+    )
+
+    assert serial.select(["SNP", "CHR", "POS"]).to_dict(as_series=False) == (
+        parallel.select(["SNP", "CHR", "POS"]).to_dict(as_series=False)
+    )
+    for column in ["beta", "beta_marginal", "Z"]:
+        np.testing.assert_allclose(
+            serial[column].to_numpy(),
+            parallel[column].to_numpy(),
+        )
+    serial_noise = (
+        serial["Z"].to_numpy()
+        - np.sqrt(serial["N"].to_numpy()) * serial["beta_marginal"].to_numpy()
+    )
+    parallel_noise = (
+        parallel["Z"].to_numpy()
+        - np.sqrt(parallel["N"].to_numpy()) * parallel["beta_marginal"].to_numpy()
+    )
+    np.testing.assert_allclose(serial_noise, parallel_noise)
+
+
 def test_custom_link_function_pickling_error(metadata_path, create_annotations):
     """Test that lambda functions cause informative error when using multiprocessing."""
     # Lambda function that can't be pickled

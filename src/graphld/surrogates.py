@@ -104,30 +104,30 @@ class Surrogates(ParallelProcessor):
         sumstats_df = block_data['df']
         match_by_position = worker_params.get('match_by_position', False)
 
-        # Do not modify ldgm in place: the output map is keyed by full LDGM row
-        # coordinates, while merge_snplists renumbers variant_info["index"].
-        merged_ldgm, _ = merge_snplists(
-            ldgm, sumstats_df,
-            match_by_position=match_by_position,
-            pos_col='POS',
-            ref_allele_col='REF',
-            alt_allele_col='ALT',
-            modify_in_place=False
-        )
-
-        # After merge_snplists, merged_ldgm.variant_info contains only variants that
-        # matched sumstats (with allele checking). Get their unique indices.
-        # Work at index-level: length equals number of unique LDGM indices in this block
         num_indices = ldgm.shape[0]
         mapping = np.arange(num_indices, dtype=np.int32)
 
-        # Candidates are unique full-LDGM row indices among non-missing variants.
-        candidate_indices = np.array(
-            merged_ldgm._which_indices
-            if merged_ldgm._which_indices is not None
-            else np.arange(merged_ldgm.shape[0]),
-            dtype=np.int64,
-        )
+        if len(sumstats_df) == 0:
+            candidate_indices = np.array([], dtype=np.int64)
+        else:
+            # Do not modify ldgm in place: the output map is keyed by full LDGM row
+            # coordinates, while merge_snplists renumbers variant_info["index"].
+            merged_ldgm, _ = merge_snplists(
+                ldgm, sumstats_df,
+                match_by_position=match_by_position,
+                pos_col='POS',
+                ref_allele_col='REF',
+                alt_allele_col='ALT',
+                modify_in_place=False
+            )
+
+            # Candidates are unique full-LDGM row indices among non-missing variants.
+            candidate_indices = np.array(
+                merged_ldgm._which_indices
+                if merged_ldgm._which_indices is not None
+                else np.arange(merged_ldgm.shape[0]),
+                dtype=np.int64,
+            )
         candidates = pl.DataFrame({'index': candidate_indices}).with_row_index(
             name='surrogate_nr'
         )
