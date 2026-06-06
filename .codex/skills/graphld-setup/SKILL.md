@@ -10,7 +10,6 @@ Use this skill for environment and dependency work, not for running analyses. Ke
 Default local setup is:
 
 ```bash
-uv venv
 uv sync --extra dev
 ```
 
@@ -22,7 +21,7 @@ uv run graphld reml -h
 uv run estest --help
 ```
 
-Full GraphLD needs SuiteSparse/CHOLMOD through `scikit-sparse`. Score-test-only work may only need:
+Full GraphLD needs Python 3.11-3.13 and SuiteSparse/CHOLMOD through `scikit-sparse`. On macOS, prefer Homebrew/system Python so source builds use the active Command Line Tools SDK. Score-test-only work may only need:
 
 ```bash
 uv run src/score_test/score_test.py --help
