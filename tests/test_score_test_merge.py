@@ -7,9 +7,15 @@ import h5py
 from pathlib import Path
 from scipy.sparse import csr_matrix
 
-from score_test.convert_scores import convert_variant_to_gene_scores
+from score_test.convert_scores import convert_hdf5, convert_variant_to_gene_scores
 from score_test.score_test import VariantAnnot, TraitData, get_block_boundaries, run_score_test
-from score_test.score_test_io import load_trait_data, load_variant_data, create_random_variant_annotations
+from score_test.score_test_io import (
+    create_random_variant_annotations,
+    get_trait_groups,
+    is_gene_level_hdf5,
+    load_trait_data,
+    load_variant_data,
+)
 
 
 def test_get_block_boundaries_returns_half_open_slice_boundaries():
@@ -85,6 +91,60 @@ def test_convert_variant_to_gene_scores_uses_correct_variant_block_boundaries():
     np.testing.assert_array_equal(
         converted.df["gradient"].to_numpy(),
         np.array([3.0, 3.0, 4.0, 5.0]),
+    )
+
+
+def test_convert_hdf5_writes_loadable_gene_level_hdf5(tmp_path):
+    variant_hdf5 = tmp_path / "variant_scores.h5"
+    gene_hdf5 = tmp_path / "gene_scores.h5"
+    genes_tsv = tmp_path / "genes.tsv"
+    genes_tsv.write_text(
+        "\n".join([
+            "gene_id\tgene_id_version\tgene_name\tstart\tend\tCHR",
+            "ENSG0\tENSG0.1\tG0\t90\t110\t1",
+            "ENSG1\tENSG1.1\tG1\t190\t210\t1",
+            "ENSG2\tENSG2.1\tG2\t290\t310\t1",
+        ])
+        + "\n"
+    )
+
+    with h5py.File(variant_hdf5, "w") as f:
+        f.attrs["metadata"] = ""
+        f.attrs["data_type"] = "variant"
+        f.attrs["keys"] = ["RSID", "POS"]
+
+        row_data = f.create_group("row_data")
+        row_data.create_dataset("CHR", data=np.array([1, 1, 1]))
+        row_data.create_dataset("POS", data=np.array([100, 200, 300]))
+        row_data.create_dataset("RSID", data=np.array(["rs0", "rs1", "rs2"], dtype="S"))
+        row_data.create_dataset("jackknife_blocks", data=np.array([0, 1, 2]))
+
+        trait = f.create_group("traits").create_group("height")
+        params = trait.create_group("parameters")
+        params.create_dataset("parameters", data=np.array([0.0]))
+        params.create_dataset("jackknife_parameters", data=np.zeros((3, 1)))
+        trait.create_dataset("gradient", data=np.array([1.0, 2.0, 3.0]))
+        trait.create_dataset("hessian", data=np.ones(3))
+
+        f.create_group("groups").create_dataset(
+            "all_traits",
+            data=np.array(["height"], dtype="S"),
+        )
+
+    convert_hdf5(str(variant_hdf5), str(gene_hdf5), str(genes_tsv), [1.0])
+
+    assert is_gene_level_hdf5(str(gene_hdf5))
+    assert get_trait_groups(str(gene_hdf5)) == {"all_traits": ["height"]}
+
+    gene_table = load_variant_data(str(gene_hdf5))
+    assert gene_table["gene_id"].to_list() == ["ENSG0", "ENSG1", "ENSG2"]
+    assert gene_table["gene_name"].to_list() == ["G0", "G1", "G2"]
+    assert gene_table["jackknife_blocks"].to_list() == [0, 1, 2]
+
+    trait_data = load_trait_data(str(gene_hdf5), "height", gene_table)
+    np.testing.assert_array_equal(
+        trait_data.df["gradient"].to_numpy(),
+        np.array([1.0, 2.0, 3.0]),
     )
 
 
