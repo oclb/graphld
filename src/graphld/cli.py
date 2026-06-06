@@ -454,8 +454,9 @@ def _detect_sumstats_type(sumstats_path: str, maximum_missingness: float = 1, tr
         return read_gwas_vcf(sumstats_path, maximum_missingness=maximum_missingness)
     elif file_format == "parquet":
         return read_parquet_sumstats(sumstats_path, trait=trait, maximum_missingness=maximum_missingness)
-    else:
+    elif file_format == "sumstats":
         return read_ldsc_sumstats(sumstats_path, maximum_missingness=maximum_missingness)
+    raise ValueError("Input file must end in .vcf, .vcf.gz, .parquet, or .sumstats")
 
 def write_results(filename: str, values: list, std_errors: list, p_values: list, annot_names: list, name: str):
     """Write REML results to a CSV file.

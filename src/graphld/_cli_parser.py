@@ -76,7 +76,12 @@ def _set_handler(parser, handler: Callable | None) -> None:
         parser.set_defaults(func=handler)
 
 
-def _add_blup_parser(subparsers, handler: Callable | None = None):
+def _add_blup_parser(
+    subparsers,
+    handler: Callable | None = None,
+    *,
+    suppress_common_defaults: bool = False,
+):
     """Add parser for blup command."""
     parser = subparsers.add_parser(
         'blup',
@@ -88,7 +93,7 @@ def _add_blup_parser(subparsers, handler: Callable | None = None):
     _add_io_arguments(parser)
 
     # Add common arguments
-    _add_common_arguments(parser, suppress_defaults=True)
+    _add_common_arguments(parser, suppress_defaults=suppress_common_defaults)
 
     # Add BLUP-specific arguments
     parser.add_argument(
@@ -101,7 +106,12 @@ def _add_blup_parser(subparsers, handler: Callable | None = None):
     _set_handler(parser, handler)
 
 
-def _add_surrogates_parser(subparsers, handler: Callable | None = None):
+def _add_surrogates_parser(
+    subparsers,
+    handler: Callable | None = None,
+    *,
+    suppress_common_defaults: bool = False,
+):
     """Add parser for surrogates command."""
     parser = subparsers.add_parser(
         'surrogates',
@@ -113,12 +123,17 @@ def _add_surrogates_parser(subparsers, handler: Callable | None = None):
     _add_io_arguments(parser)
 
     # Add common arguments
-    _add_common_arguments(parser, suppress_defaults=True)
+    _add_common_arguments(parser, suppress_defaults=suppress_common_defaults)
 
     _set_handler(parser, handler)
 
 
-def _add_clump_parser(subparsers, handler: Callable | None = None):
+def _add_clump_parser(
+    subparsers,
+    handler: Callable | None = None,
+    *,
+    suppress_common_defaults: bool = False,
+):
     """Add parser for clump command."""
     parser = subparsers.add_parser(
         'clump',
@@ -130,7 +145,7 @@ def _add_clump_parser(subparsers, handler: Callable | None = None):
     _add_io_arguments(parser)
 
     # Add common arguments
-    _add_common_arguments(parser, suppress_defaults=True)
+    _add_common_arguments(parser, suppress_defaults=suppress_common_defaults)
 
     # Add clump-specific arguments
     parser.add_argument(
@@ -149,7 +164,12 @@ def _add_clump_parser(subparsers, handler: Callable | None = None):
     _set_handler(parser, handler)
 
 
-def _add_simulate_parser(subparsers, handler: Callable | None = None):
+def _add_simulate_parser(
+    subparsers,
+    handler: Callable | None = None,
+    *,
+    suppress_common_defaults: bool = False,
+):
     """Add parser for simulate command."""
     parser = subparsers.add_parser(
         "simulate",
@@ -164,7 +184,7 @@ def _add_simulate_parser(subparsers, handler: Callable | None = None):
     )
 
     # Add common arguments
-    _add_common_arguments(parser, suppress_defaults=True)
+    _add_common_arguments(parser, suppress_defaults=suppress_common_defaults)
 
     # Simulation-specific arguments
     parser.add_argument(
@@ -218,7 +238,12 @@ def _add_simulate_parser(subparsers, handler: Callable | None = None):
     _set_handler(parser, handler)
 
 
-def _add_reml_parser(subparsers, handler: Callable | None = None):
+def _add_reml_parser(
+    subparsers,
+    handler: Callable | None = None,
+    *,
+    suppress_common_defaults: bool = False,
+):
     """Add parser for reml command."""
     parser = subparsers.add_parser(
         'reml',
@@ -238,7 +263,7 @@ def _add_reml_parser(subparsers, handler: Callable | None = None):
     )
 
     # Add common arguments
-    _add_common_arguments(parser, suppress_defaults=True)
+    _add_common_arguments(parser, suppress_defaults=suppress_common_defaults)
 
     # Optional arguments specific to reml
     parser.add_argument(
@@ -384,18 +409,38 @@ def build_parser(command_handlers: Mapping[str, Callable] | None = None):
     subp = argp.add_subparsers(dest="cmd", required=True, help="Subcommands for graphld")
 
     # BLUP command
-    _add_blup_parser(subp, command_handlers.get("blup"))
+    _add_blup_parser(
+        subp,
+        command_handlers.get("blup"),
+        suppress_common_defaults=True,
+    )
 
     # LD clumping command
-    _add_clump_parser(subp, command_handlers.get("clump"))
+    _add_clump_parser(
+        subp,
+        command_handlers.get("clump"),
+        suppress_common_defaults=True,
+    )
 
     # Surrogates command
-    _add_surrogates_parser(subp, command_handlers.get("surrogates"))
+    _add_surrogates_parser(
+        subp,
+        command_handlers.get("surrogates"),
+        suppress_common_defaults=True,
+    )
 
     # Genetic simulation command
-    _add_simulate_parser(subp, command_handlers.get("simulate"))
+    _add_simulate_parser(
+        subp,
+        command_handlers.get("simulate"),
+        suppress_common_defaults=True,
+    )
 
     # GraphREML command
-    _add_reml_parser(subp, command_handlers.get("reml"))
+    _add_reml_parser(
+        subp,
+        command_handlers.get("reml"),
+        suppress_common_defaults=True,
+    )
 
     return argp

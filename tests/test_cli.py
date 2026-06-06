@@ -177,6 +177,12 @@ def test_command_sumstats_reader_accepts_vcf_gz(monkeypatch):
     assert calls == ["trait.vcf.gz"]
 
 
+def test_reml_sumstats_detector_rejects_unknown_extension():
+    """REML should not parse arbitrary suffixes as LDSC summary statistics."""
+    with pytest.raises(ValueError, match=r"Input file must end in \.vcf, \.vcf\.gz, \.parquet, or \.sumstats"):
+        cli._detect_sumstats_type("trait.txt")
+
+
 def test_simulate_cli_forwards_annotation_columns(monkeypatch, tmp_path):
     """The CLI `--annotation-columns` value should configure Simulate."""
     init_kwargs = []
@@ -319,7 +325,7 @@ def test_reml_basic(metadata_path, create_annotations, create_sumstats):
         out_prefix = Path(tmpdir) / "test"
 
         # Write sumstats to temporary file
-        sumstats_file = Path(tmpdir) / "sumstats.csv"
+        sumstats_file = Path(tmpdir) / "sumstats.sumstats"
         sumstats.write_csv(sumstats_file, separator='\t')
 
         # Write annotations to temporary file

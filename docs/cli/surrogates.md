@@ -20,9 +20,9 @@ Accepted inputs:
 - [`.parquet`](../file_formats.md#parquet-format-parquet)
 - [`.snplist`](../file_formats.md#snp-list-format)
 
-## Important Requirement
+## Population
 
-`--population` is required for this subcommand.
+`--population` selects the reference population for surrogate lookup and defaults to `EUR`.
 
 ## Output
 

@@ -33,6 +33,11 @@ def test_cli_module_preserves_private_parser_imports():
     cli._add_blup_parser(subparsers)
     args = parser.parse_args(["blup", "trait.sumstats", "weights.tsv", "-H", "0.4"])
     assert args.func is cli._blup
+    assert args.metadata == "data/ldgms/metadata.csv"
+    assert args.num_samples is None
+    assert args.run_in_serial is False
+    assert args.chromosome is None
+    assert args.population == "EUR"
 
 
 def test_cli_main_help_smoke(monkeypatch, capsys):
