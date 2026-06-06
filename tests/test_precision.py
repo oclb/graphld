@@ -347,6 +347,233 @@ def test_precision_operator_update_with_indices():
         update = np.array([[1.0]], dtype=np.float32)  # Use dense array instead of sparse
         P_sub.update_matrix(update)
 
+def test_precision_operator_update_matrix_is_atomic_on_invalid_update():
+    """Test that invalid matrix updates do not partially mutate state."""
+    matrix = csc_matrix(np.array([
+        [2.0, -0.2, 0.0],
+        [-0.2, 2.0, -0.2],
+        [0.0, -0.2, 2.0],
+    ]))
+    variant_info = pl.DataFrame({
+        'variant_id': ['rs1', 'rs2', 'rs3'],
+        'position': [1, 2, 3],
+        'chromosome': ['1', '1', '1'],
+        'index': [0, 1, 2],
+    })
+    P = PrecisionOperator(matrix.copy(), variant_info)
+    P.factor()
+    solver = P._solver
+    before = P.matrix.toarray().copy()
+
+    with pytest.raises(ValueError, match="non-positive"):
+        P.update_matrix(np.array([-3.0, 0.0, 0.0]))
+
+    np.testing.assert_array_equal(P.matrix.toarray(), before)
+    assert P._solver is solver
+    assert P._cholesky_is_up_to_date
+
+def test_precision_operator_copy_does_not_share_solver():
+    """Test that copied operators lazily build independent Cholesky solvers."""
+    matrix = csc_matrix(np.array([
+        [2.0, -0.2, 0.0],
+        [-0.2, 2.0, -0.2],
+        [0.0, -0.2, 2.0],
+    ]))
+    variant_info = pl.DataFrame({
+        'variant_id': ['rs1', 'rs2', 'rs3'],
+        'position': [1, 2, 3],
+        'chromosome': ['1', '1', '1'],
+        'index': [0, 1, 2],
+    })
+    P = PrecisionOperator(matrix.copy(), variant_info)
+    P.factor()
+
+    copied = P.copy()
+    assert copied._solver is None
+    assert not copied._cholesky_is_up_to_date
+
+    b = np.ones(3)
+    np.testing.assert_allclose(copied.solve(b), P.solve(b))
+    assert copied._solver is not None
+    assert copied._solver is not P._solver
+
+def test_precision_operator_set_which_indices_invalidates_selection_cache():
+    """Test that repeated selection changes recompute cached mask and diagonal indices."""
+    matrix = csc_matrix(np.array([
+        [2.0, -0.2, 0.0],
+        [-0.2, 2.0, -0.2],
+        [0.0, -0.2, 2.0],
+    ]))
+    variant_info = pl.DataFrame({
+        'variant_id': ['rs1', 'rs2', 'rs3'],
+        'position': [1, 2, 3],
+        'chromosome': ['1', '1', '1'],
+        'index': [0, 1, 2],
+    })
+    P = PrecisionOperator(matrix.copy(), variant_info)
+
+    P.set_which_indices([0, 2])
+    np.testing.assert_array_equal(P._get_mask, [True, False, True])
+    first_diagonal_indices = P.diagonal_indices.copy()
+
+    P.set_which_indices([0])
+    np.testing.assert_array_equal(P._get_mask, [True, False, False])
+    assert len(P.diagonal_indices) == 1
+    assert not np.array_equal(P.diagonal_indices, first_diagonal_indices)
+
+    P.update_matrix(np.array([1.0]))
+    expected = matrix.toarray()
+    expected[0, 0] = 3.0
+    np.testing.assert_array_equal(P.matrix.toarray(), expected)
+
+def test_precision_operator_update_matrix_preserves_selection_order():
+    """Test diagonal updates follow caller-visible subset order."""
+    matrix = csc_matrix(np.array([
+        [3.0, -0.5, 0.0],
+        [-0.5, 3.0, -0.5],
+        [0.0, -0.5, 3.0],
+    ]))
+    variant_info = pl.DataFrame({
+        'variant_id': ['rs1', 'rs2', 'rs3'],
+        'position': [1, 2, 3],
+        'chromosome': ['1', '1', '1'],
+        'index': [0, 1, 2],
+    })
+    P = PrecisionOperator(matrix.copy(), variant_info)
+    P_sub = P[[2, 0]]
+
+    P_sub.update_matrix(np.array([10.0, 1.0]))
+
+    expected = matrix.toarray()
+    expected[2, 2] = 13.0
+    expected[0, 0] = 4.0
+    np.testing.assert_array_equal(P.matrix.toarray(), expected)
+
+def test_precision_operator_update_element_preserves_selection_order_with_factor():
+    """Test rank-one factor updates target the selected global index."""
+    matrix = csc_matrix(np.array([
+        [3.0, -0.5, 0.0],
+        [-0.5, 3.0, -0.5],
+        [0.0, -0.5, 3.0],
+    ]))
+    variant_info = pl.DataFrame({
+        'variant_id': ['rs1', 'rs2', 'rs3'],
+        'position': [1, 2, 3],
+        'chromosome': ['1', '1', '1'],
+        'index': [0, 1, 2],
+    })
+    P = PrecisionOperator(matrix.copy(), variant_info)
+    P_sub = P[[2, 0]]
+    b = np.array([1.0, -0.5])
+    P_sub.factor()
+
+    P_sub.update_element(0, 10.0)
+
+    expected = matrix.toarray()
+    expected[2, 2] = 13.0
+    np.testing.assert_array_equal(P.matrix.toarray(), expected)
+    np.testing.assert_allclose(P_sub @ P_sub.solve(b), b, rtol=1e-8, atol=1e-8)
+    assert P_sub._factor_is_current()
+
+def test_precision_operator_subset_update_invalidates_parent_factor():
+    """Test that shared-matrix updates through a subset stale parent factors."""
+    matrix = csc_matrix(np.array([
+        [3.0, -0.5, 0.0],
+        [-0.5, 3.0, -0.5],
+        [0.0, -0.5, 3.0],
+    ]))
+    variant_info = pl.DataFrame({
+        'variant_id': ['rs1', 'rs2', 'rs3'],
+        'position': [1, 2, 3],
+        'chromosome': ['1', '1', '1'],
+        'index': [0, 1, 2],
+    })
+    P = PrecisionOperator(matrix.copy(), variant_info)
+    b = np.ones(3)
+    P.factor()
+    stale_solver = P._solver
+
+    P_sub = P[[0, 2]]
+    P_sub.update_matrix(np.array([2.0, 1.0]))
+
+    P_fresh = PrecisionOperator(P.matrix.copy(), variant_info)
+    np.testing.assert_allclose(P.solve(b), P_fresh.solve(b))
+    assert P._solver is stale_solver
+    assert P._factor_is_current()
+
+def test_precision_operator_subset_update_element_invalidates_parent_factor():
+    """Test parent factors are refreshed after a selected view updates one element."""
+    matrix = csc_matrix(np.array([
+        [3.0, -0.5, 0.0],
+        [-0.5, 3.0, -0.5],
+        [0.0, -0.5, 3.0],
+    ]))
+    variant_info = pl.DataFrame({
+        'variant_id': ['rs1', 'rs2', 'rs3'],
+        'position': [1, 2, 3],
+        'chromosome': ['1', '1', '1'],
+        'index': [0, 1, 2],
+    })
+    P = PrecisionOperator(matrix.copy(), variant_info)
+    b = np.ones(3)
+    P.factor()
+
+    P_sub = P[[1]]
+    P_sub.update_element(0, 2.0)
+
+    P_fresh = PrecisionOperator(P.matrix.copy(), variant_info)
+    np.testing.assert_allclose(P.solve(b), P_fresh.solve(b))
+    assert P._factor_is_current()
+
+def test_precision_operator_direct_shared_matrix_update_invalidates_peer_factor():
+    """Test direct operators over the same matrix share mutation state."""
+    matrix = csc_matrix(np.array([
+        [3.0, -0.5, 0.0],
+        [-0.5, 3.0, -0.5],
+        [0.0, -0.5, 3.0],
+    ]))
+    variant_info = pl.DataFrame({
+        'variant_id': ['rs1', 'rs2', 'rs3'],
+        'position': [1, 2, 3],
+        'chromosome': ['1', '1', '1'],
+        'index': [0, 1, 2],
+    })
+    P1 = PrecisionOperator(matrix, variant_info)
+    P2 = PrecisionOperator(matrix, variant_info)
+    b = np.ones(3)
+    P2.factor()
+
+    P1.update_matrix(np.array([2.0, 0.0, 1.0]))
+
+    P_fresh = PrecisionOperator(matrix.copy(), variant_info)
+    np.testing.assert_allclose(P2.solve(b), P_fresh.solve(b))
+    assert P2._factor_is_current()
+
+def test_precision_operator_copy_matrix_alias_invalidates_copy_factor():
+    """Test direct aliases of copied matrices share the copy's mutation state."""
+    matrix = csc_matrix(np.array([
+        [3.0, -0.5, 0.0],
+        [-0.5, 3.0, -0.5],
+        [0.0, -0.5, 3.0],
+    ]))
+    variant_info = pl.DataFrame({
+        'variant_id': ['rs1', 'rs2', 'rs3'],
+        'position': [1, 2, 3],
+        'chromosome': ['1', '1', '1'],
+        'index': [0, 1, 2],
+    })
+    P = PrecisionOperator(matrix, variant_info)
+    copied = P.copy()
+    alias = PrecisionOperator(copied.matrix, copied.variant_info)
+    b = np.ones(3)
+    copied.factor()
+
+    alias.update_matrix(np.array([2.0, 0.0, 1.0]))
+
+    fresh = PrecisionOperator(copied.matrix.copy(), variant_info)
+    np.testing.assert_allclose(copied.solve(b), fresh.solve(b))
+    assert copied._factor_is_current()
+
 def test_precision_operator_update_element():
     """Test updating a single diagonal element."""
     # Create a 4x4 precision matrix that is better conditioned
