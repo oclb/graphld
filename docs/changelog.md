@@ -1,28 +1,37 @@
 # Changelog
 
-This changelog starts from `v1.2.0`. The `Unreleased` section tracks changes intended for the next release.
+This changelog starts from `v1.2.0`.
 
-## Unreleased
+## v1.2.1 - 2026-06-06
+
+### Added
+
+- Added score-test support for variant-level `.bed` annotation directories, including BED-only directories that use score-stat HDF5 row data for variant coordinates.
+- Added `estest test --perturb-annot` to the wrapped score-test CLI.
+- Exported `read_parquet_sumstats_multi` from the top-level `graphld` package.
 
 ### Changed
 
-- Made annotation-loading tests and tracked examples self-contained by using explicit `data/test/rsid_position.csv` fixture paths instead of ignored root data files.
-- Expanded `data/test/rsid_position.csv` to include allele columns matching the default positions-file shape expected by annotation loading.
-- Updated `load_annotations()` so position-only calls can use three-column positions files, while allele columns are required only when `add_alleles=True`.
-- Fixed `load_annotations()` to respect caller-supplied `file_pattern` values.
-- Added score-test support for variant-level `.bed` annotation directories, including BED-only directories that use score-stat HDF5 row data for variant coordinates.
-- Centralized BED parsing and interval masking for graphld and score-test annotation loading, preserving order-independent handling of unsorted and overlapping intervals.
-- Added explicit `Any` annotations and return types to multiprocessing hooks and public wrapper functions across graphREML, BLUP, clumping, simulation, and score-test gene annotation utilities.
-- Simplified public wrapper docstrings for `run_graphREML`, `run_blup`, and `run_clump` so they point readers to the underlying implementation signatures instead of duplicating stale argument lists.
-- Cleaned docstrings in allele merging, annotation loading, multiprocessing, and gene-to-variant annotation conversion utilities for clearer generated API documentation.
-- Documented that graphREML annotation enrichment is normalized against the first annotation column.
-- Made annotation-dependent polygenicity simulation explicitly reserved for future support and fail early with `NotImplementedError` when enabled.
+- Changed `LDClumper.clump()` and `run_clump()` to return the original input rows in original order with a boolean `is_index` column; `graphld clump` still writes only retained index variants.
+- Harmonized `gaussian_likelihood_hessian()` with `gaussian_likelihood_gradient()` by adding `trace_estimator`, preserving `diagonal_method` as a deprecated keyword alias, and defaulting diagonal-only Hessian output to `xdiag`.
+- Defined precomputed surrogate HDF5 maps in full LDGM row coordinates, with GraphREML translating them back to the active post-merge coordinate system.
+- Updated BLUP so public `heritability` is interpreted as total heritability for the analyzed variant scope and distributed across matched LDGM effect dimensions.
+- Removed GraphLD's package-import mutation of global NumPy floating-point warning settings.
+
+### Fixed
+
+- Fixed `graphld` CLI option precedence, `.vcf.gz` summary-stat dispatch, multi-trait parquet REML output naming, and simulate annotation-column forwarding.
+- Fixed graphREML filtering and validation bugs affecting per-block max-chi-square filtering, binary annotation parameter alignment, and missing sample-size fallback behavior.
+- Fixed `PrecisionOperator` subset PCG solves, inverse-diagonal paths, invalid diagonal update atomicity, selection-cache invalidation, copied solver state, and stale factor refresh across shared matrix aliases.
+- Fixed simulation reproducibility and phasing issues by making seeded effect-size draws block-specific, loading worker LDGMs with metadata-row populations, and phasing annotation-based simulated effects/noise back to the annotation allele convention.
+- Fixed score-test jackknife block boundaries, deterministic annotation-file ordering, empty trait-group handling, gene-set identifier detection, and genome-scale nearest-gene overflow.
+- Fixed core I/O edge cases for VCF sample/FORMAT parsing, metadata-row variant partitioning, ID-only SNP-list merges, order-independent BED interval annotation, `load_annotations(file_pattern=...)`, position-only annotation loading, and `load_ldgm(snps_only=True)` variant metadata filtering.
+- Hardened parquet summary-stat validation so incomplete trait `BETA`/`SE` pairs and missing variant identifiers fail with clear errors.
+- Fixed surrogate-marker generation for blocks with no candidates by writing the initialized identity map.
 
 ### Removed
 
-- Removed internal release review notes from the public docs tree.
-- Cleared legacy data-download helper content from the tracked `data/` helper files as part of data setup cleanup.
-- Removed stale inline TODO markers and the unused score-test `GenomeAnnot` stub.
+- Removed unsupported or stale public surfaces: the broken `create-geneset-annot` console script, the duplicate `graphld.heritability_testing` module, and the obsolete `graphld.genesets_gene_hdf5` workflow. Gene-level HDF5 conversion remains available through `estest convert`.
 
 ## v1.2.0 - 2026-05-22
 

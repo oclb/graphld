@@ -5,7 +5,7 @@ repo_url: https://github.com/oclb/graphld
 repo_name: oclb/graphld
 
 extra:
-  version: "1.2.0"  # Updated by hooks.py from pyproject.toml
+  version: "1.2.1"  # Updated by hooks.py from pyproject.toml
 
 hooks:
   - docs/hooks.py
