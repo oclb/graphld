@@ -2,142 +2,146 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://oclb.github.io/graphld/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
+    </url>
+    <url>
+         <loc>https://oclb.github.io/graphld/changelog/</loc>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/cli/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/file_formats/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/installation/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/python_api/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/score_test/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/see_also/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/api/blup/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/api/clumping/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/api/genesets/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/api/graphld/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/api/heritability/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/api/io/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/api/ldsc_io/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/api/likelihood/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/api/multiprocessing/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/api/parquet_io/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/api/precision/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/api/score_test/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/api/simulate/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/api/surrogates/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/api/vcf_io/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/cli/blup/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/cli/clump/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/cli/reml/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/cli/simulate/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/cli/surrogates/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/python_api/blup/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/python_api/clumping/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/python_api/heritability/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/python_api/io_and_merging/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/python_api/likelihood/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/python_api/matrix_operations/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/python_api/parallel_processing/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
     <url>
          <loc>https://oclb.github.io/graphld/python_api/simulation/</loc>
-         <lastmod>2026-06-05</lastmod>
+         <lastmod>2026-06-06</lastmod>
     </url>
 </urlset>
