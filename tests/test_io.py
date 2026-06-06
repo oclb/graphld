@@ -261,6 +261,48 @@ def test_load_ldgm():
     assert operators_eas[0].shape != operators_eur[0].shape
 
 
+def test_load_ldgm_snps_only_filters_variant_info(tmp_path):
+    """snps_only keeps single-base allele rows in variant_info."""
+    import numpy as np
+
+    edgelist_path = tmp_path / "tiny.EUR.edgelist"
+    snplist_path = tmp_path / "tiny.snplist"
+    edgelist_path.write_text("0,0,1.0\n1,1,1.0\n2,2,1.0\n", encoding="utf-8")
+    snplist_path.write_text(
+        "index,anc_alleles,deriv_alleles,EUR,site_ids,position\n"
+        "0,A,G,0.1,rs1,100\n"
+        "1,AT,C,0.2,indel1,200\n"
+        "2,T,TA,0.3,indel2,300\n",
+        encoding="utf-8",
+    )
+
+    operator = load_ldgm(
+        filepath=edgelist_path,
+        snplist_path=snplist_path,
+        snps_only=True,
+    )
+
+    assert operator.shape == (3, 3)
+    assert operator.variant_info["site_ids"].to_list() == ["rs1"]
+    assert operator.variant_info["original_index"].to_list() == [0]
+    assert operator.variant_info["index"].to_list() == [0]
+
+    sumstats = pl.DataFrame({
+        "SNP": ["rs1"],
+        "A1": ["A"],
+        "A2": ["G"],
+    })
+    merged_operator, sumstat_indices = merge_snplists(
+        operator,
+        sumstats,
+        ref_allele_col="A1",
+        alt_allele_col="A2",
+    )
+    assert merged_operator.shape == (1, 1)
+    assert list(sumstat_indices) == [0]
+    np.testing.assert_allclose(operator.variant_solve(np.array([2.0])), [2.0])
+
+
 def test_create_ldgm_metadata():
     """Test creation of LDGM metadata file."""
     # Get test directory

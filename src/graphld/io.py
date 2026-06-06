@@ -118,6 +118,18 @@ def load_ldgm(filepath: str, snplist_path: Optional[str] = None, population: Opt
 
     # Filter out variants with no corresponding matrix row
     variant_info = variant_info.filter(pl.col('index') >= 0)
+    if snps_only:
+        required_cols = {"anc_alleles", "deriv_alleles"}
+        missing_cols = required_cols - set(variant_info.columns)
+        if missing_cols:
+            raise ValueError(
+                "snps_only=True requires snplist columns: "
+                + ", ".join(sorted(required_cols))
+            )
+        variant_info = variant_info.filter(
+            (pl.col('anc_alleles').str.len_chars() == 1)
+            & (pl.col('deriv_alleles').str.len_chars() == 1)
+        )
 
     # Subset matrix to rows/cols with nonzero diagonal
     matrix = matrix[nonzero_where][:, nonzero_where]
@@ -915,21 +927,3 @@ def read_bed(bed_file: str,
             ])
 
     return df
-
-def read_concat_snplists(ldgm_metadata: pl.DataFrame, parent_dir: Path) -> pl.LazyFrame:
-    """Read and concatenate snplists from LDGM metadata.
-
-    Args:
-        ldgm_metadata: DataFrame from read_ldgm_metadata containing block info
-
-    Returns:
-        LazyFrame containing variant information concatenated across blocks.
-    """
-    ldgms = [
-        load_ldgm(parent_dir / Path(row["name"])) for row in ldgm_metadata.iter_rows(named=True)
-    ]
-    lazy_frames = [
-        ldgm.variant_info.lazy().with_columns(pl.lit(i).alias('block'))
-        for i, ldgm in enumerate(ldgms)
-    ]
-    return pl.concat(lazy_frames)

@@ -758,7 +758,6 @@ def test_precision_operator_inverse_diagonal_methods():
     exact_diag = P.inverse_diagonal(method="exact")
     hutch_diag = P.inverse_diagonal(method="hutchinson", n_samples=num_samples, seed=42)
     xdiag_diag = P.inverse_diagonal(method="xdiag", initialization=(v_xdiag, pv_xdiag))
-    # xnys_diag = P.inverse_diagonal(method="xnys", n_samples=num_samples, seed=42)
 
     # Compare trace estimates - they should be approximately equal
     np.testing.assert_allclose(np.sum(hutch_diag), np.sum(exact_diag), rtol=0.05)
@@ -787,20 +786,16 @@ def test_precision_operator_inverse_diagonal_methods():
 
     np.testing.assert_allclose(np.sum(xdiag_diag_init), np.sum(exact_diag), rtol=0.05)
 
-    # # Test xnys with initialization
-    # xnys_diag_init, xnys_y = P.inverse_diagonal(
-    #     initialization=(v, pv),
-    #     method="xnys"
-    # )
-
     # Verify shapes of returned values
     assert hutch_y.shape == v.shape
     assert xdiag_y.shape == v_xdiag.shape
-    # assert xnys_y.shape == v.shape
 
     # Test error cases
     with pytest.raises(ValueError):
         P.inverse_diagonal(method="invalid")
+
+    with pytest.raises(ValueError):
+        P.inverse_diagonal(method="xnys")
 
     with pytest.raises(ValueError):
         P.inverse_diagonal(initialization=(v, pv), method="exact")
