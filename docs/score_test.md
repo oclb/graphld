@@ -69,7 +69,7 @@ uv run estest test --help
 
 | Option | Description |
 |--------|-------------|
-| `-a, --variant-annot-dir` | Directory containing .annot files |
+| `-a, --variant-annot-dir` | Directory containing `.annot` and/or `.bed` files |
 | `-g, --gene-annot-dir` | Directory containing .gmt files |
 | `--random-genes` | Comma-separated probabilities for random gene annotations |
 | `--random-variants` | Comma-separated probabilities for random variant annotations |

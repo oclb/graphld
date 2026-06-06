@@ -26,12 +26,12 @@ Unlike the other `graphld` subcommands, `simulate` takes an output summary-stati
 
 ## Annotation-Dependent Simulation
 
-Use annotation-driven architectures with:
+Use annotation-dependent effect-size scaling with:
 
 | Option | Description |
 |--------|-------------|
 | `-a, --annot-dir` | Annotation directory |
 | `--annotation-columns` | Comma-separated annotation columns |
-| `--annotation-dependent-polygenicity` | Enable annotation-dependent polygenicity |
+| `--annotation-dependent-polygenicity` | Reserved for future support; currently raises `NotImplementedError` |
 
 The shared options from the [CLI overview](../cli.md) also apply.

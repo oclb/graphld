@@ -49,7 +49,7 @@ def cli():
     "--variant-annot-dir",
     "variant_annot_dir",
     type=click.Path(exists=True),
-    help="Directory containing variant-level annotation files (.annot).",
+    help="Directory containing variant-level annotation files (.annot and/or .bed).",
 )
 @click.option(
     "-g",

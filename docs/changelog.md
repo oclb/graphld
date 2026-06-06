@@ -10,14 +10,19 @@ This changelog starts from `v1.2.0`. The `Unreleased` section tracks changes int
 - Expanded `data/test/rsid_position.csv` to include allele columns matching the default positions-file shape expected by annotation loading.
 - Updated `load_annotations()` so position-only calls can use three-column positions files, while allele columns are required only when `add_alleles=True`.
 - Fixed `load_annotations()` to respect caller-supplied `file_pattern` values.
+- Added score-test support for variant-level `.bed` annotation directories, including BED-only directories that use score-stat HDF5 row data for variant coordinates.
+- Centralized BED parsing and interval masking for graphld and score-test annotation loading, preserving order-independent handling of unsorted and overlapping intervals.
 - Added explicit `Any` annotations and return types to multiprocessing hooks and public wrapper functions across graphREML, BLUP, clumping, simulation, and score-test gene annotation utilities.
 - Simplified public wrapper docstrings for `run_graphREML`, `run_blup`, and `run_clump` so they point readers to the underlying implementation signatures instead of duplicating stale argument lists.
 - Cleaned docstrings in allele merging, annotation loading, multiprocessing, and gene-to-variant annotation conversion utilities for clearer generated API documentation.
+- Documented that graphREML annotation enrichment is normalized against the first annotation column.
+- Made annotation-dependent polygenicity simulation explicitly reserved for future support and fail early with `NotImplementedError` when enabled.
 
 ### Removed
 
 - Removed internal release review notes from the public docs tree.
 - Cleared legacy data-download helper content from the tracked `data/` helper files as part of data setup cleanup.
+- Removed stale inline TODO markers and the unused score-test `GenomeAnnot` stub.
 
 ## v1.2.0 - 2026-05-22
 

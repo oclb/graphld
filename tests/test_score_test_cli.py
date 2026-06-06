@@ -1,5 +1,6 @@
 """Tests for score test CLI functionality."""
 
+import os
 import shutil
 import subprocess
 import click
@@ -12,7 +13,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import score_test.cli as score_cli
 from score_test.score_test import main as score_test_main
-from score_test.score_test_io import save_trait_groups, get_trait_groups
+from score_test.score_test_io import get_trait_groups, load_variant_data, save_trait_groups
 
 REPO_ROOT = Path(__file__).parent.parent
 
@@ -79,6 +80,23 @@ def run_estest_from_cwd(tmp_path, *args):
         capture_output=True,
         text=True,
     )
+
+
+def test_score_test_script_help_without_pythonpath():
+    """Test documented direct script invocation without installing the package."""
+    script_path = REPO_ROOT / "src" / "score_test" / "score_test.py"
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+
+    result = subprocess.run(
+        [sys.executable, str(script_path), "--help"],
+        capture_output=True,
+        env=env,
+        text=True,
+    )
+
+    assert result.returncode == 0, f"Command failed with stderr: {result.stderr}"
+    assert "--variant-annot-dir" in result.stdout
 
 
 def test_score_test_cli_random_variants():
@@ -256,6 +274,41 @@ def test_score_test_cli_random_variants_with_output(tmp_path):
     
     # Check that group columns are present (with _Z suffix)
     assert "body_Z" in df.columns
+    assert "cancer_Z" in df.columns
+
+
+def test_score_test_cli_bed_variant_annotations(tmp_path):
+    """Test score test CLI with BED-only variant annotations."""
+    source_data = REPO_ROOT / "data" / "test" / "test.scores.h5"
+    test_data = tmp_path / "test.scores.h5"
+    shutil.copy(source_data, test_data)
+    output_file = tmp_path / "bed_results"
+
+    variant_data = load_variant_data(str(test_data))
+    first_variant = variant_data.select("CHR", "POS").row(0, named=True)
+
+    annot_dir = tmp_path / "bed"
+    annot_dir.mkdir()
+    bed_file = annot_dir / "regions.bed"
+    bed_file.write_text(
+        f"chr{first_variant['CHR']}\t{first_variant['POS']}\t"
+        f"{first_variant['POS'] + 1}\n"
+    )
+
+    result = run_estest_from_cwd(
+        tmp_path,
+        "test",
+        test_data,
+        output_file,
+        "--variant-annot-dir",
+        annot_dir,
+    )
+
+    assert result.returncode == 0, f"Command failed with stderr: {result.stderr}"
+
+    output_txt = Path(str(output_file) + ".txt")
+    df = pl.read_csv(output_txt, separator='\t')
+    assert df["annotation"].to_list() == ["regions"]
     assert "cancer_Z" in df.columns
 
 

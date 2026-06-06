@@ -171,7 +171,7 @@ def _add_simulate_parser(subparsers, handler: Callable | None = None):
     parser.add_argument(
         "--annotation-dependent-polygenicity",
         action="store_true",
-        help="Annotation dependent polygenicity"
+        help="Reserved for future annotation-dependent polygenicity support"
     )
     parser.add_argument(
         "--random-seed",

@@ -29,6 +29,9 @@ import polars as pl
 # Suppress numpy runtime warnings globally
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 # Handle imports when running either as a script or as a package
 try:
     from .score_test_io import (
@@ -109,13 +112,14 @@ class TraitData:
 class Annot:
     """Base class for annotations that can be merged with TraitData."""
     annot_names: List[str]
-    other_key: str
+    other_key: str | list[str]
 
-    def __init__(self, annot_names: List[str], other_key: str):
+    def __init__(self, annot_names: List[str], other_key: str | list[str]):
         """
         Args:
             annot_names: List of annotation column names to test
-            other_key: Column name to use for merging (e.g., 'SNP', 'gene_id', 'gene_name')
+            other_key: Column name(s) to use for merging (e.g., 'RSID', 'gene_id',
+                or ['CHR', 'POS'])
         """
         self.annot_names = annot_names
         self.other_key = other_key
@@ -133,13 +137,19 @@ class VariantAnnot(Annot):
     """Variant-level annotations."""
     df: pl.DataFrame
 
-    def __init__(self, df: pl.DataFrame, annot_names: List[str]):
+    def __init__(
+        self,
+        df: pl.DataFrame,
+        annot_names: List[str],
+        other_key: str | list[str] = 'RSID',
+    ):
         """
         Args:
-            df: DataFrame with variant annotations (must have 'RSID' column)
+            df: DataFrame with variant annotations
             annot_names: List of annotation column names to test
+            other_key: Column name(s) to use for merging with trait data
         """
-        super().__init__(annot_names, other_key='RSID')
+        super().__init__(annot_names, other_key=other_key)
         self.df = df
 
     def perturb(self, fraction: float, seed: int | None = None):
@@ -180,18 +190,26 @@ class VariantAnnot(Annot):
             Note: correction is None if hessian is not available
         """
         # Check if trait_data has the required key
-        if self.other_key not in trait_data.keys:
-            raise ValueError(f"TraitData does not have required key '{self.other_key}'. Available keys: {trait_data.keys}")
+        merge_keys = [self.other_key] if isinstance(self.other_key, str) else self.other_key
+        missing_trait_keys = [key for key in merge_keys if key not in trait_data.keys]
+        if missing_trait_keys:
+            raise ValueError(
+                f"TraitData does not have required key(s) {missing_trait_keys}. "
+                f"Available keys: {trait_data.keys}"
+            )
 
         # Verify merge key exists in annotation DataFrame
-        if self.other_key not in self.df.columns:
-            raise ValueError(f"Merge key '{self.other_key}' not found in annotation DataFrame. "
-                           f"Available columns: {self.df.columns}")
+        missing_annot_keys = [key for key in merge_keys if key not in self.df.columns]
+        if missing_annot_keys:
+            raise ValueError(
+                f"Merge key(s) {missing_annot_keys} not found in annotation DataFrame. "
+                f"Available columns: {self.df.columns}"
+            )
 
         df_merged = trait_data.df.join(
             self.df,
-            left_on=self.other_key,
-            right_on=self.other_key,
+            left_on=merge_keys,
+            right_on=merge_keys,
             how='inner',
             maintain_order='left'
         )
@@ -253,7 +271,6 @@ class GeneAnnot(Annot):
         gene_ids = trait_data.df[merge_key].to_list()
 
         # Create one-hot encoding for each gene set
-        # TODO vectorize
         test_annot_dict = {}
         for set_name, gene_list in self.gene_sets.items():
             # Create binary indicator: 1 if gene is in set, 0 otherwise
@@ -271,24 +288,6 @@ class GeneAnnot(Annot):
         block_boundaries = get_block_boundaries(trait_data.df['jackknife_blocks'].to_numpy())
 
         return grad, None, None, test_annot, block_boundaries
-
-
-class GenomeAnnot(Annot):
-    """Genome region annotations (from BED files)."""
-
-    def __init__(self):
-        """TODO: Implement GenomeAnnot for BED file annotations."""
-        raise NotImplementedError("GenomeAnnot not yet implemented")
-
-    def merge(self, trait_data: TraitData) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Merge genome region annotations with TraitData.
-
-        Returns:
-            Tuple of (grad, correction, test_annot, block_boundaries)
-        """
-        # TODO: Implement BED file annotation logic
-        raise NotImplementedError("GenomeAnnot.merge() not yet implemented")
-
 
 def run_score_test(trait_data: TraitData,
     annot: Annot,
@@ -356,7 +355,7 @@ def _setup_logging(output_fp: str | None, verbose: bool):
 @click.argument('variant_stats_hdf5', type=click.Path(exists=True))
 @click.argument('output_fp', required=False, default=None)
 @click.option('-a', '--variant-annot-dir', 'variant_annot_dir', type=click.Path(exists=True),
-              help="Directory containing variant-level annotation files (.annot).")
+              help="Directory containing variant-level annotation files (.annot and/or .bed).")
 @click.option('-g', '--gene-annot-dir', 'gene_annot_dir', type=click.Path(exists=True),
               help="Directory containing gene-level annotations to convert to variant-level.")
 @click.option('--random-genes', 'random_genes',
@@ -411,7 +410,11 @@ def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, rando
     if variant_annot_dir:
         if is_gene_level:
             raise click.UsageError("Cannot use --variant-annot-dir with gene-level HDF5 file")
-        annot = load_variant_annotations(variant_annot_dir, annot_names_filter)
+        annot = load_variant_annotations(
+            variant_annot_dir,
+            annot_names_filter,
+            variant_table=data_table,
+        )
         logging.info(f"Loaded {len(annot.annot_names)} variant annotations from {variant_annot_dir}")
         num_provided += 1
 

@@ -9,6 +9,8 @@ import h5py
 import numpy as np
 import polars as pl
 
+from graphld_shared.bed import add_bed_annotations, list_bed_files
+
 if TYPE_CHECKING:
     from score_test import GeneAnnot, TraitData, VariantAnnot
 
@@ -223,14 +225,19 @@ def load_annotations(
     chromosome: Optional[int] = None,
     infer_schema_length: int = 100_000,
     add_positions: bool = True,
+    variant_table: pl.DataFrame | None = None,
+    exclude_bed: bool = False,
 ) -> pl.DataFrame:
     """Load annotation data for specified chromosome(s).
 
     Args:
-        annot_path: Path to directory containing annotation files
+        annot_path: Path to directory containing .annot and/or .bed files
         chromosome: Specific chromosome number, or None for all chromosomes
         infer_schema_length: Number of rows to infer schema from
         add_positions: If True, rename BP to POS
+        variant_table: Variant table to use as the coordinate universe for
+            BED-only annotation directories
+        exclude_bed: If True, skip loading .bed files from the annotations directory
 
     Returns:
         DataFrame containing annotations
@@ -238,6 +245,8 @@ def load_annotations(
     Raises:
         ValueError: If no matching annotation files are found
     """
+    bed_files = list_bed_files(annot_path)
+
     # Determine which chromosomes to process
     if chromosome is not None:
         chromosomes = [chromosome]
@@ -257,24 +266,36 @@ def load_annotations(
             df = pl.scan_csv(
                 file_path, separator="\t", infer_schema_length=infer_schema_length
             )
-            df = df.select([col for col in df.columns if col not in cols_found])
-            cols_found.update(df.columns)
-            dfs.append(df)
+            schema_names = df.collect_schema().names()
+            cols_to_keep = [col for col in schema_names if col not in cols_found]
+            if cols_to_keep:
+                df = df.select(cols_to_keep)
+                cols_found.update(cols_to_keep)
+                dfs.append(df)
 
         # Horizontally concatenate all dataframes for this chromosome
         if dfs:
             combined_df = pl.concat(dfs, how="horizontal")
-            combined_df = combined_df.select(sorted(combined_df.columns))
+            combined_df = combined_df.select(sorted(combined_df.collect_schema().names()))
             annotations.append(combined_df)
 
-    # Check if any files were found
     if not annotations:
+        if bed_files and not exclude_bed:
+            annotations = _variant_table_as_annotation_table(variant_table, chromosomes)
+        else:
+            raise ValueError(
+                f"No annotation files found in {annot_path} matching "
+                "pattern *.{chrom}.annot or *.bed"
+            )
+
+    if isinstance(annotations, list):
+        # Concatenate all chromosome dataframes vertically
+        annotations = pl.concat(annotations, how="vertical").collect()
+
+    if not isinstance(annotations, pl.DataFrame):
         raise ValueError(
             f"No annotation files found in {annot_path} matching pattern *.{{chrom}}.annot"
         )
-
-    # Concatenate all chromosome dataframes vertically
-    annotations = pl.concat(annotations, how="vertical").collect()
 
     # Convert binary columns to boolean to save memory
     numeric_types = (pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.Float32, pl.Float64)
@@ -296,17 +317,54 @@ def load_annotations(
     if add_positions:
         annotations = annotations.rename({"BP": "POS"})
 
-    return annotations
+    if exclude_bed or not bed_files:
+        return annotations
+
+    position_col = "POS" if add_positions else "BP"
+    return add_bed_annotations(annotations, bed_files, position_col=position_col)
+
+
+def _variant_table_as_annotation_table(
+    variant_table: pl.DataFrame | None,
+    chromosomes: list[int] | range,
+) -> pl.DataFrame:
+    """Build BED-only annotation coordinates from score-stat HDF5 row data."""
+    if variant_table is None:
+        raise ValueError("variant_table is required for BED-only annotation directories")
+
+    required_cols = {"CHR", "POS"}
+    missing_cols = required_cols - set(variant_table.columns)
+    if missing_cols:
+        missing = ", ".join(sorted(missing_cols))
+        raise ValueError(
+            f"variant_table missing required column(s) for BED annotations: {missing}"
+        )
+
+    select_cols = [
+        pl.col("CHR").cast(pl.Int64),
+        pl.col("POS").cast(pl.Int64).alias("BP"),
+        pl.lit(0.0).alias("CM"),
+    ]
+    if "RSID" in variant_table.columns:
+        select_cols.append(pl.col("RSID").cast(pl.Utf8).alias("SNP"))
+
+    return variant_table.filter(
+        pl.col("CHR").cast(pl.Int64).is_in(list(chromosomes))
+    ).select(select_cols)
 
 
 def load_variant_annotations(
-    annot_dir: str, annot_names: list[str] | None = None
+    annot_dir: str,
+    annot_names: list[str] | None = None,
+    variant_table: pl.DataFrame | None = None,
 ) -> "VariantAnnot":
     """Load variant-level annotations from directory.
 
     Args:
-        annot_dir: Directory containing annotation files
+        annot_dir: Directory containing .annot and/or .bed annotation files
         annot_names: Optional list of specific annotation names to load
+        variant_table: Variant table to use as the coordinate universe for
+            BED-only annotation directories
 
     Returns:
         VariantAnnot object
@@ -317,11 +375,18 @@ def load_variant_annotations(
     except ImportError:
         from score_test import VariantAnnot
 
-    df_annot = load_annotations(annot_dir, add_positions=False)
+    df_annot = load_annotations(
+        annot_dir, add_positions=False, variant_table=variant_table
+    )
 
     # Rename SNP to RSID for consistency
     if "SNP" in df_annot.columns:
         df_annot = df_annot.rename({"SNP": "RSID"})
+
+    merge_key: str | list[str] = "RSID"
+    if "RSID" not in df_annot.columns and {"CHR", "BP"}.issubset(df_annot.columns):
+        df_annot = df_annot.rename({"BP": "POS"})
+        merge_key = ["CHR", "POS"]
 
     # Exclude positional and identifier columns from annotations
     exclude_cols = ["CHR", "BP", "POS", "RSID", "CM"]
@@ -332,7 +397,7 @@ def load_variant_annotations(
     else:
         annot_names = [col for col in df_annot.columns if col not in exclude_cols]
 
-    return VariantAnnot(df_annot, annot_names)
+    return VariantAnnot(df_annot, annot_names, other_key=merge_key)
 
 
 def load_gene_annotations(

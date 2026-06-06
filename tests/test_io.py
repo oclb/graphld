@@ -707,6 +707,30 @@ def test_load_annotations_with_unsorted_bed_intervals(tmp_path):
     assert annotations['regions'].to_list() == [True, False, True]
 
 
+def test_load_annotations_with_zero_based_bed_boundaries(tmp_path):
+    """BED masking should compare 1-based variant positions to 0-based BED intervals."""
+    annot_dir = tmp_path / "annot"
+    annot_dir.mkdir()
+    (annot_dir / "test.1.annot").write_text(
+        "CHR\tBP\tSNP\tCM\tbase\n"
+        "1\t100\trs1\t0\t1\n"
+        "1\t101\trs2\t0\t1\n"
+        "1\t102\trs3\t0\t1\n"
+    )
+    (annot_dir / "regions.bed").write_text(
+        "chr1\t99\t100\tpos100\n"
+        "chr1\t101\t102\tpos102\n"
+    )
+
+    annotations = load_annotations(
+        annot_path=str(annot_dir),
+        chromosome=1,
+        add_positions=False,
+    )
+
+    assert annotations['regions'].to_list() == [True, False, True]
+
+
 def test_load_annotations_replaces_existing_pos_before_bed_masking(tmp_path):
     """BED masking should use replacement coordinates from positions_file."""
     annot_dir = tmp_path / "annot"
