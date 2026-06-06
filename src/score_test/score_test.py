@@ -375,7 +375,7 @@ def _setup_logging(output_fp: str | None, verbose: bool):
               help='Enable verbose output (log messages and results to console).')
 @click.option('--seed', type=int, default=None,
               help='Seed for generating random annotations.')
-@click.option('--perturb-annot', type=float, default=0,
+@click.option('--perturb-annot', type=click.FloatRange(0, 1), default=0,
               help='Fraction of variants to perturb for calibration testing.')
 def main(variant_stats_hdf5, output_fp, variant_annot_dir, gene_annot_dir, random_genes,
          random_variants, gene_table, nearest_weights, annotations, trait_name, verbose,
