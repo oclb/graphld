@@ -29,7 +29,6 @@ def gaussian_likelihood(
     """
     # Following scipy's convention:
     # log_pdf = -0.5 * (n * log(2π) + log|Σ| + x^T Σ^{-1} x)
-    #        = -0.5 * (n * log(2π) - log|P| + x^T P x)
     n = len(pz)
     logdet = M.logdet()
 
@@ -110,8 +109,11 @@ def gaussian_likelihood_hessian(
         M: PrecisionOperator. This should be the covariance of pz.
         del_M_del_a: Matrix of derivatives of M's diagonal elements wrt parameters a.
             If None, only the diagonal elements are computed.
-        diagonal_method: Method for computing the diagonal of the Hessian.
-            Options: "exact", "hutchinson", "xdiag", None (default)
+        diagonal_method: Method for computing the diagonal of the Hessian when
+            del_M_del_a is None. Options accepted by PrecisionOperator include
+            "exact", "hutchinson", and "xdiag". The current default None is
+            forwarded to PrecisionOperator; pass an explicit method when asking
+            for diagonal-only output.
         n_samples: Number of probe vectors for Hutchinson's method or xdiag
         seed: Random seed for generating probe vectors
 
@@ -142,5 +144,4 @@ def gaussian_likelihood_hessian(
         hess = -0.5 * (b_scaled.T @ minv_b_scaled)
 
     return hess
-
 

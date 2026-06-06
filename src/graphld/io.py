@@ -356,7 +356,9 @@ def partition_variants(
 
     Returns:
         List of DataFrames, one per row in ldgm_metadata, containing variants
-        that fall within each block's coordinates
+        that fall within each block's coordinates. Variants within each
+        returned DataFrame are sorted by chromosome and position rather than
+        preserving the input row order.
 
     Raises:
         ValueError: If the file does not have the expected columns: variant_id,

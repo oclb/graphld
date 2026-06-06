@@ -104,16 +104,13 @@ uv run graphld surrogates /path/to/sumstats.sumstats out.h5 --population EUR
 uv run graphld reml /path/to/sumstats.sumstats output_prefix --annot-dir /path/to/annot --surrogates out.h5
 ```
 
-## Parquet Multi-Trait Files
+## Parquet Files
 
-For multi-trait parquet inputs:
+For a multi-trait parquet input, select the trait to analyze when writing the
+default saved output files:
 
 ```bash
-# Process specific traits
-uv run graphld reml sumstats.parquet output --name height,bmi
-
-# Process all traits
-uv run graphld reml sumstats.parquet output
+uv run graphld reml sumstats.parquet output --name height
 ```
 
 Default tall-output runs write one file pair per trait, such as

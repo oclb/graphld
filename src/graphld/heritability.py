@@ -289,7 +289,7 @@ def _read_hdf5_attr_string(h5: h5py.File, name: str) -> Optional[str]:
 
 
 def softmax_robust(x: np.ndarray) -> np.ndarray:
-    """Numerically stable softmax implementation."""
+    """Numerically stable softplus-like link implementation."""
     with np.errstate(over="ignore"):
         y = x + np.log1p(np.exp(-x))
         mask = x < 0
@@ -298,7 +298,7 @@ def softmax_robust(x: np.ndarray) -> np.ndarray:
 
 
 def _get_softmax_link_function(denominator: int) -> tuple[Callable, Callable, Callable]:
-    """Create softmax link function and its gradient.
+    """Create the softplus-like link function and its derivatives.
 
     Args:
         denominator: roughly num_snps / num_samples (if using Z scores) or num_snps (if using effect size estimates)
@@ -307,6 +307,7 @@ def _get_softmax_link_function(denominator: int) -> tuple[Callable, Callable, Ca
         Tuple containing:
         - Link function mapping (annot, theta) to per-SNP heritabilities
         - Gradient of the link function
+        - Hessian of the link function
     """
     def _link_arg(annot: np.ndarray, theta: np.ndarray) -> np.ndarray:
         if annot.ndim == 0:
@@ -319,11 +320,11 @@ def _get_softmax_link_function(denominator: int) -> tuple[Callable, Callable, Ca
         return annot @ theta
 
     def _link_fn(annot: np.ndarray, theta: np.ndarray) -> np.ndarray:
-        """Softmax link function."""
+        """Softplus-like link function."""
         return softmax_robust(_link_arg(annot, theta)) / denominator
 
     def _link_fn_grad(annot: np.ndarray, theta: np.ndarray) -> np.ndarray:
-        """Gradient of softmax link function."""
+        """Gradient of the softplus-like link function."""
         x = _link_arg(annot, theta)
         with np.errstate(over="ignore"):
             result = annot / denominator / (1 + np.exp(-x))
@@ -645,12 +646,18 @@ class GraphREML(ParallelProcessor):
         """Compute likelihood, gradient, and hessian for a single block.
 
         Args:
-            ldgm: LDGM object
-            Pz: Z-scores premultiplied by precision matrix
-            annotations: Annotation matrix
-            params: Model parameters
-            num_snps: Total number of SNPs
-            old_variant_h2: Previous values of variant_h2, so that ldgm is updated using the difference
+            ldgm: LDGM precision operator for this block
+            Pz: Z-scores premultiplied by the precision matrix
+            annotations: Block annotation matrix
+            params: Current model parameters
+            link_fn_denominator: Denominator used by the softplus-like link
+                function to scale annotation effects
+            old_variant_h2: Previous per-variant heritability values; ldgm is
+                updated by the difference from these values
+            num_samples: GWAS sample size
+            likelihood_only: If True, compute only the likelihood and skip
+                gradient/hessian work
+            seed: Optional random seed for stochastic trace estimation
 
         Returns:
             Tuple containing:

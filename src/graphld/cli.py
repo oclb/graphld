@@ -291,9 +291,10 @@ def _surrogates(
         population: Population to use for surrogate analysis
         verbose: Whether to print verbose output
         quiet: Whether to suppress all output except errors
+        chromosome: Optional chromosome to filter analysis
     
     Raises:
-        ValueError: If input file format is invalid or population is not provided
+        ValueError: If input file format is invalid or population is None
         FileNotFoundError: If input files don't exist
     """
     if not quiet:
@@ -360,7 +361,7 @@ def _simulate(
         heritability: Total heritability of simulated trait
         component_variance: List of variance components
         component_weight: List of weights for components
-        alpha_param: Alpha parameter for polygenicity
+        alpha_param: Allele-frequency architecture parameter
         annotation_dependent_polygenicity: Reserved for future support; currently
             raises NotImplementedError when enabled.
         random_seed: Optional seed for reproducibility
@@ -578,7 +579,8 @@ def _run_reml_single_trait(
         trait_name: Name of the trait being analyzed
         
     Returns:
-        Dictionary containing REML results
+        Tuple of (results, model_options), where results is the GraphREML
+        results dictionary and model_options is the fitted ModelOptions object.
     """
     num_snps_annot = len(annotations)
 

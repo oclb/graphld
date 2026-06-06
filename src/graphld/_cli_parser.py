@@ -45,11 +45,11 @@ def _add_common_arguments(parser, *, suppress_defaults: bool = False):
                       default=_common_default("quiet", suppress_defaults=suppress_defaults))
 
 
-def _add_io_arguments(parser, out_required=True):
+def _add_io_arguments(parser, out_required=True, accepted_formats=".sumstats, .vcf/.vcf.gz, or .parquet"):
     """Add common input/output arguments."""
     parser.add_argument(
         'sumstats',
-        help='Path to summary statistics file (.sumstats, .vcf/.vcf.gz, or .parquet)',
+        help=f'Path to summary statistics file ({accepted_formats})',
     )
     if out_required:
         parser.add_argument(
@@ -120,7 +120,10 @@ def _add_surrogates_parser(
     )
 
     # Add common I/O arguments
-    _add_io_arguments(parser)
+    _add_io_arguments(
+        parser,
+        accepted_formats=".sumstats, .vcf/.vcf.gz, .parquet, or .snplist",
+    )
 
     # Add common arguments
     _add_common_arguments(parser, suppress_defaults=suppress_common_defaults)

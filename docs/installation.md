@@ -29,6 +29,8 @@ On Mac:
 brew install suitesparse
 ```
 
+GraphLD supports Python 3.11-3.13. On macOS, use a system Python from Homebrew or another local Python install in that range. The project config tells `uv` to prefer system Python so source builds such as `scikit-sparse` use the current Command Line Tools SDK instead of a stale SDK path embedded in an older uv-managed Python.
+
 On Ubuntu/Debian:
 ```bash
 sudo apt-get install libsuitesparse-dev
@@ -43,12 +45,12 @@ For users with Intel chips, Intel MKL can produce a 100x speedup with SuiteSpars
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/) if needed. In the repo directory:
 
 ```bash
-uv venv && uv sync
+uv sync
 ```
 
 For development installation:
 ```bash
-uv venv && uv sync --dev --extra dev  # editable with pytest dependencies
+uv sync --extra dev  # editable with pytest dependencies
 uv run pytest  # tests will fail if you haven't run `make download`
 ```
 
@@ -74,7 +76,7 @@ pip install numpy==1.26.4
 ```bash
 conda config --add channels conda-forge
 conda config --set channel_priority strict
-conda install scikit-sparse
+conda install 'scikit-sparse<0.5'
 ```
 
 **Install graphld:**

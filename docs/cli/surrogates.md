@@ -22,7 +22,8 @@ Accepted inputs:
 
 ## Population
 
-`--population` selects the reference population for surrogate lookup and defaults to `EUR`.
+Surrogate lookup is population-specific. The CLI defaults to `EUR`; pass
+`--population` explicitly when precomputing surrogates for another population.
 
 ## Output
 
