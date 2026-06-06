@@ -2,15 +2,74 @@
 
 import shutil
 import subprocess
+import click
+from click.testing import CliRunner
 import pytest
 from pathlib import Path
 import numpy as np
 import polars as pl
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+import score_test.cli as score_cli
+from score_test.score_test import main as score_test_main
 from score_test.score_test_io import save_trait_groups, get_trait_groups
 
 REPO_ROOT = Path(__file__).parent.parent
+
+
+def click_type_signature(param_type):
+    signature = {"class": type(param_type).__name__, "name": param_type.name}
+    if isinstance(param_type, click.FloatRange):
+        signature.update(
+            {
+                "min": param_type.min,
+                "max": param_type.max,
+                "min_open": param_type.min_open,
+                "max_open": param_type.max_open,
+                "clamp": param_type.clamp,
+            }
+        )
+    elif isinstance(param_type, click.Path):
+        signature.update(
+            {
+                "exists": param_type.exists,
+                "file_okay": param_type.file_okay,
+                "dir_okay": param_type.dir_okay,
+                "writable": param_type.writable,
+                "readable": param_type.readable,
+                "resolve_path": param_type.resolve_path,
+                "allow_dash": param_type.allow_dash,
+            }
+        )
+    return signature
+
+
+def click_param_signature(command):
+    signature = []
+    for param in command.params:
+        param_signature = {
+            "kind": type(param).__name__,
+            "name": param.name,
+            "required": param.required,
+            "nargs": param.nargs,
+            "type": click_type_signature(param.type),
+        }
+        if isinstance(param, click.Option):
+            param_signature.update(
+                {
+                    "opts": tuple(param.opts),
+                    "secondary_opts": tuple(param.secondary_opts),
+                    "default": param.default,
+                    "help": param.help,
+                    "hidden": param.hidden,
+                    "is_flag": param.is_flag,
+                    "metavar": param.metavar,
+                    "multiple": param.multiple,
+                    "show_default": param.show_default,
+                }
+            )
+        signature.append(param_signature)
+    return signature
 
 
 def run_estest_from_cwd(tmp_path, *args):
@@ -73,6 +132,65 @@ def test_score_test_subcommand_random_variants_from_non_repo_cwd(tmp_path):
 
     assert result.returncode == 0, f"Command failed with stderr: {result.stderr}"
     assert "shape: (1, 9)" in result.stdout
+
+
+def test_score_test_subcommand_options_match_score_test_main():
+    """Guard against drift between estest test and the legacy score-test command."""
+    assert click_param_signature(score_cli.cli.commands["test"]) == click_param_signature(
+        score_test_main
+    )
+
+
+def test_score_test_subcommand_forwards_perturb_annot(monkeypatch, tmp_path):
+    """Test estest test passes perturb_annot through to score_test_main."""
+    captured = {}
+
+    def fake_score_test_main(**kwargs):
+        captured.update(kwargs)
+
+    fake_command = click.Command("fake-score-test", callback=fake_score_test_main)
+    monkeypatch.setattr(score_cli, "score_test_main", fake_command)
+    test_data = tmp_path / "test.scores.h5"
+    test_data.touch()
+
+    runner = CliRunner()
+    result = runner.invoke(
+        score_cli.cli,
+        [
+            "test",
+            str(test_data),
+            "--random-variants",
+            ".1",
+            "--perturb-annot",
+            "0.25",
+            "--seed",
+            "1",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["perturb_annot"] == 0.25
+
+
+def test_score_test_subcommand_rejects_invalid_perturb_annot():
+    """Test perturbation fraction validation is shared by the wrapped command."""
+    test_data = REPO_ROOT / "data" / "test" / "test.scores.h5"
+    runner = CliRunner()
+
+    result = runner.invoke(
+        score_cli.cli,
+        [
+            "test",
+            str(test_data),
+            "--random-variants",
+            ".1",
+            "--perturb-annot",
+            "1.5",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "Invalid value for '--perturb-annot'" in result.output
 
 
 def test_score_test_random_genes_requires_gene_table_from_non_repo_cwd(tmp_path):

@@ -98,6 +98,12 @@ def cli():
 @click.option(
     "--seed", type=int, default=None, help="Seed for generating random annotations."
 )
+@click.option(
+    "--perturb-annot",
+    type=click.FloatRange(0, 1),
+    default=0,
+    help="Fraction of variants to perturb for calibration testing.",
+)
 def test(
     variant_stats_hdf5,
     output_fp,
@@ -111,6 +117,7 @@ def test(
     trait_name,
     verbose,
     seed,
+    perturb_annot,
 ):
     """Run score test for annotation enrichment (default command)."""
     # Call the original main function with all arguments
@@ -128,6 +135,7 @@ def test(
         "trait_name": trait_name,
         "verbose": verbose,
         "seed": seed,
+        "perturb_annot": perturb_annot,
     }
     ctx.invoke(score_test_main, **ctx.params)
 
