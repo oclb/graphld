@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-import argparse
 import os
 import sys
 import time
-from importlib import metadata
 from typing import List, Optional
 
 import numpy as np
@@ -17,18 +15,44 @@ from graphld.vcf_io import read_gwas_vcf
 from .heritability import MethodOptions, ModelOptions, run_graphREML
 from .io import load_annotations
 from .surrogates import get_surrogate_markers
+from ._cli_dispatch import _construct_cmd_string, dispatch_command, run_cli
+from ._cli_parser import (
+    _add_blup_parser as _parser_add_blup_parser,
+    _add_clump_parser as _parser_add_clump_parser,
+    _add_common_arguments,
+    _add_io_arguments,
+    _add_reml_parser as _parser_add_reml_parser,
+    _add_simulate_parser as _parser_add_simulate_parser,
+    _add_surrogates_parser as _parser_add_surrogates_parser,
+    build_parser as _parser_build_parser,
+)
 
+__all__ = [
+    "_add_blup_parser",
+    "_add_clump_parser",
+    "_add_common_arguments",
+    "_add_io_arguments",
+    "_add_reml_parser",
+    "_add_simulate_parser",
+    "_add_surrogates_parser",
+    "_blup",
+    "_clump",
+    "_construct_cmd_string",
+    "_detect_sumstats_type",
+    "_main",
+    "_reml",
+    "_run_reml_single_trait",
+    "_simulate",
+    "_surrogates",
+    "build_parser",
+    "dispatch_command",
+    "main",
+    "run_cli",
+    "write_convergence_results",
+    "write_results",
+    "write_tall_results",
+]
 
-def _construct_cmd_string(args, parser):
-    """Reconstruct the command line string."""
-    cmd_str = "graphld"
-    for arg, value in vars(args).items():
-        if arg not in ["func", "cmd"]:
-            if value is True:
-                cmd_str += f" --{arg}"
-            elif value is not False and value is not None:
-                cmd_str += f" --{arg} {value}"
-    return cmd_str
 
 def _blup(
     sumstats: str,
@@ -632,7 +656,7 @@ def _reml(args):
 
     if has_gene_annot:
         # Load gene annotations from GMT files and convert to variant-level
-        from .genesets import load_gene_annotations, load_gene_table
+        from .genesets import load_gene_annotations
 
         if args.verbose:
             print(f'Loading gene annotations from {args.gene_annot_dir}')
@@ -750,446 +774,49 @@ def _reml(args):
     if not args.quiet and len(traits_to_process) > 1:
         print(f"Total time for all {len(traits_to_process)} traits: {total_runtime:.3f}s")
 
-def _add_common_arguments(parser):
-    """Add arguments that are common to all subcommands."""
-    parser.add_argument("-n", "--num-samples", type=int,
-                      help="Sample size")
-    parser.add_argument("--metadata", type=str, default="data/ldgms/metadata.csv",
-                      help="Path to LDGM metadata file")
-    parser.add_argument("--num-processes", type=int,
-                      help="Number of processes (default: None)")
-    parser.add_argument("--run-in-serial", action="store_true",
-                      help="Run in serial mode")
-    parser.add_argument("-c", "--chromosome", type=int, default=None,
-                      help="Chromosome to filter analysis")
-    parser.add_argument("-p", "--population", type=str, default="EUR",
-                      help="Population to filter analysis")
-    parser.add_argument("-v", "--verbose", action="store_true", default=False)
-    parser.add_argument("-q", "--quiet", action="store_true", default=False)
 
-def _add_io_arguments(parser, out_required=True):
-    """Add common input/output arguments."""
-    parser.add_argument(
-        'sumstats',
-        help='Path to summary statistics file (.vcf or .sumstats)',
-    )
-    if out_required:
-        parser.add_argument(
-            'out',
-            help='Output file path',
-        )
-    else:
-        parser.add_argument(
-            'out',
-            nargs='?',
-            default=None,
-            help='Output file path (optional)',
-        )
-    parser.add_argument(
-        '--maximum-missingness',
-        type=float,
-        default=0.1,
-        help='Maximum fraction of missing samples allowed (default: 0.1)',
-    )
+def _command_handlers():
+    return {
+        "blup": _blup,
+        "clump": _clump,
+        "surrogates": _surrogates,
+        "simulate": _simulate,
+        "reml": _reml,
+    }
+
 
 def _add_blup_parser(subparsers):
     """Add parser for blup command."""
-    parser = subparsers.add_parser(
-        'blup',
-        help='Run BLUP',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
+    return _parser_add_blup_parser(subparsers, _blup)
 
-    # Add common I/O arguments
-    _add_io_arguments(parser)
-
-    # Add common arguments
-    _add_common_arguments(parser)
-
-    # Add BLUP-specific arguments
-    parser.add_argument(
-        "-H", '--heritability',
-        type=float,
-        required=True,
-        help='Heritability for the analyzed variant scope (between 0 and 1)',
-    )
-
-    parser.set_defaults(func=_blup)
-
-def _add_surrogates_parser(subparsers):
-    """Add parser for surrogates command."""
-    parser = subparsers.add_parser(
-        'surrogates',
-        help='Find surrogate markers',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-
-    # Add common I/O arguments
-    _add_io_arguments(parser)
-
-    # Add common arguments
-    _add_common_arguments(parser)
-
-    parser.set_defaults(func=_surrogates)
 
 def _add_clump_parser(subparsers):
     """Add parser for clump command."""
-    parser = subparsers.add_parser(
-        'clump',
-        help='Run LD clumping',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
+    return _parser_add_clump_parser(subparsers, _clump)
 
-    # Add common I/O arguments
-    _add_io_arguments(parser)
 
-    # Add common arguments
-    _add_common_arguments(parser)
+def _add_surrogates_parser(subparsers):
+    """Add parser for surrogates command."""
+    return _parser_add_surrogates_parser(subparsers, _surrogates)
 
-    # Add clump-specific arguments
-    parser.add_argument(
-        '--min-chisq',
-        type=float,
-        default=30,
-        help='Minimum chi-squared value for variant inclusion',
-    )
-    parser.add_argument(
-        '--max-rsq',
-        type=float,
-        default=0.1,
-        help='Maximum R-squared threshold for LD pruning',
-    )
-
-    parser.set_defaults(func=_clump)
 
 def _add_simulate_parser(subparsers):
     """Add parser for simulate command."""
-    parser = subparsers.add_parser(
-        "simulate",
-        help="Perform genetic simulation",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
+    return _parser_add_simulate_parser(subparsers, _simulate)
 
-    # Single positional argument for output sumstats
-    parser.add_argument(
-        'sumstats_out',
-        help='Path to output summary statistics file'
-    )
-
-    # Add common arguments
-    _add_common_arguments(parser)
-
-    # Simulation-specific arguments
-    parser.add_argument(
-        "-H", "--heritability",
-        type=float,
-        default=0.2,
-        help="Heritability (default: 0.2)"
-    )
-    parser.add_argument(
-        "--component-variance",
-        type=lambda s: [float(x) for x in s.split(',')],
-        default=[1.0],
-        help="Component variance (default: [1.0])"
-    )
-    parser.add_argument(
-        "--component-weight",
-        type=lambda s: [float(x) for x in s.split(',')],
-        default=[1.0],
-        help="Component weight (default: [1.0])"
-    )
-    parser.add_argument(
-        "--alpha-param",
-        type=float,
-        default=-0.5,
-        help="Alpha parameter (default: -0.5)"
-    )
-    parser.add_argument(
-        "--annotation-dependent-polygenicity",
-        action="store_true",
-        help="Annotation dependent polygenicity"
-    )
-    parser.add_argument(
-        "--random-seed",
-        type=int,
-        default=None,
-        help="Random seed (default: None)"
-    )
-    parser.add_argument(
-        "--annotation-columns",
-        type=lambda s: s.split(','),
-        default=None,
-        help="Annotation columns"
-    )
-    parser.add_argument(
-        "-a", "--annot-dir",
-        type=str,
-        default=None,
-        help="Directory containing annotation files ending in .annot"
-    )
-
-    parser.set_defaults(func=_simulate)
 
 def _add_reml_parser(subparsers):
     """Add parser for reml command."""
-    parser = subparsers.add_parser(
-        'reml',
-        help='Run GraphREML',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
+    return _parser_add_reml_parser(subparsers, _reml)
 
-    # Add common I/O arguments (out is optional for reml)
-    _add_io_arguments(parser, out_required=False)
 
-    # Annotation arguments (one of these is required)
-    parser.add_argument(
-        "-a", '--annot-dir',
-        help='Path to annotation directory. Must contain per-chromosome .annot files, can also contain .bed files. '
-             'Either --annot-dir or --gene-annot-dir must be provided.',
-        default=None,
-    )
+def build_parser():
+    """Build the GraphLD parser with the CLI command handlers attached."""
+    return _parser_build_parser(_command_handlers())
 
-    # Add common arguments
-    _add_common_arguments(parser)
-
-    # Optional arguments specific to reml
-    parser.add_argument(
-        '--no-save',
-        help='Do not save results (if output filename is not provided) or only save logs (if output filename is provided)',
-        action='store_true',
-        default=False,
-    )
-    parser.add_argument(
-        '--name',
-        help='Name for this analysis, used in --alt-output files and in score test .hdf5 files',
-        default=None,
-    )
-    parser.add_argument(
-        '--intercept',
-        help='LD score regression intercept',
-        type=float,
-        default=1.0,
-    )
-    parser.add_argument(
-        '--num-iterations',
-        help='Maximum number of iterations',
-        type=int,
-        default=50,
-    )
-    parser.add_argument(
-        '--convergence-tol',
-        help='Convergence tolerance',
-        type=float,
-        default=1e-2,
-    )
-    parser.add_argument(
-        '--convergence-window',
-        help='Number of iterations to consider for convergence',
-        type=int,
-        default=3,
-    )
-    parser.add_argument(
-        '--num-jackknife-blocks',
-        help='Number of jackknife blocks',
-        type=int,
-        default=100,
-    )
-    parser.add_argument(
-        '--match-by-position',
-        help='Match variants by position instead of RSID',
-        action='store_true',
-        default=False,
-    )
-    parser.add_argument(
-        '--reset-trust-region',
-        help='Reset trust region size to initial value at every iteration',
-        action='store_true',
-        default=False,
-    )
-    parser.add_argument(
-        '--xtrace-num-samples',
-        help='Number of samples for gradient estimation',
-        type=int,
-        default=100,
-    )
-    parser.add_argument(
-        '--max-chisq-threshold',
-        help='Maximum allowed chi^2 value in a block. Blocks with chi^2 > threshold are excluded.',
-        type=float,
-        default=None,
-    )
-    parser.add_argument(
-        '--alt-output',
-        help='Write results in wide format with separate files for heritability, enrichment, and parameters (default is tall format with all metrics in one file)',
-        action='store_true',
-        default=False,
-    )
-    parser.add_argument(
-        '--score-test-filename',
-        help='Name of the hdf5 file that will contain precomputed statistics for the graphREML enrichment score test',
-        type=str,
-        default=None,
-    )
-    parser.add_argument(
-        "--annotation-columns",
-        type=lambda s: s.split(','),
-        default=None,
-        help="Annotation columns"
-    )
-    parser.add_argument(
-        "--binary-annotations-only",
-        action="store_true",
-        help="Only include annotations that are binary (0/1 valued)"
-    )
-
-    # Optional path to surrogate markers HDF5 (produced by `graphld surrogates`)
-    parser.add_argument(
-        "--surrogates",
-        type=str,
-        default=None,
-        help="Path to surrogate markers HDF5 file to use during GraphREML"
-    )
-    parser.add_argument(
-        "--initial-params",
-        type=lambda s: [float(x) for x in s.split(',')],
-        default=None,
-        help="Initial parameter values (comma-separated). If fewer than num_params, remaining are set to 0."
-    )
-
-    # Gene-level annotation options
-    parser.add_argument(
-        "-g", "--gene-annot-dir",
-        type=str,
-        default=None,
-        help="Directory containing gene-level annotation files (.gmt format). "
-             "Gene sets will be converted to variant-level annotations using nearest-gene weighting."
-    )
-    parser.add_argument(
-        "--gene-table",
-        type=str,
-        default="data/genes.tsv",
-        help="Path to gene table TSV file with columns: gene_id, gene_name, start, end, CHR. "
-             "Required when using --gene-annot-dir."
-    )
-    parser.add_argument(
-        "--nearest-weights",
-        type=str,
-        default="0.4,0.2,0.1,0.1,0.1,0.05,0.05",
-        help="Comma-separated weights for k-nearest genes when converting gene annotations to variant annotations. "
-             "Default assigns decreasing weights to the 7 nearest genes."
-    )
-
-    parser.set_defaults(func=_reml)
 
 def _main(args):
-    argp = argparse.ArgumentParser(
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-
-    # Add common arguments to main parser
-    _add_common_arguments(argp)
-
-    # Subparsers
-    subp = argp.add_subparsers(dest="cmd", required=True, help="Subcommands for graphld")
-
-    # BLUP command
-    _add_blup_parser(subp)
-
-    # LD clumping command
-    _add_clump_parser(subp)
-
-    # Surrogates command
-    _add_surrogates_parser(subp)
-
-    # Genetic simulation command
-    _add_simulate_parser(subp)
-
-    # GraphREML command
-    _add_reml_parser(subp)
-
-    # Parse arguments
-    parsed_args = argp.parse_args(args)
-
-    # Pull passed arguments/options as a string for printing
-    cmd_str = _construct_cmd_string(parsed_args, argp)
-
-    # Setup version string
-    version = f"v{metadata.version('graphld')}"
-    masthead = f"""
-    ***********************************************************************
-    ************************** GraphLD {version} *****************************
-    ***********************************************************************
-
-    """
-
-    if not parsed_args.quiet:
-        sys.stdout.write(masthead)
-        sys.stdout.write(cmd_str + os.linesep)
-
-    # Execute the command
-    if parsed_args.cmd == "blup":
-        return _blup(
-            parsed_args.sumstats,
-            parsed_args.out,
-            parsed_args.metadata,
-            parsed_args.num_samples,
-            parsed_args.heritability,
-            parsed_args.num_processes,
-            parsed_args.run_in_serial,
-            parsed_args.chromosome,
-            parsed_args.population,
-            parsed_args.verbose,
-            parsed_args.quiet,
-        )
-    elif parsed_args.cmd == "clump":
-        return _clump(
-            parsed_args.sumstats,
-            parsed_args.out,
-            parsed_args.metadata,
-            parsed_args.num_samples,
-            parsed_args.min_chisq,
-            parsed_args.max_rsq,
-            parsed_args.num_processes,
-            parsed_args.run_in_serial,
-            parsed_args.chromosome,
-            parsed_args.population,
-            parsed_args.verbose,
-            parsed_args.quiet,
-        )
-    elif parsed_args.cmd == "surrogates":
-        return _surrogates(
-            parsed_args.sumstats,
-            parsed_args.out,
-            parsed_args.metadata,
-            parsed_args.num_processes,
-            parsed_args.run_in_serial,
-            parsed_args.population,
-            parsed_args.verbose,
-            parsed_args.quiet,
-            parsed_args.chromosome,
-        )
-    elif parsed_args.cmd == "simulate":
-        return _simulate(
-            parsed_args.sumstats_out,
-            parsed_args.metadata,
-            parsed_args.heritability,
-            parsed_args.num_samples,
-            parsed_args.component_variance,
-            parsed_args.component_weight,
-            parsed_args.alpha_param,
-            parsed_args.annotation_dependent_polygenicity,
-            parsed_args.random_seed,
-            parsed_args.annotation_columns,
-            parsed_args.num_processes,
-            parsed_args.run_in_serial,
-            parsed_args.chromosome,
-            parsed_args.population,
-            parsed_args.verbose,
-            parsed_args.quiet,
-            parsed_args.annot_dir,
-        )
-    elif parsed_args.cmd == "reml":
-        return _reml(parsed_args)
+    return run_cli(args, _command_handlers())
 
 def main():
     """Entry point for the graphld command line interface."""
