@@ -54,6 +54,58 @@ __all__ = [
 ]
 
 
+def _sumstats_format(sumstats_path: str, *, allow_snplist: bool = False) -> str:
+    """Return the CLI summary-stat format implied by a file path."""
+    lower_path = sumstats_path.lower()
+    if lower_path.endswith((".vcf", ".vcf.gz")):
+        return "vcf"
+    if lower_path.endswith(".parquet"):
+        return "parquet"
+    if lower_path.endswith(".sumstats"):
+        return "sumstats"
+    if allow_snplist and lower_path.endswith(".snplist"):
+        return "snplist"
+    return "unknown"
+
+
+def _read_sumstats_for_command(
+    sumstats_path: str,
+    *,
+    allow_snplist: bool = False,
+) -> tuple[pl.DataFrame, str]:
+    """Read summary statistics for commands that require known extensions."""
+    file_format = _sumstats_format(sumstats_path, allow_snplist=allow_snplist)
+    if file_format == "vcf":
+        return read_gwas_vcf(sumstats_path), file_format
+    if file_format == "parquet":
+        return read_parquet_sumstats(sumstats_path), file_format
+    if file_format == "sumstats":
+        return read_ldsc_sumstats(sumstats_path), file_format
+    if file_format == "snplist":
+        return read_ldsc_snplist(sumstats_path), file_format
+
+    message = "Input file must end in .vcf, .vcf.gz, .parquet, or .sumstats"
+    if allow_snplist:
+        message = (
+            "Input file must end in .vcf, .vcf.gz, .parquet, .sumstats, "
+            "or .snplist"
+        )
+    raise ValueError(message)
+
+
+def _reml_trait_output_prefix(out: str, trait_name: str, *, multi_trait: bool) -> str:
+    """Return the output prefix for a REML trait run."""
+    if not multi_trait:
+        return out
+
+    if os.sep in trait_name or (os.altsep is not None and os.altsep in trait_name):
+        raise ValueError(
+            f"Trait name {trait_name!r} cannot be used in REML output filenames"
+        )
+
+    return f"{out}.{trait_name}"
+
+
 def _blup(
     sumstats: str,
     out: str,
@@ -70,7 +122,8 @@ def _blup(
     """Run BLUP (Best Linear Unbiased Prediction) command.
     
     Args:
-        sumstats: Path to summary statistics file (.vcf, .parquet, or .sumstats)
+        sumstats: Path to summary statistics file (.sumstats, .vcf/.vcf.gz,
+            or .parquet)
         out: Output file path
         metadata: Path to LDGM metadata file
         num_samples: Optional sample size override
@@ -102,20 +155,13 @@ def _blup(
         raise ValueError(f"Heritability must be between 0 and 1, got {heritability}")
 
     # Determine input format and read data
-    if sumstats.endswith('.vcf'):
-        sumstats = read_gwas_vcf(sumstats)
+    sumstats, file_format = _read_sumstats_for_command(sumstats)
+    if file_format == "vcf":
         match_by_position = True
         sample_size_col = 'NS'
-    elif sumstats.endswith('.parquet'):
-        sumstats = read_parquet_sumstats(sumstats)
-        match_by_position = False
-        sample_size_col = 'N'
-    elif sumstats.endswith('.sumstats'):
-        sumstats = read_ldsc_sumstats(sumstats)
-        match_by_position = False
-        sample_size_col = 'N'
     else:
-        raise ValueError("Input file must end in .vcf, .parquet, or .sumstats")
+        match_by_position = False
+        sample_size_col = 'N'
 
     # Get sample size
     sample_size = num_samples
@@ -163,7 +209,8 @@ def _clump(
     """Run LD clumping command to identify independent variants.
     
     Args:
-        sumstats: Path to summary statistics file (.vcf, .parquet, or .sumstats)
+        sumstats: Path to summary statistics file (.sumstats, .vcf/.vcf.gz,
+            or .parquet)
         out: Output file path
         metadata: Path to LDGM metadata file
         num_samples: Optional sample size override
@@ -198,14 +245,7 @@ def _clump(
         raise ValueError(f"max_rsq must be between 0 and 1, got {max_rsq}")
 
     # Read summary statistics
-    if sumstats.endswith('.vcf'):
-        sumstats_df = read_gwas_vcf(sumstats)
-    elif sumstats.endswith('.parquet'):
-        sumstats_df = read_parquet_sumstats(sumstats)
-    elif sumstats.endswith('.sumstats'):
-        sumstats_df = read_ldsc_sumstats(sumstats)
-    else:
-        raise ValueError("Input file must end in .vcf, .parquet, or .sumstats")
+    sumstats_df, _ = _read_sumstats_for_command(sumstats)
 
     # Run LD clumping
     clumped = gld.LDClumper.clump(
@@ -242,7 +282,8 @@ def _surrogates(
     """Run surrogate marker identification command.
     
     Args:
-        sumstats: Path to summary statistics file (.vcf, .parquet, .sumstats, or .snplist)
+        sumstats: Path to summary statistics file (.sumstats, .vcf/.vcf.gz,
+            .parquet, or .snplist)
         out: Output file path
         metadata: Path to LDGM metadata file
         num_processes: Number of processes for parallel computation
@@ -271,16 +312,7 @@ def _surrogates(
         raise FileNotFoundError(f"Metadata file not found: {metadata}")
 
     # Read summary statistics
-    if sumstats.endswith('.vcf'):
-        sumstats_df = read_gwas_vcf(sumstats)
-    elif sumstats.endswith('.parquet'):
-        sumstats_df = read_parquet_sumstats(sumstats)
-    elif sumstats.endswith('.snplist'):
-        sumstats_df = read_ldsc_snplist(sumstats)
-    elif sumstats.endswith('.sumstats'):
-        sumstats_df = read_ldsc_sumstats(sumstats)
-    else:
-        raise ValueError("Input file must end in .vcf, .parquet, .sumstats, or .snplist")
+    sumstats_df, _ = _read_sumstats_for_command(sumstats, allow_snplist=True)
 
     # Run surrogate marker identification -> writes an HDF5 file and returns its path
     out_path = get_surrogate_markers(
@@ -380,6 +412,7 @@ def _simulate(
         alpha_param=alpha_param,
         annotation_dependent_polygenicity=annotation_dependent_polygenicity,
         random_seed=random_seed,
+        annotation_columns=annotation_columns,
     )
 
     # Run simulation
@@ -416,15 +449,15 @@ def _detect_sumstats_type(sumstats_path: str, maximum_missingness: float = 1, tr
     from graphld.parquet_io import read_parquet_sumstats
     from graphld.vcf_io import read_gwas_vcf
 
-    # Lowercase extension for case-insensitive matching
-    ext = os.path.splitext(sumstats_path)[1].lower()
+    file_format = _sumstats_format(sumstats_path)
 
-    if ext in ['.vcf', '.vcf.gz']:
+    if file_format == "vcf":
         return read_gwas_vcf(sumstats_path, maximum_missingness=maximum_missingness)
-    elif ext == '.parquet':
+    elif file_format == "parquet":
         return read_parquet_sumstats(sumstats_path, trait=trait, maximum_missingness=maximum_missingness)
-    else:
+    elif file_format == "sumstats":
         return read_ldsc_sumstats(sumstats_path, maximum_missingness=maximum_missingness)
+    raise ValueError("Input file must end in .vcf, .vcf.gz, .parquet, or .sumstats")
 
 def write_results(filename: str, values: list, std_errors: list, p_values: list, annot_names: list, name: str):
     """Write REML results to a CSV file.
@@ -611,17 +644,10 @@ def _reml(args):
         if out_dir and not os.path.exists(out_dir):
             os.makedirs(out_dir, exist_ok=True)
 
-        if not args.no_save:
-            tall_output = args.out + '.tall.csv'
-            if not args.alt_output:
-                if os.path.exists(tall_output):
-                    raise FileExistsError(f"Output file {tall_output} already exists")
-
     start_time = time.time()
 
     # Determine traits to process for parquet files
-    ext = os.path.splitext(args.sumstats)[1].lower()
-    is_parquet = ext == '.parquet'
+    is_parquet = _sumstats_format(args.sumstats) == "parquet"
 
     if is_parquet:
         available_traits = get_parquet_traits(args.sumstats)
@@ -646,6 +672,23 @@ def _reml(args):
     else:
         # For non-parquet files, use a single trait with the provided name
         traits_to_process = [args.name or args.sumstats]
+
+    multi_trait_output = is_parquet and len(traits_to_process) > 1
+
+    if args.out:
+        for trait_name in traits_to_process:
+            _reml_trait_output_prefix(
+                args.out, trait_name, multi_trait=multi_trait_output
+            )
+
+    if args.out and not args.no_save and not args.alt_output:
+        for trait_name in traits_to_process:
+            output_prefix = _reml_trait_output_prefix(
+                args.out, trait_name, multi_trait=multi_trait_output
+            )
+            tall_output = output_prefix + '.tall.csv'
+            if os.path.exists(tall_output):
+                raise FileExistsError(f"Output file {tall_output} already exists")
 
     # Load annotations once (shared across all traits)
     # Check that exactly one of annot_dir or gene_annot_dir is provided
@@ -740,8 +783,12 @@ def _reml(args):
 
         # Write output files only if out is specified
         if args.out:
+            output_prefix = _reml_trait_output_prefix(
+                args.out, trait_name, multi_trait=multi_trait_output
+            )
+
             # Prepare output files
-            convergence_file = args.out + '.convergence.csv'
+            convergence_file = output_prefix + '.convergence.csv'
             write_convergence_results(convergence_file, results)
 
             if not args.no_save:
@@ -770,7 +817,7 @@ def _reml(args):
                                     model_options.annotation_columns,
                                     trait_name)
                 else:
-                    tall_output = args.out + '.tall.csv'
+                    tall_output = output_prefix + '.tall.csv'
                     write_tall_results(tall_output, model_options, results)
 
     total_runtime = time.time() - start_time

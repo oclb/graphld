@@ -4,25 +4,48 @@ import argparse
 from collections.abc import Callable, Mapping
 
 
-def _add_common_arguments(parser):
+_COMMON_DEFAULTS = {
+    "metadata": "data/ldgms/metadata.csv",
+    "chromosome": None,
+    "population": "EUR",
+    "verbose": False,
+    "quiet": False,
+}
+
+
+def _common_default(name: str, *, suppress_defaults: bool):
+    if suppress_defaults:
+        return argparse.SUPPRESS
+    return _COMMON_DEFAULTS[name]
+
+
+def _add_common_arguments(parser, *, suppress_defaults: bool = False):
     """Add arguments that are common to all subcommands."""
     parser.add_argument("-n", "--num-samples", type=int,
+                      default=argparse.SUPPRESS if suppress_defaults else None,
                       help="Sample size")
-    parser.add_argument("--metadata", type=str, default="data/ldgms/metadata.csv",
+    parser.add_argument("--metadata", type=str,
+                      default=_common_default("metadata", suppress_defaults=suppress_defaults),
                       help="Path to LDGM metadata file")
     parser.add_argument("--num-processes", type=int,
+                      default=argparse.SUPPRESS if suppress_defaults else None,
                       help="Number of processes (default: None)")
     parser.add_argument("--run-in-serial", action="store_true",
+                      default=argparse.SUPPRESS if suppress_defaults else False,
                       help="Run in serial mode")
-    parser.add_argument("-c", "--chromosome", type=int, default=None,
+    parser.add_argument("-c", "--chromosome", type=int,
+                      default=_common_default("chromosome", suppress_defaults=suppress_defaults),
                       help="Chromosome to filter analysis")
-    parser.add_argument("-p", "--population", type=str, default="EUR",
+    parser.add_argument("-p", "--population", type=str,
+                      default=_common_default("population", suppress_defaults=suppress_defaults),
                       help="Population to filter analysis")
-    parser.add_argument("-v", "--verbose", action="store_true", default=False)
-    parser.add_argument("-q", "--quiet", action="store_true", default=False)
+    parser.add_argument("-v", "--verbose", action="store_true",
+                      default=_common_default("verbose", suppress_defaults=suppress_defaults))
+    parser.add_argument("-q", "--quiet", action="store_true",
+                      default=_common_default("quiet", suppress_defaults=suppress_defaults))
 
 
-def _add_io_arguments(parser, out_required=True, accepted_formats=".sumstats, .vcf, or .parquet"):
+def _add_io_arguments(parser, out_required=True, accepted_formats=".sumstats, .vcf/.vcf.gz, or .parquet"):
     """Add common input/output arguments."""
     parser.add_argument(
         'sumstats',
@@ -53,7 +76,12 @@ def _set_handler(parser, handler: Callable | None) -> None:
         parser.set_defaults(func=handler)
 
 
-def _add_blup_parser(subparsers, handler: Callable | None = None):
+def _add_blup_parser(
+    subparsers,
+    handler: Callable | None = None,
+    *,
+    suppress_common_defaults: bool = False,
+):
     """Add parser for blup command."""
     parser = subparsers.add_parser(
         'blup',
@@ -65,7 +93,7 @@ def _add_blup_parser(subparsers, handler: Callable | None = None):
     _add_io_arguments(parser)
 
     # Add common arguments
-    _add_common_arguments(parser)
+    _add_common_arguments(parser, suppress_defaults=suppress_common_defaults)
 
     # Add BLUP-specific arguments
     parser.add_argument(
@@ -78,7 +106,12 @@ def _add_blup_parser(subparsers, handler: Callable | None = None):
     _set_handler(parser, handler)
 
 
-def _add_surrogates_parser(subparsers, handler: Callable | None = None):
+def _add_surrogates_parser(
+    subparsers,
+    handler: Callable | None = None,
+    *,
+    suppress_common_defaults: bool = False,
+):
     """Add parser for surrogates command."""
     parser = subparsers.add_parser(
         'surrogates',
@@ -89,16 +122,21 @@ def _add_surrogates_parser(subparsers, handler: Callable | None = None):
     # Add common I/O arguments
     _add_io_arguments(
         parser,
-        accepted_formats=".sumstats, .vcf, .parquet, or .snplist",
+        accepted_formats=".sumstats, .vcf/.vcf.gz, .parquet, or .snplist",
     )
 
     # Add common arguments
-    _add_common_arguments(parser)
+    _add_common_arguments(parser, suppress_defaults=suppress_common_defaults)
 
     _set_handler(parser, handler)
 
 
-def _add_clump_parser(subparsers, handler: Callable | None = None):
+def _add_clump_parser(
+    subparsers,
+    handler: Callable | None = None,
+    *,
+    suppress_common_defaults: bool = False,
+):
     """Add parser for clump command."""
     parser = subparsers.add_parser(
         'clump',
@@ -110,7 +148,7 @@ def _add_clump_parser(subparsers, handler: Callable | None = None):
     _add_io_arguments(parser)
 
     # Add common arguments
-    _add_common_arguments(parser)
+    _add_common_arguments(parser, suppress_defaults=suppress_common_defaults)
 
     # Add clump-specific arguments
     parser.add_argument(
@@ -129,7 +167,12 @@ def _add_clump_parser(subparsers, handler: Callable | None = None):
     _set_handler(parser, handler)
 
 
-def _add_simulate_parser(subparsers, handler: Callable | None = None):
+def _add_simulate_parser(
+    subparsers,
+    handler: Callable | None = None,
+    *,
+    suppress_common_defaults: bool = False,
+):
     """Add parser for simulate command."""
     parser = subparsers.add_parser(
         "simulate",
@@ -144,7 +187,7 @@ def _add_simulate_parser(subparsers, handler: Callable | None = None):
     )
 
     # Add common arguments
-    _add_common_arguments(parser)
+    _add_common_arguments(parser, suppress_defaults=suppress_common_defaults)
 
     # Simulation-specific arguments
     parser.add_argument(
@@ -186,10 +229,7 @@ def _add_simulate_parser(subparsers, handler: Callable | None = None):
         "--annotation-columns",
         type=lambda s: s.split(','),
         default=None,
-        help=(
-            "Annotation columns. Accepted by the parser, but custom "
-            "annotation-dependent scaling currently requires the Python API."
-        )
+        help="Annotation columns"
     )
     parser.add_argument(
         "-a", "--annot-dir",
@@ -201,7 +241,12 @@ def _add_simulate_parser(subparsers, handler: Callable | None = None):
     _set_handler(parser, handler)
 
 
-def _add_reml_parser(subparsers, handler: Callable | None = None):
+def _add_reml_parser(
+    subparsers,
+    handler: Callable | None = None,
+    *,
+    suppress_common_defaults: bool = False,
+):
     """Add parser for reml command."""
     parser = subparsers.add_parser(
         'reml',
@@ -221,7 +266,7 @@ def _add_reml_parser(subparsers, handler: Callable | None = None):
     )
 
     # Add common arguments
-    _add_common_arguments(parser)
+    _add_common_arguments(parser, suppress_defaults=suppress_common_defaults)
 
     # Optional arguments specific to reml
     parser.add_argument(
@@ -367,18 +412,38 @@ def build_parser(command_handlers: Mapping[str, Callable] | None = None):
     subp = argp.add_subparsers(dest="cmd", required=True, help="Subcommands for graphld")
 
     # BLUP command
-    _add_blup_parser(subp, command_handlers.get("blup"))
+    _add_blup_parser(
+        subp,
+        command_handlers.get("blup"),
+        suppress_common_defaults=True,
+    )
 
     # LD clumping command
-    _add_clump_parser(subp, command_handlers.get("clump"))
+    _add_clump_parser(
+        subp,
+        command_handlers.get("clump"),
+        suppress_common_defaults=True,
+    )
 
     # Surrogates command
-    _add_surrogates_parser(subp, command_handlers.get("surrogates"))
+    _add_surrogates_parser(
+        subp,
+        command_handlers.get("surrogates"),
+        suppress_common_defaults=True,
+    )
 
     # Genetic simulation command
-    _add_simulate_parser(subp, command_handlers.get("simulate"))
+    _add_simulate_parser(
+        subp,
+        command_handlers.get("simulate"),
+        suppress_common_defaults=True,
+    )
 
     # GraphREML command
-    _add_reml_parser(subp, command_handlers.get("reml"))
+    _add_reml_parser(
+        subp,
+        command_handlers.get("reml"),
+        suppress_common_defaults=True,
+    )
 
     return argp

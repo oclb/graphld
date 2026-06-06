@@ -18,7 +18,7 @@ You must provide one annotation source:
 
 ## Input Types
 
-- Summary statistics: LDSC-style `.sumstats`, VCF-GWAS `.vcf`, or kodama-style `.parquet`; see [Summary Statistics](../file_formats.md#summary-statistics).
+- Summary statistics: LDSC-style `.sumstats`, GWAS-VCF `.vcf`/`.vcf.gz`, or kodama-style `.parquet`; see [Summary Statistics](../file_formats.md#summary-statistics).
 - Variant annotations: per-chromosome `.annot` files, optionally alongside `.bed` files; see [Annotations](../file_formats.md#annotations).
 - Gene annotations: `.gmt` files converted to variant-level annotations with nearest-gene weighting; see [GMT Format](../file_formats.md#gmt-format-gmt).
 
@@ -112,3 +112,6 @@ default saved output files:
 ```bash
 uv run graphld reml sumstats.parquet output --name height
 ```
+
+Default tall-output runs write one file pair per trait, such as
+`output.height.tall.csv` and `output.height.convergence.csv`.

@@ -14,7 +14,7 @@ import graphld as gld
 sumstats = gld.read_ldsc_sumstats("path/to/file.sumstats")
 ```
 
-### GWAS-VCF Format (.vcf)
+### GWAS-VCF Format (.vcf or .vcf.gz)
 
 The [GWAS-VCF specification](https://github.com/MRCIEU/gwasvcf) is supported. Required FORMAT fields:
 

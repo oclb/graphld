@@ -32,7 +32,7 @@ uv run graphld <subcommand> SUMSTATS OUT [options]
 The main `graphld` analysis commands accept summary statistics in:
 
 - [LDSC `.sumstats` format](file_formats.md#ldsc-format-sumstats)
-- [GWAS-VCF `.vcf` format](file_formats.md#gwas-vcf-format-vcf)
+- [GWAS-VCF `.vcf` or `.vcf.gz` format](file_formats.md#gwas-vcf-format-vcf-or-vcfgz)
 - [Parquet `.parquet` format](file_formats.md#parquet-format-parquet)
 
 GraphLD uses LDGM metadata to locate LD blocks. By default this is:

@@ -16,7 +16,7 @@ uv run graphld surrogates \
 Accepted inputs:
 
 - [`.sumstats`](../file_formats.md#ldsc-format-sumstats)
-- [`.vcf`](../file_formats.md#gwas-vcf-format-vcf)
+- [`.vcf`/`.vcf.gz`](../file_formats.md#gwas-vcf-format-vcf-or-vcfgz)
 - [`.parquet`](../file_formats.md#parquet-format-parquet)
 - [`.snplist`](../file_formats.md#snp-list-format)
 
