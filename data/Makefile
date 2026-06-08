@@ -1,7 +1,7 @@
 # Zenodo record URLs
 ZENODO_LDGM = https://zenodo.org/record/8157131/files
 ZENODO_GRAPHREML = https://zenodo.org/records/15085817/files
-ZENODO_SCORES = https://zenodo.org/records/18102484/files
+ZENODO_SCORES = https://zenodo.org/records/20597740/files
 
 # Download all data files (~25 GB)
 download_all: download_precision download_annotations download_scores download_surrogates download_sumstats

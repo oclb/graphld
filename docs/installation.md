@@ -130,7 +130,7 @@ To try out graphREML or score test with example summary statistics, additionally
 
 - **Precision matrices**: [Zenodo 8157131](https://zenodo.org/records/8157131) - LDGM precision matrices for 1000 Genomes populations
 - **Annotations & sumstats**: [Zenodo 15085817](https://zenodo.org/records/15085817) - BaselineLD annotations and UK Biobank summary statistics
-- **Score statistics**: [Zenodo 18102484](https://zenodo.org/records/18102484) - Pre-computed score statistics for enrichment testing
+- **Score statistics**: [Zenodo 20597740](https://zenodo.org/records/20597740) - Pre-computed score statistics for enrichment testing
 
 ### Directory Structure
 
