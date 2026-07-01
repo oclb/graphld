@@ -16,18 +16,18 @@ git clone https://github.com/oclb/graphld.git
 
 `graphld` depends on [SuiteSparse](https://github.com/DrTimothyAldenDavis/SuiteSparse) and [scikit-sparse](https://scikit-sparse.readthedocs.io/en/latest/). It also requires downloading LDGM precision matrices (a few GB). These are not required if you only wish to use the enrichment score test. 
 
-For platform-specific installation instructions, development setup, and data download options, see [docs/installation.md](docs/installation.md).
+For platform-specific installation instructions, development setup, and data download options, see the [installation guide](https://oclb.github.io/graphld/installation/).
 
 ## Documentation
 
 The repository provides an [AGENTS.md](AGENTS.md) file and skills that your coding agent can use for installation + analyses. For human-facing documentation:
 
-- [Installation Guide](docs/installation.md)
-- [Command Line Interface](docs/cli.md)
-- [Enrichment Score Test](docs/score_test.md)
-- [Python Guide](docs/python_api.md)
-- [File Formats](docs/file_formats.md)
-- [API Reference](docs/api/graphld.md)
+- [Installation Guide](https://oclb.github.io/graphld/installation/)
+- [Command Line Interface](https://oclb.github.io/graphld/cli/)
+- [Enrichment Score Test](https://oclb.github.io/graphld/score_test/)
+- [Python Guide](https://oclb.github.io/graphld/python_api/)
+- [File Formats](https://oclb.github.io/graphld/file_formats/)
+- [API Reference](https://oclb.github.io/graphld/api/graphld/)
 
 ## See Also
 
