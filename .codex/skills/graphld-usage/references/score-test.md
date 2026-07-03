@@ -20,4 +20,4 @@ uv run estest convert path/to/scores.h5 path/to/gene_scores.h5
 
 Use `uv run src/score_test/score_test.py --help` for the legacy standalone score-test script surface.
 
-`--perturb-annot` is available on the legacy standalone script surface (`uv run src/score_test/score_test.py ... --perturb-annot`), not on the packaged `estest test` subcommand.
+`--perturb-annot` is available on `estest test` and on the legacy standalone script surface.

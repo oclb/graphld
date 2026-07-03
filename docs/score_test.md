@@ -217,7 +217,7 @@ uv run graphld reml \
     --population EUR
 ```
 
-The annotations supplied to graphREML define the null model for the later score test. For example, use baseline annotations if you want to test for a conditional enrichment under that baseline model. If you have an annotation of particular interest, and you include it in the graphREML model run, then you will get enrichment and conditional enrichment estimates/p-values without needing to run the score test, and if you later perform a score test using the exact same annotation then you will get a p-value of 1.
+The annotations supplied to graphREML define the null model for the later score test. For example, use baseline annotations if you want to test for a conditional enrichment under that baseline model. If you have an annotation of particular interest, and you include it in the graphREML model run, then graphREML reports its enrichment and conditional enrichment estimates directly. A later score test of the exact same annotation is not useful because the annotation has already been projected out of the score.
 
 Then confirm that the trait was written:
 
@@ -240,6 +240,6 @@ Use `--variant-annot-dir` instead of `--gene-annot-dir` to test variant annotati
 Notes:
 
 - Creating derivatives requires full graphREML setup, including downloading LDGMs. Running `estest` on an existing derivative file does not.
-- Multiple traits can be added to the same score-statistics file. The first trait added creates the file and defines its variant rows. Append additional traits only when they use the same LDGMs and null-model annotations.
+- Multiple traits can be added to the same score-statistics file. The first trait added creates the file and defines its variant rows and jackknife assignments. Append additional traits only when they use the same score-test row set and row order, which means using the same LDGMs, population, chromosomes, matching settings, filters, and null-model annotations.
 - `--name` becomes the trait name in the HDF5 file.
 - Combining `--score-test-filename` with `--match-by-position` will raise an error.
