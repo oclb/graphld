@@ -957,6 +957,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#creating-derivatives-for-a-new-trait" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Creating Derivatives For A New Trait
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2171,6 +2182,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#creating-derivatives-for-a-new-trait" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Creating Derivatives For A New Trait
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2203,7 +2225,7 @@
 <h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
 <p>You need a file containing precomputed derivatives for each trait being tested. This can be:</p>
 <ul>
-<li>Downloaded from Zenodo via the Makefile (<code>make download_scorestats</code>)</li>
+<li>Downloaded from Zenodo via the Makefile (<code>make download_scores</code>)</li>
 <li>Created by running graphREML with the <code>--score-test-filename</code> flag</li>
 </ul>
 <h2 id="supported-annotation-formats">Supported Annotation Formats<a class="headerlink" href="#supported-annotation-formats" title="Permanent link">&para;</a></h2>
@@ -2231,25 +2253,25 @@
 </table>
 <h2 id="basic-usage">Basic Usage<a class="headerlink" href="#basic-usage" title="Permanent link">&para;</a></h2>
 <h3 id="view-available-traits">View Available Traits<a class="headerlink" href="#view-available-traits" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span>show<span class="w"> </span>path/to/precomputed/derivatives.h5
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span>show<span class="w"> </span>path/to/scores.h5
 </code></pre></div>
 <h3 id="test-variant-annotations">Test Variant Annotations<a class="headerlink" href="#test-variant-annotations" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span>path/to/precomputed/derivatives.h5<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span>path/to/scores.h5<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span>path/to/output/file/prefix<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span>--variant-annot-dir<span class="w"> </span>/directory/containing/dot-annot/files/
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span>--variant-annot-dir<span class="w"> </span>path/to/annot_dir/
 </code></pre></div>
 <h3 id="test-genomic-regions">Test Genomic Regions<a class="headerlink" href="#test-genomic-regions" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span>path/to/precomputed/derivatives.h5<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span>path/to/scores.h5<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span>path/to/output/file/prefix<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span>--variant-annot-dir<span class="w"> </span>/directory/containing/dot-bed/files/
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span>--variant-annot-dir<span class="w"> </span>path/to/bed_dir/
 </code></pre></div>
 <h3 id="test-gene-annotations">Test Gene Annotations<a class="headerlink" href="#test-gene-annotations" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span>path/to/precomputed/derivatives.h5<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span>path/to/scores.h5<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span>path/to/output/file/prefix<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span>--gene-annot-dir<span class="w"> </span>/directory/containing/gmt/files/
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span>--gene-annot-dir<span class="w"> </span>path/to/gmt/files/
 </code></pre></div>
 <h3 id="options-reference">Options Reference<a class="headerlink" href="#options-reference" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>uv run estest test --help
@@ -2308,23 +2330,23 @@
 <p>Test random annotations to verify the null distribution:</p>
 <h3 id="random-variant-annotations">Random Variant Annotations<a class="headerlink" href="#random-variant-annotations" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">    </span>path/to/precomputed/derivatives.h5<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">    </span>path/to/scores.h5<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span>path/to/output/file/prefix<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span>--random-variants<span class="w"> </span><span class="m">0</span>.1,0.2,0.3
 </code></pre></div>
 <p>Creates random annotations with 10%, 20%, and 30% of variants.</p>
 <h3 id="random-gene-annotations">Random Gene Annotations<a class="headerlink" href="#random-gene-annotations" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">    </span>path/to/precomputed/derivatives.h5<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">    </span>path/to/scores.h5<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span>path/to/output/file/prefix<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span>--random-genes<span class="w"> </span><span class="m">0</span>.1,0.2,0.3
 </code></pre></div>
 <p>Creates random annotations with 10%, 20%, and 30% of genes.</p>
 <h3 id="perturb-existing-annotations">Perturb Existing Annotations<a class="headerlink" href="#perturb-existing-annotations" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">    </span>path/to/precomputed/derivatives.h5<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">    </span>path/to/scores.h5<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span>path/to/output/file/prefix<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">    </span>--variant-annot-dir<span class="w"> </span>/directory/containing/dot-annot/files/<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">    </span>--variant-annot-dir<span class="w"> </span>path/to/annot_dir/<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">    </span>--perturb-annot<span class="w"> </span><span class="m">0</span>.5<span class="w">  </span><span class="c1"># 50% of annotation values sampled randomly</span>
 </code></pre></div>
 <h2 id="gene-set-testing">Gene Set Testing<a class="headerlink" href="#gene-set-testing" title="Permanent link">&para;</a></h2>
@@ -2333,23 +2355,24 @@
 <p>Supply a GMT file to <code>--gene-annot-dir</code>.</p>
 <h3 id="faster-approach">Faster Approach<a class="headerlink" href="#faster-approach" title="Permanent link">&para;</a></h3>
 <p>Convert variant-level to gene-level score statistics first:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span>convert<span class="w"> </span>variant_statistics.h5<span class="w"> </span>gene_statistics.h5
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span>convert<span class="w"> </span>path/to/scores.h5<span class="w"> </span>path/to/gene_scores.h5
 </code></pre></div>
 <p>This requires a gene positions file (provided in <code>data/genes.tsv</code> after running the Makefile).</p>
 <p>Then run the test:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">    </span>gene_statistics.h5<span class="w"> </span>output_prefix<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">    </span>--gene-annot-dir<span class="w"> </span>/directory/containing/gmt/files/
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">    </span>path/to/gene_scores.h5<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">    </span>path/to/output/file/prefix<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">    </span>--gene-annot-dir<span class="w"> </span>path/to/gmt/files/
 </code></pre></div>
 <p>Results are nearly identical to the variant-level test but much faster.</p>
 <h2 id="meta-analysis-across-traits">Meta-Analysis Across Traits<a class="headerlink" href="#meta-analysis-across-traits" title="Permanent link">&para;</a></h2>
 <p>Test whether an annotation is enriched across multiple traits:</p>
 <h3 id="add-meta-analysis">Add Meta-Analysis<a class="headerlink" href="#add-meta-analysis" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Add all traits</span>
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span>add-meta<span class="w"> </span>statistics.h5<span class="w"> </span>all_traits<span class="w"> </span><span class="s1">&#39;*&#39;</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span>add-meta<span class="w"> </span>path/to/scores.h5<span class="w"> </span>all_traits<span class="w"> </span><span class="s1">&#39;*&#39;</span>
 <a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
 <a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="c1"># Add specific traits</span>
-<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span>add-meta<span class="w"> </span>statistics.h5<span class="w"> </span>body_traits<span class="w"> </span>height<span class="w"> </span>bmi
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span>add-meta<span class="w"> </span>path/to/scores.h5<span class="w"> </span>body_traits<span class="w"> </span>height<span class="w"> </span>bmi
 </code></pre></div>
 <p>Then run the score test as normal. The meta-analysis appears as a column in the output.</p>
 <p>The meta-analysis uses precision-weighted linear combination of score statistics with jackknife standard errors. Non-independence across traits causes power loss but not false positives.</p>
@@ -2357,27 +2380,56 @@
 <p>The <code>estest</code> command provides utilities for managing traits and meta-analyses in HDF5 files.</p>
 <h3 id="show-contents">Show Contents<a class="headerlink" href="#show-contents" title="Permanent link">&para;</a></h3>
 <p>Display all traits and meta-analyses in an HDF5 file:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span>show<span class="w"> </span>statistics.h5
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span>show<span class="w"> </span>path/to/scores.h5
 </code></pre></div>
 <h3 id="rename-traits-or-meta-analyses">Rename Traits or Meta-Analyses<a class="headerlink" href="#rename-traits-or-meta-analyses" title="Permanent link">&para;</a></h3>
 <p>Rename a trait or meta-analysis (auto-detects which):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span>mv<span class="w"> </span>statistics.h5<span class="w"> </span>old_name<span class="w"> </span>new_name
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span>mv<span class="w"> </span>path/to/scores.h5<span class="w"> </span>old_name<span class="w"> </span>new_name
 </code></pre></div>
 <h3 id="remove-traits-or-meta-analyses">Remove Traits or Meta-Analyses<a class="headerlink" href="#remove-traits-or-meta-analyses" title="Permanent link">&para;</a></h3>
 <p>Remove one or more traits or meta-analyses:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># Remove a single item</span>
-<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span>rm<span class="w"> </span>statistics.h5<span class="w"> </span>trait_name
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span>rm<span class="w"> </span>path/to/scores.h5<span class="w"> </span>trait_name
 <a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>
 <a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="c1"># Remove multiple items</span>
-<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span>rm<span class="w"> </span>statistics.h5<span class="w"> </span>bmi<span class="w"> </span>height<span class="w"> </span>cancer
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span>rm<span class="w"> </span>path/to/scores.h5<span class="w"> </span>bmi<span class="w"> </span>height<span class="w"> </span>cancer
 <a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>
 <a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="c1"># Use wildcards</span>
-<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span>rm<span class="w"> </span>statistics.h5<span class="w"> </span><span class="s1">&#39;*_EAS&#39;</span>
+<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span>rm<span class="w"> </span>path/to/scores.h5<span class="w"> </span><span class="s1">&#39;*_EAS&#39;</span>
 <a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>
 <a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="c1"># Force removal without confirmation</span>
-<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span>rm<span class="w"> </span>statistics.h5<span class="w"> </span><span class="s1">&#39;BMI*&#39;</span><span class="w"> </span>-f
+<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span>rm<span class="w"> </span>path/to/scores.h5<span class="w"> </span><span class="s1">&#39;BMI*&#39;</span><span class="w"> </span>-f
 </code></pre></div>
 <p>The command auto-detects whether names are traits or meta-analyses and supports wildcards (<code>*</code>).</p>
+<h2 id="creating-derivatives-for-a-new-trait">Creating Derivatives For A New Trait<a class="headerlink" href="#creating-derivatives-for-a-new-trait" title="Permanent link">&para;</a></h2>
+<p>First, run graphREML on the trait and ask it to write score-test derivatives:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>uv<span class="w"> </span>run<span class="w"> </span>graphld<span class="w"> </span>reml<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">    </span>path/to/trait.sumstats<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">    </span>path/to/reml/output_prefix<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="w">    </span>--annot-dir<span class="w"> </span>path/to/null_model_annotations/<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="w">    </span>--score-test-filename<span class="w"> </span>path/to/scores.h5<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="w">    </span>--name<span class="w"> </span>trait_name<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="w">    </span>--population<span class="w"> </span>EUR
+</code></pre></div>
+<p>The annotations supplied to graphREML define the null model for the later score test. For example, use baseline annotations if you want to test for a conditional enrichment under that baseline model. If you have an annotation of particular interest, and you include it in the graphREML model run, then you will get enrichment and conditional enrichment estimates/p-values without needing to run the score test, and if you later perform a score test using the exact same annotation then you will get a p-value of 1.</p>
+<p>Then confirm that the trait was written:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span>show<span class="w"> </span>path/to/scores.h5
+</code></pre></div>
+<p>Finally, run <code>estest</code> on the new derivative file:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>uv<span class="w"> </span>run<span class="w"> </span>estest<span class="w"> </span><span class="nb">test</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="w">    </span>path/to/scores.h5<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="w">    </span>path/to/output/file/prefix<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="w">    </span>--gene-annot-dir<span class="w"> </span>path/to/gmt/files/<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="w">    </span>--gene-table<span class="w"> </span>data/genes.tsv
+</code></pre></div>
+<p>Use <code>--variant-annot-dir</code> instead of <code>--gene-annot-dir</code> to test variant annotations or BED regions.</p>
+<p>Notes:</p>
+<ul>
+<li>Creating derivatives requires full graphREML setup, including downloading LDGMs. Running <code>estest</code> on an existing derivative file does not.</li>
+<li>Multiple traits can be added to the same score-statistics file. The first trait added creates the file and defines the variants and jackknife assignments. Append additional traits only when they use the same LDGMs, population, chromosomes, matching settings, filters, null-model annotations, and number of jackknife blocks.</li>
+<li><code>--name</code> becomes the trait name in the HDF5 file.</li>
+<li>Combining <code>--score-test-filename</code> with <code>--match-by-position</code> will raise an error.</li>
+</ul>
 
 
 
