@@ -15,7 +15,7 @@ Enrichments are conditional upon the null model, similar to the `tau` parameter 
 
 You need a file containing precomputed derivatives for each trait being tested. This can be:
 
-- Downloaded from Zenodo via the Makefile (`make download_scores`)
+- Downloaded from Zenodo via the data Makefile (`make -C data download_scores`)
 - Created by running graphREML with the `--score-test-filename` flag
 
 ## Supported Annotation Formats
@@ -113,8 +113,10 @@ uv run estest \
     path/to/scores.h5 \
     path/to/output/file/prefix \
     --variant-annot-dir path/to/annot_dir/ \
-    --perturb-annot 0.5  # 50% of annotation values sampled randomly
+    --perturb-annot 0.5  # resample 50% of binary variant-annotation values
 ```
+
+Only binary variant annotations are perturbed; non-binary annotation columns are skipped for the perturbed run.
 
 ## Gene Set Testing
 
@@ -132,7 +134,7 @@ Convert variant-level to gene-level score statistics first:
 uv run estest convert path/to/scores.h5 path/to/gene_scores.h5
 ```
 
-This requires a gene positions file (provided in `data/genes.tsv` after running the Makefile).
+This requires a gene positions file. The default `data/genes.tsv` is downloaded by `make -C data download_surrogates` or `make -C data download_all`.
 
 Then run the test:
 
