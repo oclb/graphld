@@ -37,6 +37,10 @@ With `--alt-output`:
 
 Use `--name` to label runs when appending to alternate output files or score-test HDF5 outputs.
 
+To create score-test derivatives for a new trait, pass `--score-test-filename`.
+See [Creating Derivatives For A New Trait](../score_test.md#creating-derivatives-for-a-new-trait)
+for the full workflow.
+
 ## Common Options
 
 | Option | Default | Description |

@@ -15,7 +15,7 @@ Enrichments are conditional upon the null model, similar to the `tau` parameter 
 
 You need a file containing precomputed derivatives for each trait being tested. This can be:
 
-- Downloaded from Zenodo via the Makefile (`make download_scorestats`)
+- Downloaded from Zenodo via the Makefile (`make download_scores`)
 - Created by running graphREML with the `--score-test-filename` flag
 
 ## Supported Annotation Formats
@@ -31,34 +31,34 @@ You need a file containing precomputed derivatives for each trait being tested. 
 ### View Available Traits
 
 ```bash
-uv run estest show path/to/precomputed/derivatives.h5
+uv run estest show path/to/scores.h5
 ```
 
 ### Test Variant Annotations
 
 ```bash
 uv run estest \
-    path/to/precomputed/derivatives.h5 \
+    path/to/scores.h5 \
     path/to/output/file/prefix \
-    --variant-annot-dir /directory/containing/dot-annot/files/
+    --variant-annot-dir path/to/annot_dir/
 ```
 
 ### Test Genomic Regions
 
 ```bash
 uv run estest \
-    path/to/precomputed/derivatives.h5 \
+    path/to/scores.h5 \
     path/to/output/file/prefix \
-    --variant-annot-dir /directory/containing/dot-bed/files/
+    --variant-annot-dir path/to/bed_dir/
 ```
 
 ### Test Gene Annotations
 
 ```bash
 uv run estest \
-    path/to/precomputed/derivatives.h5 \
+    path/to/scores.h5 \
     path/to/output/file/prefix \
-    --gene-annot-dir /directory/containing/gmt/files/
+    --gene-annot-dir path/to/gmt/files/
 ```
 
 ### Options Reference
@@ -88,7 +88,7 @@ Test random annotations to verify the null distribution:
 
 ```bash
 uv run estest \
-    path/to/precomputed/derivatives.h5 \
+    path/to/scores.h5 \
     path/to/output/file/prefix \
     --random-variants 0.1,0.2,0.3
 ```
@@ -99,7 +99,7 @@ Creates random annotations with 10%, 20%, and 30% of variants.
 
 ```bash
 uv run estest \
-    path/to/precomputed/derivatives.h5 \
+    path/to/scores.h5 \
     path/to/output/file/prefix \
     --random-genes 0.1,0.2,0.3
 ```
@@ -110,9 +110,9 @@ Creates random annotations with 10%, 20%, and 30% of genes.
 
 ```bash
 uv run estest \
-    path/to/precomputed/derivatives.h5 \
+    path/to/scores.h5 \
     path/to/output/file/prefix \
-    --variant-annot-dir /directory/containing/dot-annot/files/ \
+    --variant-annot-dir path/to/annot_dir/ \
     --perturb-annot 0.5  # 50% of annotation values sampled randomly
 ```
 
@@ -129,7 +129,7 @@ Supply a GMT file to `--gene-annot-dir`.
 Convert variant-level to gene-level score statistics first:
 
 ```bash
-uv run estest convert variant_statistics.h5 gene_statistics.h5
+uv run estest convert path/to/scores.h5 path/to/gene_scores.h5
 ```
 
 This requires a gene positions file (provided in `data/genes.tsv` after running the Makefile).
@@ -138,8 +138,9 @@ Then run the test:
 
 ```bash
 uv run estest \
-    gene_statistics.h5 output_prefix \
-    --gene-annot-dir /directory/containing/gmt/files/
+    path/to/gene_scores.h5 \
+    path/to/output/file/prefix \
+    --gene-annot-dir path/to/gmt/files/
 ```
 
 Results are nearly identical to the variant-level test but much faster.
@@ -152,10 +153,10 @@ Test whether an annotation is enriched across multiple traits:
 
 ```bash
 # Add all traits
-uv run estest add-meta statistics.h5 all_traits '*'
+uv run estest add-meta path/to/scores.h5 all_traits '*'
 
 # Add specific traits
-uv run estest add-meta statistics.h5 body_traits height bmi
+uv run estest add-meta path/to/scores.h5 body_traits height bmi
 ```
 
 Then run the score test as normal. The meta-analysis appears as a column in the output.
@@ -171,7 +172,7 @@ The `estest` command provides utilities for managing traits and meta-analyses in
 Display all traits and meta-analyses in an HDF5 file:
 
 ```bash
-uv run estest show statistics.h5
+uv run estest show path/to/scores.h5
 ```
 
 ### Rename Traits or Meta-Analyses
@@ -179,7 +180,7 @@ uv run estest show statistics.h5
 Rename a trait or meta-analysis (auto-detects which):
 
 ```bash
-uv run estest mv statistics.h5 old_name new_name
+uv run estest mv path/to/scores.h5 old_name new_name
 ```
 
 ### Remove Traits or Meta-Analyses
@@ -188,16 +189,57 @@ Remove one or more traits or meta-analyses:
 
 ```bash
 # Remove a single item
-uv run estest rm statistics.h5 trait_name
+uv run estest rm path/to/scores.h5 trait_name
 
 # Remove multiple items
-uv run estest rm statistics.h5 bmi height cancer
+uv run estest rm path/to/scores.h5 bmi height cancer
 
 # Use wildcards
-uv run estest rm statistics.h5 '*_EAS'
+uv run estest rm path/to/scores.h5 '*_EAS'
 
 # Force removal without confirmation
-uv run estest rm statistics.h5 'BMI*' -f
+uv run estest rm path/to/scores.h5 'BMI*' -f
 ```
 
 The command auto-detects whether names are traits or meta-analyses and supports wildcards (`*`).
+
+## Creating Derivatives For A New Trait
+
+First, run graphREML on the trait and ask it to write score-test derivatives:
+
+```bash
+uv run graphld reml \
+    path/to/trait.sumstats \
+    path/to/reml/output_prefix \
+    --annot-dir path/to/null_model_annotations/ \
+    --score-test-filename path/to/scores.h5 \
+    --name trait_name \
+    --population EUR
+```
+
+The annotations supplied to graphREML define the null model for the later score test. For example, use baseline annotations if you want to test for a conditional enrichment under that baseline model. If you have an annotation of particular interest, and you include it in the graphREML model run, then you will get enrichment and conditional enrichment estimates/p-values without needing to run the score test, and if you later perform a score test using the exact same annotation then you will get a p-value of 1.
+
+Then confirm that the trait was written:
+
+```bash
+uv run estest show path/to/scores.h5
+```
+
+Finally, run `estest` on the new derivative file:
+
+```bash
+uv run estest test \
+    path/to/scores.h5 \
+    path/to/output/file/prefix \
+    --gene-annot-dir path/to/gmt/files/ \
+    --gene-table data/genes.tsv
+```
+
+Use `--variant-annot-dir` instead of `--gene-annot-dir` to test variant annotations or BED regions.
+
+Notes:
+
+- Creating derivatives requires full graphREML setup, including downloading LDGMs. Running `estest` on an existing derivative file does not.
+- Multiple traits can be added to the same score-statistics file. The first trait added creates the file and defines the variants and jackknife assignments. Append additional traits only when they use the same LDGMs, population, chromosomes, matching settings, filters, null-model annotations, and number of jackknife blocks.
+- `--name` becomes the trait name in the HDF5 file.
+- Combining `--score-test-filename` with `--match-by-position` will raise an error.
