@@ -4,18 +4,18 @@ Use `estest` for score-test workflows:
 
 ```bash
 uv run estest --help
-uv run estest show STATISTICS.h5
-uv run estest test STATISTICS.h5 OUT_PREFIX --variant-annot-dir ANNOT_DIR
-uv run estest test STATISTICS.h5 OUT_PREFIX --gene-annot-dir GMT_DIR --gene-table data/genes.tsv
+uv run estest show path/to/scores.h5
+uv run estest test path/to/scores.h5 path/to/output/file/prefix --variant-annot-dir path/to/annot_dir/
+uv run estest test path/to/scores.h5 path/to/output/file/prefix --gene-annot-dir path/to/gmt/files/ --gene-table data/genes.tsv
 ```
 
 The command also supports:
 
 ```bash
-uv run estest add-meta STATISTICS.h5 META_NAME TRAIT1 TRAIT2
-uv run estest rm STATISTICS.h5 PATTERN -f
-uv run estest mv STATISTICS.h5 OLD_NAME NEW_NAME
-uv run estest convert VARIANT_STATS.h5 GENE_STATS.h5
+uv run estest add-meta path/to/scores.h5 meta_name trait1 trait2
+uv run estest rm path/to/scores.h5 pattern -f
+uv run estest mv path/to/scores.h5 old_name new_name
+uv run estest convert path/to/scores.h5 path/to/gene_scores.h5
 ```
 
 Use `uv run src/score_test/score_test.py --help` for the legacy standalone score-test script surface.
