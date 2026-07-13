@@ -383,7 +383,18 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
         """
         # Check if link_fn is picklable when using multiprocessing
         if not run_in_serial and self.link_fn is not _default_link_fn:
+            import __main__
             import pickle
+
+            main_file = getattr(__main__, "__file__", None)
+            if self.link_fn.__module__ == "__main__" and (
+                main_file is None or str(main_file).startswith("<")
+            ):
+                raise ValueError(
+                    "link_fn is defined in an interactive __main__ session and "
+                    "cannot be imported by spawned workers. Define it in an "
+                    "importable module or use run_in_serial=True."
+                )
             try:
                 pickle.dumps(self.link_fn)
             except (pickle.PicklingError, AttributeError, TypeError) as e:

@@ -345,6 +345,7 @@ def _create_variant_specific_statistics_hdf5(
         num_iterations=1,  # Only need one iteration for this test
         verbose=True,
         run_serial=run_serial,
+        num_processes=None if run_serial else 2,
         score_test_hdf5_file_name=variant_stats_path,
         score_test_hdf5_trait_name='test',
     )

@@ -42,7 +42,8 @@ def _active_subset_inputs(metadata_path, create_sumstats, create_annotations):
     return metadata, block, nonmissing, annot_block
 
 
-def test_get_surrogate_markers(metadata_path, create_sumstats):
+@pytest.mark.parametrize("run_serial", [True, False], ids=["serial", "parallel"])
+def test_get_surrogate_markers(metadata_path, create_sumstats, run_serial):
     """Surrogate maps are keyed by full LDGM row coordinates."""
     sumstats = create_sumstats(ldgm_metadata_path=metadata_path, populations="EUR")
     metadata = read_ldgm_metadata(str(metadata_path), populations="EUR")
@@ -54,7 +55,8 @@ def test_get_surrogate_markers(metadata_path, create_sumstats):
             metadata_path,
             nonmissing_10,
             population="EUR",
-            run_serial=True,
+            run_serial=run_serial,
+            num_processes=None if run_serial else 2,
             output_path=tmp.name,
         )
 

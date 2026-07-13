@@ -3,6 +3,9 @@
 """Test multiprocessing framework."""
 
 import os
+import multiprocessing as mp
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -203,6 +206,31 @@ def test_multiprocessing():
 def test_parallel_context_uses_spawn():
     """GraphLD must not inherit the platform's threaded-library state."""
     assert _MP_CONTEXT.get_start_method() == "spawn"
+
+
+def test_parallel_processor_uses_spawn_under_fork_default(tmp_path):
+    """A fork-default parent must still launch fresh GraphLD interpreters."""
+    if "fork" not in mp.get_all_start_methods():
+        pytest.skip("fork start method is unavailable")
+
+    script = tmp_path / "forced_fork_blup.py"
+    script.write_text(
+        "import multiprocessing as mp\n"
+        "import runpy\n"
+        "if __name__ == '__main__':\n"
+        "    mp.set_start_method('fork')\n"
+        "    namespace = runpy.run_path('tests/test_blup.py')\n"
+        "    namespace['test_blup']()\n"
+    )
+    result = subprocess.run(
+        [sys.executable, str(script)],
+        cwd=Path(__file__).parent.parent,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_worker_manager_reports_abrupt_exit():
