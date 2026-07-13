@@ -2,9 +2,9 @@
 
 
 
+import multiprocessing as mp
 import time
 from abc import ABC, abstractmethod
-from multiprocessing import Array, Process, Value, cpu_count
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -14,6 +14,13 @@ import polars as pl
 from graphld.precision import PrecisionOperator
 
 from .io import load_ldgm, read_ldgm_metadata
+
+
+# Polars and the numerical libraries used by GraphLD create native thread pools.
+# Forking after those pools have been initialized can deadlock a child process,
+# so all parallel GraphLD work uses a fresh interpreter.
+_MP_CONTEXT = mp.get_context("spawn")
+_SHUTDOWN_GRACE_SECONDS = 1.0
 
 
 def _ldgm_block_context(ldgm_directory: Path, block: dict) -> tuple[Path, Optional[str]]:
@@ -38,9 +45,9 @@ class SharedData:
         self._data_dict = {}
         for key, size in sizes.items():
             if size is None:
-                self._data_dict[key] = Value('d', 0.0)
+                self._data_dict[key] = _MP_CONTEXT.Value('d', 0.0)
             else:
-                self._data_dict[key] = Array('d', size)
+                self._data_dict[key] = _MP_CONTEXT.Array('d', size)
 
     def __getitem__(
         self, key: Union[str, Tuple[str, slice]]
@@ -98,7 +105,7 @@ class SerialManager:
         Args:
             num_processes: Number of worker processes to manage
         """
-        self.flags = [Value('i', 0) for _ in range(num_processes)]
+        self.flags = [_MP_CONTEXT.Value('i', 0) for _ in range(num_processes)]
         self.functions: List[Callable] = []
         self.arguments: List[tuple] = []
         self.states: List[Any] = []
@@ -153,8 +160,8 @@ class WorkerManager:
         Args:
             num_processes: Number of worker processes to manage
         """
-        self.flags = [Value('i', 0) for _ in range(num_processes)]
-        self.processes: List[Process] = []
+        self.flags = [_MP_CONTEXT.Value('i', 0) for _ in range(num_processes)]
+        self.processes: List[mp.Process] = []
 
     def start_workers(self, flag: Optional[int] = None) -> None:
         """Signal workers to start processing.
@@ -170,13 +177,21 @@ class WorkerManager:
     def await_workers(self) -> None:
         """Wait for all workers to finish current task; abort if a worker crashes."""
         while True:
-            # Kill all workers if any throws an error
-            if any(flag.value == -1 for flag in self.flags):
-                for f in self.flags:
-                    f.value = -1
-                for p in self.processes:
-                    p.join(timeout=0.5)
-                raise RuntimeError("Worker process crashed. Aborting.")
+            failures = []
+            for index, (flag, process) in enumerate(zip(self.flags, self.processes)):
+                if flag.value == -1:
+                    failures.append(
+                        f"worker {index} (pid={process.pid}) reported a failure"
+                    )
+                elif process.exitcode is not None:
+                    failures.append(
+                        f"worker {index} (pid={process.pid}) exited unexpectedly "
+                        f"with code {process.exitcode}"
+                    )
+
+            if failures:
+                self._signal_shutdown()
+                raise RuntimeError("Worker process failed: " + "; ".join(failures))
 
             # Normal completion
             if all(flag.value < 1 for flag in self.flags):
@@ -191,19 +206,42 @@ class WorkerManager:
             target: Function to run in process
             args: Arguments to pass to function
         """
-        process = Process(target=target, args=args)
+        process = _MP_CONTEXT.Process(target=target, args=args)
         process.start()
         self.processes.append(process)
 
-    def shutdown(self) -> None:
-        """Shutdown all worker processes."""
-        # Signal shutdown
+    def _signal_shutdown(self) -> None:
+        """Tell every worker to stop at its next flag check."""
         for flag in self.flags:
             flag.value = -1
 
-        # Wait for processes to finish
-        for process in self.processes:
-            process.join()
+    @staticmethod
+    def _join_until(processes: List[mp.Process], deadline: float) -> List[mp.Process]:
+        """Join processes until a shared deadline and return any survivors."""
+        alive = [process for process in processes if process.is_alive()]
+        while alive and time.monotonic() < deadline:
+            remaining = deadline - time.monotonic()
+            alive[0].join(timeout=min(0.05, max(remaining, 0.0)))
+            alive = [process for process in alive if process.is_alive()]
+        return alive
+
+    def shutdown(self) -> None:
+        """Shutdown workers, forcibly stopping any that do not exit promptly."""
+        self._signal_shutdown()
+
+        survivors = self._join_until(
+            self.processes, time.monotonic() + _SHUTDOWN_GRACE_SECONDS
+        )
+        for process in survivors:
+            process.terminate()
+
+        survivors = self._join_until(
+            survivors, time.monotonic() + _SHUTDOWN_GRACE_SECONDS
+        )
+        for process in survivors:
+            process.kill()
+
+        self._join_until(survivors, time.monotonic() + _SHUTDOWN_GRACE_SECONDS)
 
 
 class ParallelProcessor(ABC):
@@ -254,7 +292,7 @@ class ParallelProcessor(ABC):
     @classmethod
     @abstractmethod
     def process_block(cls, ldgm: PrecisionOperator,
-                    flag: Value,
+                    flag: Any,
                     shared_data: SharedData,
                     block_offset: int,
                     block_data: Any = None,
@@ -295,7 +333,7 @@ class ParallelProcessor(ABC):
     def worker(cls,
                files: list,
                block_data: list,
-               flag: Value,
+               flag: Any,
                shared_data: SharedData,
                offset: int,
                worker_params: Any = None
@@ -342,9 +380,10 @@ class ParallelProcessor(ABC):
                 # Signal completion
                 flag.value = 0
 
-        except Exception as e:
+        except BaseException as e:
             print(f"Error in worker: {e}")
             flag.value = -1
+            raise
 
     @classmethod
     def serial_worker(cls,
@@ -352,7 +391,7 @@ class ParallelProcessor(ABC):
                offset: int,
                file: tuple[Path, Optional[str]],
                data: list,
-               flag: Value,
+               flag: Any,
                shared_data: SharedData,
                worker_params: Any
                ) -> PrecisionOperator:
@@ -449,6 +488,13 @@ class ParallelProcessor(ABC):
 
         Returns:
             Results of the parallel computation
+
+        Notes:
+            Parallel workers use the ``spawn`` start method to avoid inheriting
+            Polars, BLAS, or CHOLMOD thread state. Direct calls from Python
+            scripts must therefore be protected by an
+            ``if __name__ == "__main__":`` guard. The GraphLD CLI already
+            provides that protection.
         """
 
 
@@ -469,7 +515,7 @@ class ParallelProcessor(ABC):
             raise FileNotFoundError("No edgelist files found in metadata")
 
         if num_processes is None:
-            num_processes = min(len(edgelist_files), cpu_count())
+            num_processes = min(len(edgelist_files), mp.cpu_count())
 
         # Split files among processes
         process_block_ranges, process_offsets = cls._split_blocks(metadata, num_processes)
@@ -485,27 +531,25 @@ class ParallelProcessor(ABC):
         # Create worker manager
         manager = WorkerManager(num_processes)
 
-        # Start workers
-        for i in range(num_processes):
-            manager.add_process(
-                target=cls.worker,
-                args=(
-                    process_files[i],
-                    process_block_data[i],
-                    manager.flags[i],
-                    shared_data,
-                    process_offsets[i],
-                    worker_params,
+        try:
+            # Start workers
+            for i in range(num_processes):
+                manager.add_process(
+                    target=cls.worker,
+                    args=(
+                        process_files[i],
+                        process_block_data[i],
+                        manager.flags[i],
+                        shared_data,
+                        process_offsets[i],
+                        worker_params,
+                    )
                 )
-            )
 
-        # Run supervisor process
-        results = cls.supervise(manager, shared_data, block_data, **kwargs)
-
-        # Cleanup
-        manager.shutdown()
-
-        return results
+            # Run supervisor process
+            return cls.supervise(manager, shared_data, block_data, **kwargs)
+        finally:
+            manager.shutdown()
 
     @classmethod
     def run_serial(cls,

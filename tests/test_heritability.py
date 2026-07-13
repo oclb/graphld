@@ -327,7 +327,7 @@ def test_max_z_squared_threshold(metadata_path, create_annotations, create_sumst
 
 
 def _create_variant_specific_statistics_hdf5(
-    metadata_path, create_annotations, create_sumstats
+    metadata_path, create_annotations, create_sumstats, *, run_serial=True
 ) -> str:
     """Run GraphREML once and return the generated score-test HDF5 path."""
     sumstats = create_sumstats(str(metadata_path), 'EUR')
@@ -344,7 +344,7 @@ def _create_variant_specific_statistics_hdf5(
         match_by_position=False,
         num_iterations=1,  # Only need one iteration for this test
         verbose=True,
-        run_serial=True,  # Run in serial mode for debugging
+        run_serial=run_serial,
         score_test_hdf5_file_name=variant_stats_path,
         score_test_hdf5_trait_name='test',
     )
@@ -361,12 +361,16 @@ def _create_variant_specific_statistics_hdf5(
     return variant_stats_path
 
 
-def test_variant_specific_statistics(metadata_path, create_annotations, create_sumstats):
+@pytest.mark.parametrize("run_serial", [True, False], ids=["serial", "parallel"])
+def test_variant_specific_statistics(
+    metadata_path, create_annotations, create_sumstats, run_serial
+):
     """Score-test HDF5 output contains usable row and trait statistics."""
     variant_stats_path = _create_variant_specific_statistics_hdf5(
         metadata_path,
         create_annotations,
         create_sumstats,
+        run_serial=run_serial,
     )
 
     try:
