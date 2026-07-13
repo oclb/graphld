@@ -395,14 +395,19 @@ def test_custom_link_function_pickling_error(metadata_path, create_annotations):
     assert "module level" in error_msg.lower() or "run_in_serial" in error_msg.lower()
 
 
+@pytest.mark.parametrize(
+    "main_file",
+    ["<stdin>", "/usr/local/lib/python/ipykernel_launcher.py"],
+    ids=["stdin", "jupyter"],
+)
 def test_interactive_main_link_function_rejected(
-    metadata_path, create_annotations, monkeypatch
+    metadata_path, create_annotations, monkeypatch, main_file
 ):
     """Interactive functions cannot be imported by spawned workers."""
     import __main__
 
     monkeypatch.setattr(module_level_link_fn, "__module__", "__main__")
-    monkeypatch.setattr(__main__, "__file__", "<stdin>", raising=False)
+    monkeypatch.setattr(__main__, "__file__", main_file, raising=False)
     sim = Simulate(
         sample_size=100_000,
         heritability=0.5,

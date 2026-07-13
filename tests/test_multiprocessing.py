@@ -4,6 +4,7 @@
 
 import os
 import multiprocessing as mp
+import signal
 import subprocess
 import sys
 import time
@@ -222,15 +223,31 @@ def test_parallel_processor_uses_spawn_under_fork_default(tmp_path):
         "    namespace = runpy.run_path('tests/test_blup.py')\n"
         "    namespace['test_blup']()\n"
     )
-    result = subprocess.run(
-        [sys.executable, str(script)],
-        cwd=Path(__file__).parent.parent,
-        capture_output=True,
-        text=True,
-        timeout=30,
+    repo_root = Path(__file__).parent.parent
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        filter(None, [str(repo_root / "src"), env.get("PYTHONPATH")])
     )
+    process = subprocess.Popen(
+        [sys.executable, str(script)],
+        cwd=repo_root,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=30)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        stdout, stderr = process.communicate()
+        pytest.fail(
+            "forced-fork subprocess timed out\n"
+            f"stdout:\n{stdout}\nstderr:\n{stderr}"
+        )
 
-    assert result.returncode == 0, result.stderr
+    assert process.returncode == 0, stderr
 
 
 def test_worker_manager_reports_abrupt_exit():

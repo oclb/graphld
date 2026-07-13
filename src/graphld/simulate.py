@@ -3,8 +3,10 @@ Simulate GWAS summary statistics.
 """
 
 import os
+import inspect
 from dataclasses import dataclass
 from multiprocessing import Value
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
@@ -386,10 +388,22 @@ class Simulate(ParallelProcessor, _SimulationSpecification):
             import __main__
             import pickle
 
-            main_file = getattr(__main__, "__file__", None)
-            if self.link_fn.__module__ == "__main__" and (
-                main_file is None or str(main_file).startswith("<")
-            ):
+            if getattr(self.link_fn, "__module__", None) == "__main__":
+                main_file = getattr(__main__, "__file__", None)
+                try:
+                    link_file = inspect.getsourcefile(self.link_fn)
+                except TypeError:
+                    link_file = None
+                is_importable_main = (
+                    main_file is not None
+                    and link_file is not None
+                    and not str(main_file).startswith("<")
+                    and Path(main_file).resolve() == Path(link_file).resolve()
+                )
+            else:
+                is_importable_main = True
+
+            if not is_importable_main:
                 raise ValueError(
                     "link_fn is defined in an interactive __main__ session and "
                     "cannot be imported by spawned workers. Define it in an "
