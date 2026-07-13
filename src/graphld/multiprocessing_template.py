@@ -180,8 +180,16 @@ class WorkerManager:
             failures = []
             for index, (flag, process) in enumerate(zip(self.flags, self.processes)):
                 if flag.value == -1:
+                    if process.exitcode is None:
+                        process.join(timeout=0.1)
+                    exit_code = (
+                        str(process.exitcode)
+                        if process.exitcode is not None
+                        else "unavailable (worker still alive)"
+                    )
                     failures.append(
-                        f"worker {index} (pid={process.pid}) reported a failure"
+                        f"worker {index} (pid={process.pid}) reported a failure "
+                        f"with exit code {exit_code}"
                     )
                 elif process.exitcode is not None:
                     failures.append(

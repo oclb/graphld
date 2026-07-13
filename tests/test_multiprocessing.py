@@ -105,6 +105,17 @@ def abrupt_exit_worker(flag):
     os._exit(17)
 
 
+def flagged_exception_worker(flag):
+    """Report failure through the flag and then exit with a Python exception."""
+    while flag.value == 0:
+        time.sleep(0.01)
+    try:
+        raise ValueError("worker failed")
+    except BaseException:
+        flag.value = -1
+        raise
+
+
 def unresponsive_worker(flag):
     """Ignore the shutdown flag so WorkerManager must terminate this process."""
     while True:
@@ -201,6 +212,18 @@ def test_worker_manager_reports_abrupt_exit():
     manager.start_workers()
     try:
         with pytest.raises(RuntimeError, match=r"worker 0 .* code 17"):
+            manager.await_workers()
+    finally:
+        manager.shutdown()
+
+
+def test_worker_manager_reports_flagged_exception_exit_code():
+    """Caught worker failures should retain their eventual process exit code."""
+    manager = WorkerManager(1)
+    manager.add_process(flagged_exception_worker, (manager.flags[0],))
+    manager.start_workers()
+    try:
+        with pytest.raises(RuntimeError, match=r"worker 0 .* exit code 1"):
             manager.await_workers()
     finally:
         manager.shutdown()
