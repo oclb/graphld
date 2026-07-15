@@ -2,6 +2,12 @@
 
 This changelog starts from `v1.2.0`.
 
+## v1.2.2 - 2026-07-15
+
+### Fixed
+
+- Prevented multiprocessing worker hangs by using spawn-compatible worker setup and bounded supervisor lifecycle handling.
+
 ## v1.2.1 - 2026-06-06
 
 ### Added
