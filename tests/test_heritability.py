@@ -412,6 +412,90 @@ def test_variant_specific_statistics(
             os.unlink(variant_stats_path)
 
 
+def test_score_file_append_preflight_accepts_matching_variants(
+    tmp_path, metadata_path, create_annotations, create_sumstats
+):
+    """A compatible score file passes before graphREML starts workers."""
+    sumstats = create_sumstats(str(metadata_path), 'EUR')
+    annotations = create_annotations(metadata_path, 'EUR')
+    merged = sumstats.join(annotations, on='SNP', how='right').unique(
+        subset='SNP', keep='first'
+    )
+    metadata = read_ldgm_metadata(metadata_path, populations='EUR')
+    base_method = MethodOptions(num_jackknife_blocks=2)
+    block_data = GraphREML.prepare_block_data(
+        metadata, sumstats=merged, method=base_method
+    )
+    variants = pl.concat(
+        [block['sumstats'].select(['SNP', 'CHR', 'POS']) for block in block_data]
+    )
+    assignments = GraphREML._get_variant_jackknife_assignments(
+        [block['variant_offset'] for block in block_data] + [len(variants)], 2
+    )
+    score_path = tmp_path / 'scores.h5'
+    GraphREML._write_variant_data(str(score_path), variants, assignments)
+
+    append_method = MethodOptions(
+        num_jackknife_blocks=2,
+        score_test_hdf5_file_name=str(score_path),
+        score_test_hdf5_trait_name='new_trait',
+    )
+    GraphREML.prepare_block_data(metadata, sumstats=merged, method=append_method)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "match"),
+    [
+        ("row_count", "existing row_data has .* variants but this run has"),
+        ("rsid", "row_data/RSID does not match"),
+        ("jackknife", "row_data/jackknife_blocks does not match"),
+    ],
+)
+def test_score_file_append_preflight_rejects_mismatches(
+    tmp_path, metadata_path, create_annotations, create_sumstats, mutation, match
+):
+    """Incompatible score files fail before graphREML starts workers."""
+    sumstats = create_sumstats(str(metadata_path), 'EUR')
+    annotations = create_annotations(metadata_path, 'EUR')
+    merged = sumstats.join(annotations, on='SNP', how='right').unique(
+        subset='SNP', keep='first'
+    )
+    metadata = read_ldgm_metadata(metadata_path, populations='EUR')
+    block_data = GraphREML.prepare_block_data(
+        metadata, sumstats=merged, method=MethodOptions(num_jackknife_blocks=2)
+    )
+    variants = pl.concat(
+        [block['sumstats'].select(['SNP', 'CHR', 'POS']) for block in block_data]
+    )
+    assignments = GraphREML._get_variant_jackknife_assignments(
+        [block['variant_offset'] for block in block_data] + [len(variants)], 2
+    )
+
+    if mutation == "row_count":
+        variants = variants.head(len(variants) - 1)
+        assignments = assignments[:-1]
+    elif mutation == "rsid":
+        variants = variants.with_columns(
+            pl.when(pl.int_range(pl.len()) == 0)
+            .then(pl.lit("different"))
+            .otherwise(pl.col("SNP"))
+            .alias("SNP")
+        )
+    elif mutation == "jackknife":
+        assignments[0] = assignments[0] + 1
+
+    score_path = tmp_path / 'scores.h5'
+    GraphREML._write_variant_data(str(score_path), variants, assignments)
+    append_method = MethodOptions(
+        num_jackknife_blocks=2,
+        score_test_hdf5_file_name=str(score_path),
+        score_test_hdf5_trait_name='new_trait',
+    )
+
+    with pytest.raises(ValueError, match=match):
+        GraphREML.prepare_block_data(metadata, sumstats=merged, method=append_method)
+
+
 def test_score_test(metadata_path, create_annotations, create_sumstats):
     """Test the score test functionality using the refactored run_score_test function."""
     variant_stats_path = _create_variant_specific_statistics_hdf5(

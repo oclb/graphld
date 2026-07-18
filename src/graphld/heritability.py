@@ -420,7 +420,7 @@ class GraphREML(ParallelProcessor):
         block_Pz = [None for _ in block_indices]
         block_names = metadata.get_column("name").to_list() if len(metadata) > 0 else []
 
-        return [
+        block_data = [
             {
                 "sumstats": block,
                 "variant_offset": offset,
@@ -436,6 +436,112 @@ class GraphREML(ParallelProcessor):
                 strict=False,
             )
         ]
+
+        cls._validate_score_file_append(method, block_data)
+        return block_data
+
+    @classmethod
+    def _validate_score_file_append(
+        cls,
+        method: MethodOptions,
+        block_data: list[dict[str, Any]],
+    ) -> None:
+        """Validate an existing score file before graphREML workers start."""
+        hdf5_filename = method.score_test_hdf5_file_name
+        if hdf5_filename is None or not h5py.is_hdf5(hdf5_filename):
+            return
+
+        trait_name = method.score_test_hdf5_trait_name
+        expected_rows = sum(len(block["sumstats"]) for block in block_data)
+        required_columns = {
+            "CHR": "CHR",
+            "POS": "POS",
+            "RSID": "SNP",
+            "jackknife_blocks": None,
+        }
+
+        def incompatible(detail: str) -> ValueError:
+            return ValueError(
+                f"Cannot append trait '{trait_name}' to '{hdf5_filename}': {detail}. "
+                "Use the same LDGM population, chromosomes, annotations, matching and "
+                "filter settings, and number of jackknife blocks as the existing file, "
+                "or write to a new HDF5 file."
+            )
+
+        lock = FileLock(hdf5_filename + ".lock")
+        with lock:
+            with h5py.File(hdf5_filename, "r") as f:
+                if "row_data" not in f:
+                    return
+
+                if "traits" in f and trait_name in f["traits"]:
+                    raise ValueError(
+                        f"The group 'traits/{trait_name}' already exists in "
+                        f"'{hdf5_filename}'."
+                    )
+
+                row_data = f["row_data"]
+                missing = [name for name in required_columns if name not in row_data]
+                if missing:
+                    raise incompatible(
+                        "existing row_data is missing " + ", ".join(sorted(missing))
+                    )
+
+                existing_rows = len(row_data["CHR"])
+                lengths = {name: len(row_data[name]) for name in required_columns}
+                if any(length != existing_rows for length in lengths.values()):
+                    raise incompatible(
+                        "existing row_data columns have inconsistent lengths "
+                        f"({lengths})"
+                    )
+
+                if "traits" in f:
+                    invalid_traits = {
+                        name: len(group["gradient"])
+                        for name, group in f["traits"].items()
+                        if "gradient" in group and len(group["gradient"]) != existing_rows
+                    }
+                    if invalid_traits:
+                        raise incompatible(
+                            "existing trait gradients do not match row_data "
+                            f"({invalid_traits}; row_data={existing_rows})"
+                        )
+
+                if existing_rows != expected_rows:
+                    raise incompatible(
+                        f"existing row_data has {existing_rows} variants but this run has "
+                        f"{expected_rows}"
+                    )
+
+                num_jackknife_blocks = min(
+                    method.num_jackknife_blocks, len(block_data)
+                )
+                jackknife_groups = cls._get_groups(
+                    len(block_data), num_jackknife_blocks
+                ).astype(int)
+
+                offset = 0
+                for block, jackknife_group in zip(
+                    block_data, jackknife_groups, strict=True
+                ):
+                    variants = block["sumstats"]
+                    end = offset + len(variants)
+                    for hdf5_column, dataframe_column in required_columns.items():
+                        actual = np.asarray(row_data[hdf5_column][offset:end]).reshape(-1)
+                        if dataframe_column is None:
+                            expected = np.full(len(variants), jackknife_group)
+                        else:
+                            expected = variants.get_column(dataframe_column).to_numpy()
+
+                        if actual.dtype.kind in {"O", "S", "U"}:
+                            actual = actual.astype(str)
+                            expected = np.asarray(expected).astype(str)
+
+                        if not np.array_equal(actual, expected):
+                            raise incompatible(
+                                f"existing row_data/{hdf5_column} does not match this run"
+                            )
+                    offset = end
 
     @staticmethod
     def create_shared_memory(
