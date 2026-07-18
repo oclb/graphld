@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "graphld"
-version = "1.2.2"
+version = "1.2.3"
 description = "Graph-based linkage disequilibrium matrix estimation"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"

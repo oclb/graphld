@@ -214,8 +214,12 @@ uv run graphld reml \
     --annot-dir path/to/null_model_annotations/ \
     --score-test-filename path/to/scores.h5 \
     --name trait_name \
-    --population EUR
+    --population UKBB
 ```
+
+The downloaded `baselineld.EUR.variants.h5` file uses the UKBB LDGMs, so use
+`--population UKBB` when adding a trait to that file. The `EUR` in its filename
+describes the GWAS ancestry.
 
 The annotations supplied to graphREML define the null model for the later score test. For example, use baseline annotations if you want to test for a conditional enrichment under that baseline model. If you have an annotation of particular interest, and you include it in the graphREML model run, then you will get enrichment and conditional enrichment estimates/p-values without needing to run the score test, and if you later perform a score test using the exact same annotation then you will get a p-value of 1.
 
@@ -240,6 +244,6 @@ Use `--variant-annot-dir` instead of `--gene-annot-dir` to test variant annotati
 Notes:
 
 - Creating derivatives requires full graphREML setup, including downloading LDGMs. Running `estest` on an existing derivative file does not.
-- Multiple traits can be added to the same score-statistics file. The first trait added creates the file and defines the variants and jackknife assignments. Append additional traits only when they use the same LDGMs, population, chromosomes, matching settings, filters, null-model annotations, and number of jackknife blocks.
+- Multiple traits can be added to the same score-statistics file. The first trait added defines its variants and jackknife assignments; later runs need matching LDGM and analysis settings. GraphLD checks the variants and jackknife assignments before optimization begins.
 - `--name` becomes the trait name in the HDF5 file.
 - Combining `--score-test-filename` with `--match-by-position` will raise an error.
