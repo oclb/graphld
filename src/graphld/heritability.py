@@ -25,6 +25,7 @@ except PackageNotFoundError:
     __version__ = "unknown"
 
 CHUNK_SIZE = 1000
+SCORE_FILE_VALIDATION_CHUNK_SIZE = 100_000
 SPECIAL_COLNAMES = ["SNP", "CHR", "POS"]
 FLAGS = {
     "ERROR": -2,
@@ -448,7 +449,7 @@ class GraphREML(ParallelProcessor):
     ) -> None:
         """Validate an existing score file before graphREML workers start."""
         hdf5_filename = method.score_test_hdf5_file_name
-        if hdf5_filename is None or not h5py.is_hdf5(hdf5_filename):
+        if hdf5_filename is None:
             return
 
         trait_name = method.score_test_hdf5_trait_name
@@ -460,16 +461,10 @@ class GraphREML(ParallelProcessor):
             "jackknife_blocks": None,
         }
 
-        def incompatible(detail: str) -> ValueError:
-            return ValueError(
-                f"Cannot append trait '{trait_name}' to '{hdf5_filename}': {detail}. "
-                "Use the same LDGM population, chromosomes, annotations, matching and "
-                "filter settings, and number of jackknife blocks as the existing file, "
-                "or write to a new HDF5 file."
-            )
-
         lock = FileLock(hdf5_filename + ".lock")
         with lock:
+            if not h5py.is_hdf5(hdf5_filename):
+                return
             with h5py.File(hdf5_filename, "r") as f:
                 if "row_data" not in f:
                     return
@@ -483,32 +478,44 @@ class GraphREML(ParallelProcessor):
                 row_data = f["row_data"]
                 missing = [name for name in required_columns if name not in row_data]
                 if missing:
-                    raise incompatible(
+                    raise cls._score_file_append_error(
+                        hdf5_filename,
+                        trait_name,
                         "existing row_data is missing " + ", ".join(sorted(missing))
                     )
 
                 existing_rows = len(row_data["CHR"])
                 lengths = {name: len(row_data[name]) for name in required_columns}
                 if any(length != existing_rows for length in lengths.values()):
-                    raise incompatible(
+                    raise cls._score_file_append_error(
+                        hdf5_filename,
+                        trait_name,
                         "existing row_data columns have inconsistent lengths "
                         f"({lengths})"
                     )
 
                 if "traits" in f:
-                    invalid_traits = {
-                        name: len(group["gradient"])
-                        for name, group in f["traits"].items()
-                        if "gradient" in group and len(group["gradient"]) != existing_rows
-                    }
+                    invalid_traits = {}
+                    for name, group in f["traits"].items():
+                        if not isinstance(group, h5py.Group) or "gradient" not in group:
+                            invalid_traits[name] = "missing gradient"
+                        elif group["gradient"].shape != (existing_rows,):
+                            invalid_traits[name] = (
+                                f"gradient shape={group['gradient'].shape}"
+                            )
                     if invalid_traits:
-                        raise incompatible(
-                            "existing trait gradients do not match row_data "
-                            f"({invalid_traits}; row_data={existing_rows})"
+                        raise cls._score_file_append_error(
+                            hdf5_filename,
+                            trait_name,
+                            "existing traits do not match row_data "
+                            f"({invalid_traits}; expected gradient shape="
+                            f"({existing_rows},))",
                         )
 
                 if existing_rows != expected_rows:
-                    raise incompatible(
+                    raise cls._score_file_append_error(
+                        hdf5_filename,
+                        trait_name,
                         f"existing row_data has {existing_rows} variants but this run has "
                         f"{expected_rows}"
                     )
@@ -538,10 +545,72 @@ class GraphREML(ParallelProcessor):
                             expected = np.asarray(expected).astype(str)
 
                         if not np.array_equal(actual, expected):
-                            raise incompatible(
+                            raise cls._score_file_append_error(
+                                hdf5_filename,
+                                trait_name,
                                 f"existing row_data/{hdf5_column} does not match this run"
                             )
                     offset = end
+
+    @staticmethod
+    def _score_file_append_error(
+        hdf5_filename: str, trait_name: Optional[str], detail: str
+    ) -> ValueError:
+        return ValueError(
+            f"Cannot append trait '{trait_name}' to '{hdf5_filename}': {detail}. "
+            "Use the same LDGM population, chromosomes, annotations, matching and "
+            "filter settings, and number of jackknife blocks as the existing file, "
+            "or write to a new HDF5 file."
+        )
+
+    @classmethod
+    def _validate_score_file_write(
+        cls,
+        hdf5_filename: str,
+        trait_name: Optional[str],
+        row_data: h5py.Group,
+        variant_data: pl.DataFrame,
+        jackknife_variant_assignments: np.ndarray,
+    ) -> None:
+        """Revalidate row data atomically when an existing score file is written."""
+        expected_columns = {
+            "CHR": variant_data.get_column("CHR"),
+            "POS": variant_data.get_column("POS"),
+            "RSID": variant_data.get_column("SNP"),
+            "jackknife_blocks": jackknife_variant_assignments,
+        }
+        missing = [name for name in expected_columns if name not in row_data]
+        if missing:
+            raise cls._score_file_append_error(
+                hdf5_filename,
+                trait_name,
+                "existing row_data is missing " + ", ".join(sorted(missing)),
+            )
+
+        expected_rows = len(variant_data)
+        lengths = {name: len(row_data[name]) for name in expected_columns}
+        if any(length != expected_rows for length in lengths.values()):
+            raise cls._score_file_append_error(
+                hdf5_filename,
+                trait_name,
+                f"existing row_data lengths {lengths} do not match this run "
+                f"({expected_rows} variants)",
+            )
+
+        for start in range(0, expected_rows, SCORE_FILE_VALIDATION_CHUNK_SIZE):
+            end = min(start + SCORE_FILE_VALIDATION_CHUNK_SIZE, expected_rows)
+            for column, expected_column in expected_columns.items():
+                actual = np.asarray(row_data[column][start:end]).reshape(-1)
+                expected = np.asarray(expected_column[start:end]).reshape(-1)
+                if actual.dtype.kind in {"O", "S", "U"}:
+                    actual = actual.astype(str)
+                    expected = expected.astype(str)
+                if not np.array_equal(actual, expected):
+                    raise cls._score_file_append_error(
+                        hdf5_filename,
+                        trait_name,
+                        f"existing row_data/{column} does not match this run",
+                    )
 
     @staticmethod
     def create_shared_memory(
@@ -937,6 +1006,7 @@ class GraphREML(ParallelProcessor):
         hdf5_filename: str,
         variant_data: pl.DataFrame,
         jackknife_variant_assignments: np.ndarray,
+        trait_name: Optional[str] = None,
     ) -> bool:
         """Checks if the file already contains a 'variants' group.
         If not, creates it and writes variant information to it.
@@ -954,6 +1024,13 @@ class GraphREML(ParallelProcessor):
         with lock:
             with h5py.File(hdf5_filename, "a") as f:
                 if "row_data" in f:
+                    cls._validate_score_file_write(
+                        hdf5_filename,
+                        trait_name,
+                        f["row_data"],
+                        variant_data,
+                        jackknife_variant_assignments,
+                    )
                     return False
 
                 # Set metadata as root attributes
@@ -1573,6 +1650,7 @@ class GraphREML(ParallelProcessor):
                 method.score_test_hdf5_file_name,
                 annotations.select(SPECIAL_COLNAMES),
                 jackknife_variant_assignments,
+                trait_name=method.score_test_hdf5_trait_name,
             )
 
             cls._write_trait_stats(method, variant_score)
