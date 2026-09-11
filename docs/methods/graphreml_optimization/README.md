@@ -1,15 +1,14 @@
 # graphREML optimization and information penalty
 
 The [methodological write-up](graphreml_methods.pdf) describes the numerical repairs,
-optimizer choices, optional average-information log-determinant penalty, and real-data
+AI optimization, optional average-information log-determinant penalty, and real-data
 comparisons. Its [LaTeX source](graphreml_methods.tex) and aggregate plotting inputs
 are included here.
 
-The tested BFGS variant failed to converge on Weight and was slower than AI on BMI.
-The development default remains BFGS pending review; these results do not support
-releasing that default. The information penalty is off by default, and exact trial
-evaluation remains the supported penalty strategy. Penalized uncertainty calibration
-is deferred.
+AI is the supported optimizer. It combines backtracking line search with score
+correction and precise endpoint audits. The information penalty is off by default,
+and exact trial evaluation is the default penalty strategy. Penalized uncertainty
+calibration is deferred. A short appendix reports the exploratory BFGS comparison.
 
 To compile the document, run `pdflatex graphreml_methods.tex` twice from this directory.
 The supplied tables and PDF figures are sufficient for compilation. To regenerate
