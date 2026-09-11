@@ -1,0 +1,116 @@
+{
+  "files": [
+    {
+      "file": "graphreml_methods.tex",
+      "sha256": "66da6a6ebef22eeaa1b90200302f189bce8031e6ca1e504b4e79e600b68d3f9a",
+      "source_sha256": "66da6a6ebef22eeaa1b90200302f189bce8031e6ca1e504b4e79e600b68d3f9a"
+    },
+    {
+      "file": "graphreml_methods.pdf",
+      "sha256": "4bcef50a4c647387a1bf295cc093425989eae644a4bd0a0bb229d5c51cea6414",
+      "source_sha256": "4bcef50a4c647387a1bf295cc093425989eae644a4bd0a0bb229d5c51cea6414"
+    },
+    {
+      "file": "published_annotation_manifest.json",
+      "sha256": "37d39f5d4de6c874e7e6376f9e392b7baf9e6b5b2a2b3d73390fb7961ba14ccf",
+      "source_sha256": "37d39f5d4de6c874e7e6376f9e392b7baf9e6b5b2a2b3d73390fb7961ba14ccf"
+    },
+    {
+      "file": "plot_matched_optimizer_comparison.py",
+      "sha256": "255ed6fc6d9bfe39332203a51e1576549df364183ea2cffe18b7398d24cbfba5",
+      "source_sha256": "255ed6fc6d9bfe39332203a51e1576549df364183ea2cffe18b7398d24cbfba5"
+    },
+    {
+      "file": "plot_penalty_comparison.py",
+      "sha256": "e6b3f4bc665470070a8e8effcb96e957422087bde39c321eb34beb7889c1283a",
+      "source_sha256": "e6b3f4bc665470070a8e8effcb96e957422087bde39c321eb34beb7889c1283a"
+    },
+    {
+      "file": "safeguarded_comparison/matched_start_enrichment_estimates.tsv",
+      "sha256": "e5f273ceb2c7807137aedbc15884d926445f4459060fdd2263383514d6a9b5c5",
+      "source_sha256": "bc9bf743e10332647a1ed858147371be824d02836505125c03d07dab07829425"
+    },
+    {
+      "file": "safeguarded_comparison/matched_optimizer_figure_source.tsv",
+      "sha256": "ffc742fef92a2182c52feccca36930cff0c0e0600c09b88002c04ebc015876fb",
+      "source_sha256": "2340a212f9b40508b7256ff6a91c01f25f1fcce76de74dab9bec03f87de406f4"
+    },
+    {
+      "file": "safeguarded_comparison/matched_optimizer_comparison.svg",
+      "sha256": "bd473a18ad933ca8dd1f3f9182f56ddeb283b59f056a36c756a6ddcddee17d5e",
+      "source_sha256": "e162a4df0abbe9c72b40f7b1ec2d8e79866963d0cbd13416e303bc287244f574"
+    },
+    {
+      "file": "penalty_comparison/all_annotation_penalty_changes.tsv",
+      "sha256": "3c50387de676cc9263760c9595f3db0319c98cf484bf90ce1bc1550e75770765",
+      "source_sha256": "c32da82900fc72e6ca9ba081a76bceae35a8b4744a661a3ba0acdc2289f1dd4d"
+    },
+    {
+      "file": "penalty_comparison/penalty_figure_source.tsv",
+      "sha256": "e233ccaced4dff4b13d542b49afea6a4849788a9598e7105b49c508cdb0752be",
+      "source_sha256": "ce82a4caa917872c7d835f560626d5002e920e5d383538b042cc1d565ede9826"
+    },
+    {
+      "file": "penalty_comparison/penalty_enrichment_comparison.svg",
+      "sha256": "0d6859536bd91ae31b7c6db99af6dfbd2f889929daaa7b71433e42090303373e",
+      "source_sha256": "c1ec4ecd0509853c155e64ecf52bf89acc492e89f6649110377ee7bd38e30bb8"
+    },
+    {
+      "file": "screen_comparison/all_annotation_screen_changes.tsv",
+      "sha256": "ead3699c6edb969f4869b88a9925c0bb683cf6062ecaaf8cf7f0e723641b4b74",
+      "source_sha256": "f82c054ac9b8ac0e6ecce31653a997ce723ff9e518f2e045ea2005272bcc6e10"
+    },
+    {
+      "file": "screen_comparison/screen_costs.tsv",
+      "sha256": "bbb236d4a5abafef01b97ba0ae5f68414a3d6c033eebc080357b2e5d89061526",
+      "source_sha256": "0b0230f503d5ac6e0ba50c28da6c41d3ce3f3768b19b1d54e14a7f5bdf2ce2a7"
+    },
+    {
+      "file": "working_control_comparison/prior_native_enrichment_comparison.tsv",
+      "sha256": "050abfec5a0ad6bbd2c5fb84a5de30594db45d5c7e2b84a1c1a7c4035584ccad",
+      "source_sha256": "6eab87cfb8b8e5fb187f92bd5b6f4a087db1821e8feaae7ed40ae7da32447a5d"
+    },
+    {
+      "file": "working_control_comparison/all_annotation_ai_bfgs_comparison.tsv",
+      "sha256": "676fe71c3443273f83149aff85470313094fbbdb304f639b38b38ec7a4a4836a",
+      "source_sha256": "dd0f1ed04a4ead971ab5f451b7570a77fd108ad62912567b90116986edea6151"
+    },
+    {
+      "file": "safeguarded_comparison/matched_optimizer_comparison.pdf",
+      "sha256": "fa72650c51881f99b160633abe0ceb29edcecfa67c7f521bc72f444711e8fa84",
+      "source_sha256": "fa72650c51881f99b160633abe0ceb29edcecfa67c7f521bc72f444711e8fa84"
+    },
+    {
+      "file": "safeguarded_comparison/matched_optimizer_enrichment_table.tex",
+      "sha256": "34b372c0ae0a15a0d89960049fcf3f70a3abdce6a22971d4d4985712a65bb1b6",
+      "source_sha256": "34b372c0ae0a15a0d89960049fcf3f70a3abdce6a22971d4d4985712a65bb1b6"
+    },
+    {
+      "file": "working_control_comparison/working_control_enrichment_table.tex",
+      "sha256": "38decf3e873666465b5197e1ab3ee26ac1d69a28b4c50ed24ef04d1da0f60b08",
+      "source_sha256": "38decf3e873666465b5197e1ab3ee26ac1d69a28b4c50ed24ef04d1da0f60b08"
+    },
+    {
+      "file": "penalty_comparison/weight_main_enrichment_table.tex",
+      "sha256": "de562445f51402cc583663242a6f1d3823034a397544846e3e278d8483aa34e1",
+      "source_sha256": "de562445f51402cc583663242a6f1d3823034a397544846e3e278d8483aa34e1"
+    },
+    {
+      "file": "penalty_comparison/hemoglobin_main_enrichment_table.tex",
+      "sha256": "6b9bd0ab7226d49f95370ec9c5e3aff7e062ad15e386dea3494a5b92a3eb0412",
+      "source_sha256": "6b9bd0ab7226d49f95370ec9c5e3aff7e062ad15e386dea3494a5b92a3eb0412"
+    },
+    {
+      "file": "penalty_comparison/penalty_enrichment_comparison.pdf",
+      "sha256": "0d3a92800036af1a58ed49878080861a9447bd70b28050f6ad599c14db01107e",
+      "source_sha256": "0d3a92800036af1a58ed49878080861a9447bd70b28050f6ad599c14db01107e"
+    },
+    {
+      "file": "screen_comparison/screen_cost_table.tex",
+      "sha256": "351a0424fe3186701d9781e27e6817a235dea1a1751f975893ab9bec79e715dd",
+      "source_sha256": "351a0424fe3186701d9781e27e6817a235dea1a1751f975893ab9bec79e715dd"
+    }
+  ],
+  "package_script_sha256": "8757c7c572057314ba78b8c70d0228f4b8d9e05c778b399c052b27b866870efe",
+  "scope": "Authored methodological write-up, aggregate estimates, figures, and plotting inputs. Individual SNP data and publisher-owned source documents are not included."
+}

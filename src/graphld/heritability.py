@@ -7,6 +7,7 @@ from importlib.metadata import PackageNotFoundError, version
 from multiprocessing import Value
 from typing import *
 import warnings
+import time
 
 import h5py
 import numpy as np
@@ -16,8 +17,14 @@ from filelock import FileLock
 
 from .io import *
 from .likelihood import *
+from .information_penalty import (
+    information_logdet, information_terms, information_penalty_gradient,
+)
 from .multiprocessing_template import ParallelProcessor, SharedData, WorkerManager
 from .precision import PrecisionOperator
+from ._reml_optimizer import optimize_reml
+from ._trace_anchor import InverseDiagonalAnchor
+from ._information import factor_information, solve_information
 
 try:
     __version__ = version("graphld")
@@ -36,6 +43,9 @@ FLAGS = {
     "WRITE_VARIANT_INFO": 4,
     "COMPUTE_VARIANT_SCORE": 5,
     "COMPUTE_VARIANT_HESSIAN": 6,
+    "COMPUTE_INFORMATION": 7,
+    "COMPUTE_PENALTY_GRADIENT": 8,
+    "COMPUTE_PRECISE": 9,
 }
 assert len(set(FLAGS.values())) == len(FLAGS.values())
 
@@ -56,6 +66,10 @@ class ModelOptions:
             for heritability scaling
         intercept: LDSC intercept or 1
         link_fn_denominator: Scalar denominator for link function.
+        link_function: 'softplus' (default), 'exponential', or a factory taking
+            the denominator and returning value, gradient, and second-derivative
+            functions. Functions also accept scalar annotation 1 to evaluate
+            derivatives with respect to the linear predictor.
     """
 
     annotation_columns: Optional[List[str]] = None
@@ -64,6 +78,7 @@ class ModelOptions:
     intercept: float = 1.0
     link_fn_denominator: float = 6e6
     binary_annotations_only: bool = False
+    link_function: Union[str, Callable] = "softplus"
 
     def __post_init__(self):
         if self.annotation_columns is None:
@@ -72,6 +87,7 @@ class ModelOptions:
             self.params = np.zeros((len(self.annotation_columns), 1))
 
         assert self.params.ndim == 2
+        _get_link_functions(self.link_function, self.link_fn_denominator)
 
 
 @dataclass
@@ -83,7 +99,8 @@ class MethodOptions:
         match_by_position: Use position/allele instead of RSID
             for merging
         num_iterations: Optimization steps
-        convergence_tol: Convergence tolerance
+        convergence_tol: Precise information-scaled score and signed objective
+            tolerance (default .001). Replaces recent-likelihood-window stopping.
         run_serial: Run in serial rather than parallel
         num_processes: If None, autodetect
         verbose: Flag for verbose output
@@ -100,13 +117,18 @@ class MethodOptions:
             derivatives for the score test.
         score_test_hdf5_trait_name: Name of the trait's subdirectory within the score test HDF5 file.
         surrogate_markers_path: Optional path to an HDF5 file with per-block surrogate mappings.
+        optimizer: "bfgs" (default) or "ai"; both use precise audits and line search.
+        information_penalty: Nonnegative weight on half the log determinant of global
+            average information. Zero disables the penalty and its extra computation.
+        penalty_trial_strategy: Exact evaluation at every trial, or linear_screen /
+            likelihood_screen followed by exact verification before acceptance.
     """
 
     gradient_num_samples: int = 100
     gradient_seed: Optional[int] = 123
     match_by_position: bool = False
-    num_iterations: int = 50
-    convergence_tol: float = 0.01
+    num_iterations: int = 100
+    convergence_tol: float = 0.001
     run_serial: bool = False
     num_processes: Optional[int] = None
     verbose: bool = False
@@ -124,10 +146,24 @@ class MethodOptions:
     score_test_hdf5_file_name: Optional[str] = None
     score_test_hdf5_trait_name: Optional[str] = None
     surrogate_markers_path: Optional[str] = None
+    optimizer: str = "bfgs"
+    information_penalty: float = 0.0
+    penalty_trial_strategy: str = "exact"
 
     def __post_init__(self):
-        if self.num_iterations < 1:
-            raise ValueError("num_iterations must be at least 1.")
+        if not np.isfinite(self.convergence_tol) or self.convergence_tol <= 0:
+            raise ValueError("convergence_tol must be finite and positive")
+        if self.optimizer not in {"bfgs", "ai"}:
+            raise ValueError("optimizer must be bfgs or ai")
+        if self.gradient_seed is None:
+            # Random between fits, fixed across derivative calls within a fit.
+            self.gradient_seed = int(np.random.SeedSequence().generate_state(1)[0] % (2**31))
+        if not np.isfinite(self.information_penalty) or self.information_penalty < 0:
+            raise ValueError("information_penalty must be finite and nonnegative.")
+        if self.penalty_trial_strategy not in {"exact", "linear_screen", "likelihood_screen"}:
+            raise ValueError("penalty_trial_strategy must be exact, linear_screen, or likelihood_screen.")
+        if isinstance(self.num_iterations, (bool, np.bool_)) or not isinstance(self.num_iterations, (int, np.integer)) or self.num_iterations < 1:
+            raise ValueError("num_iterations must be a positive integer.")
         if self.score_test_hdf5_file_name is not None:
             if self.score_test_hdf5_trait_name is None:
                 raise ValueError(
@@ -346,6 +382,32 @@ def _get_softmax_link_function(denominator: int) -> tuple[Callable, Callable, Ca
     return _link_fn, _link_fn_grad, _link_fn_hess
 
 
+def _get_link_functions(link_function, denominator):
+    """Select a link together with its first and second derivatives."""
+    if link_function == "softplus":
+        return _get_softmax_link_function(denominator)
+    if link_function == "exponential":
+        def value(a, theta):
+            eta = a * theta if np.ndim(a) == 0 else a @ theta
+            return np.exp(eta) / denominator
+
+        def gradient(a, theta):
+            v = value(a, theta)
+            return a * (v[:, None] if np.ndim(a) > 0 and np.ndim(theta) == 1 else v)
+
+        def second(a, theta):
+            v = value(a, theta)
+            return np.square(a) * (v[:, None] if np.ndim(a) > 0 and np.ndim(theta) == 1 else v)
+
+        return value, gradient, second
+    if callable(link_function):
+        functions = link_function(denominator)
+        if len(functions) == 3 and all(callable(f) for f in functions):
+            return functions
+        raise ValueError("A link factory must return value, gradient, and second-derivative callables.")
+    raise ValueError("link_function must be softplus, exponential, or a link factory.")
+
+
 def _project_out(y: np.ndarray, x: np.ndarray):
     """Projects out x from y in place."""
     with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
@@ -454,15 +516,17 @@ class GraphREML(ParallelProcessor):
             [len(d["sumstats"]) for d in block_data if d["sumstats"] is not None]
         )
 
-        result = SharedData(
-            {
+        sizes = {
                 "params": num_params,
                 "variant_data": num_variants,
                 "likelihood": num_blocks,
                 "gradient": num_blocks * num_params,
                 "hessian": num_blocks * num_params**2,
+                "trace_anchor_counts": 3 * num_blocks,
             }
-        )
+        if kwargs.get("method") is not None and kwargs["method"].information_penalty:
+            sizes.update(penalty_inverse=num_params**2, penalty_gradient=num_blocks*num_params)
+        result = SharedData(sizes)
 
         return result
 
@@ -642,6 +706,13 @@ class GraphREML(ParallelProcessor):
         num_samples: int,
         likelihood_only: bool,
         seed: Optional[int] = None,
+        link_function: Union[str, Callable] = "softplus",
+        information_only: bool = False,
+        penalty_cache: Optional[dict] = None,
+        retain_factor: bool = False,
+        trace_anchor: Optional[InverseDiagonalAnchor] = None,
+        precise_score: bool = False,
+        residual_diagonal: Optional[np.ndarray] = None,
     ) -> Tuple[float, Optional[np.ndarray], Optional[np.ndarray], np.ndarray]:
         """Compute likelihood, gradient, and hessian for a single block.
 
@@ -666,25 +737,28 @@ class GraphREML(ParallelProcessor):
             - hessian: Hessian matrix
             - per_variant_h2: With current parameters, heritability per variant
         """
-        link_fn, link_fn_grad, _ = _get_softmax_link_function(link_fn_denominator)
+        link_fn, link_fn_grad, link_fn_second = _get_link_functions(link_function, link_fn_denominator)
 
-        # Compute change in diag(M), aggregating variants with same index
         per_variant_h2 = link_fn(annotations, params)
-        delta_D = np.zeros(ldgm.shape[0])
-        np.add.at(
-            delta_D,
-            ldgm.variant_indices,
-            per_variant_h2.flatten() - old_variant_h2.flatten(),
-        )
-
-        # Update diag(M)
-        ldgm.update_matrix(delta_D)
+        if residual_diagonal is not None:
+            # Rebuild from fixed residual covariance. Adding and then subtracting
+            # an extreme trial variance can otherwise erase the residual diagonal.
+            genetic_diagonal = np.zeros(ldgm.shape[0])
+            np.add.at(genetic_diagonal, ldgm.variant_indices, per_variant_h2.ravel())
+            ldgm.set_diagonal(residual_diagonal + genetic_diagonal)
+        else:
+            delta_D = np.zeros(ldgm.shape[0])
+            np.add.at(delta_D, ldgm.variant_indices,
+                      per_variant_h2.flatten() - old_variant_h2.flatten())
+            if np.any(delta_D) or not retain_factor:
+                ldgm.update_matrix(delta_D)
 
         # New log likelihood
         likelihood = gaussian_likelihood(Pz, ldgm)
 
         if likelihood_only:
-            ldgm.del_factor()  # To reduce memory usage
+            if not retain_factor:
+                ldgm.del_factor()
             return likelihood, None, None, per_variant_h2
 
         # Gradient of per-variant h2 wrt parameters
@@ -694,29 +768,43 @@ class GraphREML(ParallelProcessor):
         del_M_del_a = np.zeros((ldgm.shape[0], params.shape[0]))
         np.add.at(del_M_del_a, ldgm.variant_indices, del_h2_del_a)
 
+        # The supplied diagonal correction is contracted with the current
+        # Jacobian; no parameter-score offset is added by the optimizer.
+        inverse_diagonal = None
+        if not information_only and trace_anchor is not None:
+            inverse_diagonal = trace_anchor.evaluate(
+                ldgm, precise=precise_score, n_samples=num_samples, seed=seed)
         # Gradient of log likelihood
-        gradient = gaussian_likelihood_gradient(
+        gradient = None if information_only else gaussian_likelihood_gradient(
             Pz,
             ldgm,
             del_M_del_a=del_M_del_a,
             n_samples=num_samples,
             seed=seed,
+            inverse_diagonal=inverse_diagonal,
         )
 
-        hessian = gaussian_likelihood_hessian(
-            Pz,
-            ldgm,
-            del_M_del_a=del_M_del_a,
-            seed=seed,
-        )
+        if penalty_cache is not None or information_only:
+            info, b, v = information_terms(ldgm, Pz, del_M_del_a)
+            hessian = -info
+            if penalty_cache is not None:
+                penalty_cache.clear()
+                with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+                    link_second = link_fn_second(np.array(1), annotations @ params)
+                penalty_cache.update(jacobian=del_M_del_a, b=b, v=v,
+                                     link_second=link_second)
+        else:
+            hessian = gaussian_likelihood_hessian(Pz, ldgm, del_M_del_a, seed=seed)
 
-        ldgm.del_factor()  # To reduce memory usage
+        if penalty_cache is None:
+            ldgm.del_factor()  # The penalty pass reuses this factor, then releases it.
 
         return likelihood, gradient, hessian, per_variant_h2
 
     @staticmethod
     def _link_fn_derivatives(
-        annot: np.ndarray, params: np.ndarray, link_fn_denominator: float
+        annot: np.ndarray, params: np.ndarray, link_fn_denominator: float,
+        link_function: Union[str, Callable] = "softplus",
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Compute 1st and 2nd derivatives of the link function for each variant.
 
@@ -730,7 +818,7 @@ class GraphREML(ParallelProcessor):
             - del_h2i_del_xi: Derivative of h^2_i with respect to x_i
             - del2_h2i_del_xi2: Second derivative of h^2_i with respect to x_i
         """
-        _, link_fn_grad, link_fn_hess = _get_softmax_link_function(link_fn_denominator)
+        _, link_fn_grad, link_fn_hess = _get_link_functions(link_function, link_fn_denominator)
         x = annot @ params
         del_h2i_del_xi = link_fn_grad(np.array(1), x)
         del2_h2i_del_xi2 = link_fn_hess(np.array(1), x)
@@ -933,7 +1021,7 @@ class GraphREML(ParallelProcessor):
         model_options, method_options = worker_params
         seed = None
         if method_options.gradient_seed is not None:
-            seed = method_options.gradient_seed + block_data["block_index"]
+            seed = (method_options.gradient_seed + block_data["block_index"]) % (2**32)
             np.random.seed(seed)
 
         sumstats: pl.DataFrame = block_data["sumstats"]
@@ -982,10 +1070,22 @@ class GraphREML(ParallelProcessor):
         ).to_numpy()
         params: np.ndarray = shared_data["params"].reshape(-1, 1)
 
+        if flag.value == FLAGS["COMPUTE_PENALTY_GRADIENT"]:
+            cache = block_data.pop("penalty_cache")
+            result = information_penalty_gradient(
+                ldgm, annot, ldgm.variant_indices, cache["link_second"],
+                cache["jacobian"], cache["b"], cache["v"],
+                shared_data["penalty_inverse"].reshape(len(params), len(params)),
+            )
+            i = block_data["block_index"] * len(params)
+            shared_data["penalty_gradient", slice(i, i + len(params))] = result
+            ldgm.del_factor()
+            return
+
         # Handle variant-specific gradient and Hessian computation
         if flag.value == FLAGS["COMPUTE_VARIANT_SCORE"]:
             del_h2i_del_xi, _ = cls._link_fn_derivatives(
-                annot, params, model_options.link_fn_denominator
+                annot, params, model_options.link_fn_denominator, model_options.link_function
             )
             result = cls._compute_variant_grad(ldgm, Pz, del_h2i_del_xi, seed=seed)
             result_padded = np.zeros(max_index)
@@ -995,7 +1095,7 @@ class GraphREML(ParallelProcessor):
 
         if flag.value == FLAGS["COMPUTE_VARIANT_HESSIAN"]:
             del_h2i_del_xi, del2_h2i_del_xi2 = cls._link_fn_derivatives(
-                annot, params, model_options.link_fn_denominator
+                annot, params, model_options.link_fn_denominator, model_options.link_function
             )
             del_L_del_xi = shared_data["variant_data", block_variants][
                 annot_indices
@@ -1015,7 +1115,14 @@ class GraphREML(ParallelProcessor):
             annot_indices
         ]
 
+        if "residual_diagonal" not in block_data:
+            block_data["residual_diagonal"] = ldgm.get_diagonal()
+
         likelihood_only = flag.value == FLAGS["COMPUTE_LIKELIHOOD_ONLY"]
+        information_only = flag.value == FLAGS["COMPUTE_INFORMATION"]
+        cache = None
+        if method_options.information_penalty and not likelihood_only and not information_only:
+            cache = block_data.setdefault("penalty_cache", {})
         likelihood, gradient, hessian, variant_h2 = cls._compute_block_likelihood(
             ldgm=ldgm,
             Pz=Pz,
@@ -1026,8 +1133,18 @@ class GraphREML(ParallelProcessor):
             num_samples=method_options.gradient_num_samples,
             likelihood_only=likelihood_only,
             seed=seed,
+            link_function=model_options.link_function,
+            information_only=information_only,
+            penalty_cache=cache,
+            retain_factor=bool(method_options.information_penalty),
+            trace_anchor=block_data.setdefault("trace_anchor", InverseDiagonalAnchor()),
+            precise_score=flag.value == FLAGS["COMPUTE_PRECISE"],
+            residual_diagonal=block_data.get("residual_diagonal"),
         )
 
+        anchor = block_data["trace_anchor"]
+        shared_data["trace_anchor_counts", slice(3*block_index, 3*block_index+3)] = np.array(
+            [anchor.refreshes, anchor.uses, anchor.cache_hits], dtype=float)
         shared_data["likelihood", block_index] = likelihood
         variant_h2_padded = np.zeros(max_index)
         variant_h2_padded[annot_indices] = variant_h2.ravel()
@@ -1036,7 +1153,8 @@ class GraphREML(ParallelProcessor):
             return
 
         gradient_slice = slice(block_index * num_annot, (block_index + 1) * num_annot)
-        shared_data["gradient", gradient_slice] = gradient.flatten()
+        if not information_only:
+            shared_data["gradient", gradient_slice] = gradient.flatten()
 
         hessian_slice = slice(
             block_index * num_annot**2, (block_index + 1) * num_annot**2
@@ -1155,10 +1273,11 @@ class GraphREML(ParallelProcessor):
 
             # Compute leave-one-out gradient and Hessian
             loo_gradient = gradient - block_gradient
-            loo_hessian = hessian - block_hessian + 1e-12 * np.eye(num_params)
+            loo_information = -(hessian - block_hessian)
 
-            # Compute jackknife estimate for this block
-            jackknife[block] = params + np.linalg.solve(loo_hessian, loo_gradient)
+            # The likelihood Hessian is negative information; its Newton update
+            # adds I^-1 g. Inferential curvature remains unregularized.
+            jackknife[block] = params + solve_information(loo_information, loo_gradient)
 
         return jackknife
 
@@ -1183,7 +1302,7 @@ class GraphREML(ParallelProcessor):
         num_params = jackknife_params.shape[1]
 
         # Get link function
-        link_fn, _, _ = _get_softmax_link_function(model.link_fn_denominator)
+        link_fn, _, _ = _get_link_functions(model.link_function, model.link_fn_denominator)
 
         # Initialize output arrays
         jackknife_h2 = np.zeros((num_jk, num_params))
@@ -1273,134 +1392,20 @@ class GraphREML(ParallelProcessor):
         verbose = kwargs.get("verbose")
         method: MethodOptions = kwargs.get("method")
         model: ModelOptions = kwargs.get("model")
-        trust_region_lambda = method.trust_region_size
-        log_likelihood_history = []
-        trust_region_history = []
-
-        def _trust_region_step(
-            gradient: np.ndarray, hessian: np.ndarray, trust_region_lambda: float
-        ) -> np.ndarray:
-            """Compute trust region step by solving (H + λD)x = -g."""
-            hess_mod = hessian + trust_region_lambda * np.diag(
-                np.diag(hessian) - np.finfo(float).eps
-            )
-            step = np.linalg.solve(hess_mod, -gradient)
-            # predicted_increase = step.T @ gradient + 0.5 * step.T @ (hess_mod @ step)
-            predicted_increase = step.T @ gradient + 0.5 * step.T @ (hessian @ step)
-            assert predicted_increase > -1e-6, (
-                f"Predicted increase must be greater than -epsilon but is {predicted_increase}."
-            )
-
-            return step, predicted_increase
-
-        if model.params is not None:
-            shared_data["params"] = model.params.flatten()
-        else:
-            shared_data["params"] = np.full(num_params, 0)
-
-        last_step_bad = True
-        for rep in range(num_iterations):
-            if verbose:
-                print(f"\n\tStarting iteration {rep}...")
-
-            # Calculate likelihood, gradient, and hessian for each block
-            flag = FLAGS["INITIALIZE"] if rep == 0 else FLAGS["COMPUTE_ALL"]
-            manager.start_workers(flag)
-            manager.await_workers()
-
-            likelihood = cls._sum_blocks(shared_data["likelihood"], (1,))[0]
-            gradient = cls._sum_blocks(shared_data["gradient"], (num_params,))
-            hessian = cls._sum_blocks(shared_data["hessian"], (num_params, num_params))
-
-            old_params = shared_data["params"].copy()
-            old_likelihood = likelihood
-            if verbose and rep == 0:
-                print(f"Initial log likelihood: {likelihood}")
-
-            # Reset trust region size if specified
-            if method.reset_trust_region or last_step_bad:
-                trust_region_lambda = method.trust_region_size
-
-            # Trust region optimization loop
-            previous_lambda = trust_region_lambda
-            for trust_iter in range(method.max_trust_iterations):
-                # Compute proposed step
-                step, predicted_increase = _trust_region_step(
-                    gradient, hessian, trust_region_lambda
-                )
-                shared_data["params"] = old_params + step
-
-                # Evaluate proposed step
-                manager.start_workers(FLAGS["COMPUTE_LIKELIHOOD_ONLY"])
-                manager.await_workers()
-                new_likelihood = cls._sum_blocks(shared_data["likelihood"], (1,))[0]
-
-                # Compute actual vs predicted increase
-                actual_increase = new_likelihood - old_likelihood
-                if verbose:
-                    print(
-                        f"\tIncrease in log-likelihood: {actual_increase}, predicted increase: {predicted_increase}"
-                    )
-
-                # Check if step is acceptable and update trust region size if needed
-                rho = actual_increase / predicted_increase
-                if rho < method.trust_region_rho_lb:
-                    if (
-                        predicted_increase < method.minimum_likelihood_increase
-                        and rho >= 0
-                    ):
-                        if verbose:
-                            print(
-                                f"\tTerminated trust region size search with predicted likelihood increase {predicted_increase}."
-                            )
-                        break
-                    # Reset trust region size to initial value if its below that
-                    trust_region_lambda = max(
-                        method.trust_region_size,
-                        trust_region_lambda * method.trust_region_scalar,
-                    )
-                    shared_data["params"] = old_params  # Revert step
-                elif rho > method.trust_region_rho_ub:
-                    trust_region_lambda /= method.trust_region_scalar
-                    break  # Accept step and continue to next iteration
-                else:
-                    break  # Accept step with current trust region size
-
-                if trust_iter == method.max_trust_iterations - 1:
-                    if verbose:
-                        print("Warning: Maximum trust region iterations reached")
-
-            last_step_bad = (
-                trust_region_lambda > previous_lambda * method.trust_region_scalar
-            )
-
-            log_likelihood_history.append(new_likelihood)
-            trust_region_history.append(trust_region_lambda)
-
-            if verbose:
-                print(f"log likelihood: {new_likelihood}")
-                print(f"Trust region lambda: {trust_region_lambda}")
-                if len(log_likelihood_history) >= 2:
-                    print(
-                        f"Change in likelihood: {log_likelihood_history[-1] - log_likelihood_history[-2]}"
-                    )
-                total_h2 = np.sum(shared_data["variant_data"])
-                print(f"Total h2 at current iteration: {total_h2}")
-
-            # Check convergence
-            converged = False
-            if len(log_likelihood_history) >= 1 + method.convergence_window:
-                if abs(
-                    log_likelihood_history[-1]
-                    - log_likelihood_history[-method.convergence_window]
-                ) < (method.convergence_window * method.convergence_tol):
-                    converged = True
-                    break
-
-        if verbose:
-            print(
-                f"-----Finished optimization after {rep + 1} out of {num_iterations} steps-----"
-            )
+        optimization = optimize_reml(cls, manager, shared_data, block_data, model, method, FLAGS)
+        optimized = optimization['result']
+        converged = optimized.status == 'stationary'
+        termination_reason = optimized.status
+        rep = optimized.iterations - 1
+        accepted = optimization['accepted']
+        log_likelihood_history = [row['likelihood'] for row in accepted]
+        penalty_history = [row['penalty'] for row in accepted]
+        objective_history = [row['objective'] for row in accepted]
+        trust_region_history = [0.0] * len(accepted)  # Compatibility column; no damping is used.
+        penalty_weight = method.information_penalty
+        final_penalty = optimization['final_penalty']
+        evaluation_counts = optimization['evaluation_counts']
+        evaluation_seconds = optimization['evaluation_seconds']
 
         # Point estimates
         variant_h2 = shared_data["variant_data"].copy()
@@ -1429,16 +1434,39 @@ class GraphREML(ParallelProcessor):
         jk_gradient_blocks = cls._group_blocks(gradient_blocks, num_jackknife_blocks)
         jk_hessian_blocks = cls._group_blocks(hessian_blocks, num_jackknife_blocks)
 
-        # Compute jackknife estimates using the grouped blocks
+        # Retain the existing approximation at identifiable endpoints. The
+        # penalty Hessian is omitted and its uncertainty calibration is deferred.
         params = shared_data["params"].copy()
-        jackknife_params = cls._compute_pseudojackknife(
-            jk_gradient_blocks, jk_hessian_blocks, params
-        )
+        full_information = -jk_hessian_blocks.sum(axis=0)
 
-        # Compute jackknife heritability estimates and standard errors
-        jackknife_h2, jackknife_annot_sums = cls._compute_jackknife_heritability(
-            block_data, jackknife_params, model
-        )
+        def information_is_identifiable(matrix):
+            try:
+                _, _, minimum_eigenvalue = factor_information(matrix)
+            except np.linalg.LinAlgError:
+                return False, None
+            return True, minimum_eigenvalue
+
+        information_valid, information_minimum_eigenvalue = information_is_identifiable(full_information)
+        invalid_delete_groups = [i for i in range(num_jackknife_blocks)
+                                 if not information_is_identifiable(full_information + jk_hessian_blocks[i])[0]]
+        uncertainty_valid = information_valid and not invalid_delete_groups
+        uncertainty_status = ('available' if converged else 'provisional_unresolved_endpoint') if uncertainty_valid else 'singular_information'
+        if uncertainty_valid:
+            try:
+                jackknife_params = cls._compute_pseudojackknife(jk_gradient_blocks, jk_hessian_blocks, params)
+            except np.linalg.LinAlgError:
+                uncertainty_valid = False
+                uncertainty_status = 'invalid_information_solve'
+            if uncertainty_valid:
+                jackknife_h2, jackknife_annot_sums = cls._compute_jackknife_heritability(block_data, jackknife_params, model)
+                if not (np.isfinite(jackknife_params).all() and np.isfinite(jackknife_h2).all()):
+                    uncertainty_valid = False
+                    uncertainty_status = 'nonfinite_delete_predictions'
+        if not uncertainty_valid:
+            jackknife_params = np.full((num_jackknife_blocks, num_params), np.nan)
+            jackknife_h2 = np.full_like(jackknife_params, np.nan)
+            jackknife_annot_sums = np.broadcast_to(
+                annotations.select(model.annotation_columns).sum().to_numpy(), jackknife_h2.shape).copy()
 
         if method.score_test_hdf5_file_name is not None:
             if verbose:
@@ -1529,6 +1557,13 @@ class GraphREML(ParallelProcessor):
             )
 
         return {
+            "annotation_columns": np.asarray(model.annotation_columns),
+            "annotation_counts": annotations.select(model.annotation_columns).sum().to_numpy().ravel(),
+            "annotation_fractions": annotations.select(model.annotation_columns).sum().to_numpy().ravel() / len(annotations),
+            "final_gradient_groups": jk_gradient_blocks,
+            "final_penalty_gradient": optimization["final_penalty_gradient"],
+            "final_objective_gradient": optimization["final_score"],
+            "final_hessian_groups": jk_hessian_blocks,
             "parameters": params,
             "parameters_se": params_se,
             "parameters_log10pval": params_p,
@@ -1539,16 +1574,55 @@ class GraphREML(ParallelProcessor):
             "enrichment_se": enrichment_se,
             "enrichment_log10pval": annotation_enrichment_p,
             "likelihood_history": log_likelihood_history,
+            "objective_history": objective_history,
+            "penalty_history": penalty_history,
             "jackknife_h2": jackknife_h2,
             "jackknife_params": jackknife_params,
             "jackknife_enrichment": jackknife_enrichment_quotient,
             "variant_h2": variant_h2,
             "log": {
                 "converged": converged,
+                "termination_reason": termination_reason,
                 "num_iterations": rep + 1,
                 "likelihood_changes": likelihood_changes,
                 "final_likelihood": log_likelihood_history[-1],
                 "trust_region_lambdas": trust_region_history,
+                "optimizer": method.optimizer,
+                "gradient_seed": method.gradient_seed,
+                "gradient_num_samples": method.gradient_num_samples,
+                "trace_anchor_counts": (shared_data["trace_anchor_counts"].reshape(-1,3).sum(axis=0).astype(int).tolist()
+                                        if "trace_anchor_counts" in shared_data._data_dict else None),
+                "optimizer_status": optimized.status,
+                "accepted_steps": sum(h['accepted'] for h in optimized.history),
+                "stationarity": optimized.stationarity,
+                "optimizer_history": optimized.history,
+                "metric_resets": optimized.metric_resets,
+                "proposal_selection_seconds": optimized.proposal_selection_seconds,
+                "initial_parameter_scaling_diagonal": (optimized.initial_parameter_scale**2).tolist(),
+                "optimization_seconds": optimization['optimization_seconds'],
+                "final_objective_score": optimization['final_score'].tolist(),
+                "information_penalty": penalty_weight,
+                "penalty_trial_strategy": method.penalty_trial_strategy,
+                "final_penalty": final_penalty,
+                "final_objective": objective_history[-1],
+                "evaluation_counts": evaluation_counts,
+                "evaluation_seconds": evaluation_seconds,
+                "evaluation_definitions": {
+                    "full": "All derivative passes, including precise passes; seconds include precise seconds",
+                    "precise": "Subset of full using the precise inverse diagonal",
+                    "raw_derivatives": "Compute as full minus precise; do not sum full and precise",
+                    "information": "Likelihood and average information without likelihood score",
+                    "penalty_gradient": "Global-inverse contraction using cached block information terms",
+                },
+                "uncertainty_method": "unpenalized_information_pseudojackknife",
+                "uncertainty_status": uncertainty_status,
+                "uncertainty_penalty_curvature_included": False,
+                "penalized_uncertainty_calibration": "not_evaluated" if penalty_weight else "not_applicable",
+                "invalid_delete_groups": invalid_delete_groups,
+                "normalized_information_minimum_eigenvalue": information_minimum_eigenvalue,
+                "minimum_information_diagonal": float(np.diag(full_information).min()),
+                "zero_variant_h2": int(np.sum(variant_h2 == 0)),
+                "minimum_variant_h2": float(variant_h2.min()),
             },
         }
 
@@ -1577,6 +1651,7 @@ def run_graphREML(
         dict: Estimated parameters, heritability estimates, standard errors,
             and convergence diagnostics.
     """
+    total_started = time.perf_counter()
     if populations is None:
         raise ValueError("Populations must be provided")
 
@@ -1631,7 +1706,7 @@ def run_graphREML(
     _infer_or_default_sample_size(model_options, merged_data, method_options.verbose)
 
     run_fn = GraphREML.run_serial if method_options.run_serial else GraphREML.run
-    return run_fn(
+    result = run_fn(
         ldgm_metadata_path,
         populations=populations,
         chromosomes=chromosomes,
@@ -1646,3 +1721,6 @@ def run_graphREML(
         convergence_tol=method_options.convergence_tol,
         sample_size=model_options.sample_size,
     )
+    if isinstance(result, dict) and isinstance(result.get("log"), dict):
+        result["log"]["total_seconds"] = time.perf_counter() - total_started
+    return result

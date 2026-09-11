@@ -1,0 +1,57 @@
+{
+  "publication": "Li et al., Nature Genetics 58, 1573\u20131582 (2026)",
+  "doi": "10.1038/s41588-026-02649-0",
+  "figure_url": "https://www.nature.com/articles/s41588-026-02649-0/figures/3",
+  "main_annotations": [
+    {
+      "label": "Coding",
+      "column": "Coding_UCSC",
+      "flanking": false
+    },
+    {
+      "label": "Conserved",
+      "column": "Conserved_LindbladToh",
+      "flanking": false
+    },
+    {
+      "label": "DHS",
+      "column": "DHS_Trynka",
+      "flanking": false
+    },
+    {
+      "label": "Enhancer",
+      "column": "Enhancer_Hoffman",
+      "flanking": false
+    },
+    {
+      "label": "Promoter",
+      "column": "Promoter_UCSC",
+      "flanking": false
+    },
+    {
+      "label": "Repressed",
+      "column": "Repressed_Hoffman",
+      "flanking": false
+    }
+  ],
+  "identity_evidence": "Figure 3 visually inspected; S8 six labels and 108 trait-annotation rows; S1 exact names and detailed supplementary plot labels. DHS is distinct from DHS peaks.",
+  "estimand": "Marginal heritability enrichment = annotation heritability fraction divided by annotation matched SNP fraction.",
+  "sources": [
+    {
+      "file": "li_2026_supplementary_tables.xlsx",
+      "sha256": "32b68cb524d123620242097e5a3d179f9a21b4653fe43f3a0d1c2fae1e31be16"
+    },
+    {
+      "file": "li_2026_supplementary_notes.pdf",
+      "sha256": "602d7b8d28a61ec2338ffd3d4fc0d089adb3d35f684db99eddc903b27edd5aa7"
+    },
+    {
+      "file": "li_2026_fig3.html",
+      "sha256": "ccd9301419c66cce03fad84bf24de6e5ffa1aa49c37b753ed2ce02ae1cd58a1b"
+    },
+    {
+      "file": "li_2026_fig3.png",
+      "sha256": "0307baebc73f5b9b7d66dab40da84a49c68293bc4011b050ed5a2396b5407cb1"
+    }
+  ]
+}

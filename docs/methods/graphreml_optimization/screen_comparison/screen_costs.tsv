@@ -1,0 +1,3 @@
+strategy	process_minutes	optimizer_minutes	iterations	accepted_steps	full_passes	precise_passes	trial_information	trial_information_minutes	likelihood_only	likelihood_only_minutes	screened_trials	exact_fallbacks	rescued_screened_trials
+Exact	38.092280630550036	35.67253009583413	24	21	25	3	33	10.430389993798842	0	0.0	0	0	0
+Linear screen	40.368093457633705	37.97862867223448	24	20	25	4	28	5.33354010344871	25	4.386789086135105	6	1	0

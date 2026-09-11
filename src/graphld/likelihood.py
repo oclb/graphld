@@ -58,6 +58,7 @@ def gaussian_likelihood_gradient(
     n_samples: int = 10,
     seed: Optional[int] = None,
     trace_estimator: Optional[str] = "xdiag",
+    inverse_diagonal: Optional[np.ndarray] = None,
 ) -> np.ndarray:
     """Computes the score under a Gaussian model.
 
@@ -75,6 +76,8 @@ def gaussian_likelihood_gradient(
         seed: Random seed for generating probe vectors
         trace_estimator: Method for computing the trace estimator.
             Options: "exact", "hutchinson", "xdiag"
+        inverse_diagonal: Optional supplied diagonal estimate, including a
+            worker-maintained correction. Contracted with the current Jacobian.
 
     Returns:
         Array of diagonal elements of the gradient wrt M's diagonal elements,
@@ -84,9 +87,10 @@ def gaussian_likelihood_gradient(
     b = M.solve(pz)
 
     # Compute diagonal elements of M^(-1)
-    minv_diag = M.inverse_diagonal(method=trace_estimator,
-                                    n_samples=n_samples,
-                                    seed=seed)
+    minv_diag = (M.inverse_diagonal(method=trace_estimator, n_samples=n_samples, seed=seed)
+                 if inverse_diagonal is None else np.asarray(inverse_diagonal))
+    if minv_diag.size != b.size or not np.isfinite(minv_diag).all():
+        raise ValueError("Inverse diagonal must be finite and match the covariance selection")
 
     # Compute gradient diagonal elements
     node_grad = -0.5 * (minv_diag.flatten() - b.flatten()**2)
