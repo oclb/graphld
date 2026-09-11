@@ -2,14 +2,24 @@
 
 """Test multiprocessing framework."""
 
+import os
+import multiprocessing as mp
+import signal
+import subprocess
+import sys
 import time
-from multiprocessing import Array
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from graphld.io import load_ldgm, read_ldgm_metadata
-from graphld.multiprocessing_template import ParallelProcessor, SharedData, WorkerManager
+from graphld.multiprocessing_template import (
+    ParallelProcessor,
+    SharedData,
+    WorkerManager,
+    _MP_CONTEXT,
+)
 
 # Constants
 NUM_SOLVES = 1
@@ -28,8 +38,8 @@ class SolveProcessor(ParallelProcessor):
 
         # Create shared arrays and initialize to zeros
         shared_data = SharedData({
-            'input': Array('d', total_size, lock=False),
-            'solution': Array('d', total_size, lock=False)
+            'input': total_size,
+            'solution': total_size,
         })
 
         # Initialize input array with random values
@@ -90,6 +100,30 @@ class FirstAlleleFrequencyProcessor(ParallelProcessor):
         """Record the first loaded `af` value for this LDGM."""
         block_index = block_data['block_index']
         shared_data['af', slice(block_index, block_index + 1)] = [ldgm.variant_info['af'][0]]
+
+
+def abrupt_exit_worker(flag):
+    """Exit without updating the shared flag, simulating a native crash."""
+    while flag.value == 0:
+        time.sleep(0.01)
+    os._exit(17)
+
+
+def flagged_exception_worker(flag):
+    """Report failure through the flag and then exit with a Python exception."""
+    while flag.value == 0:
+        time.sleep(0.01)
+    try:
+        raise ValueError("worker failed")
+    except BaseException:
+        flag.value = -1
+        raise
+
+
+def unresponsive_worker(flag):
+    """Ignore the shutdown flag so WorkerManager must terminate this process."""
+    while True:
+        time.sleep(0.01)
 
 
 def solve_serial(metadata_file, population=None, chromosomes=None, seed=None):
@@ -168,6 +202,118 @@ def test_multiprocessing():
     # Validate results
     assert np.allclose(parallel_results, serial_results, rtol=1e-10, atol=1e-10), \
         "Parallel and serial results do not match"
+
+
+def test_parallel_context_uses_spawn():
+    """GraphLD must not inherit the platform's threaded-library state."""
+    assert _MP_CONTEXT.get_start_method() == "spawn"
+
+
+def test_parallel_processor_uses_spawn_under_fork_default(tmp_path):
+    """A fork-default parent must still launch fresh GraphLD interpreters."""
+    if "fork" not in mp.get_all_start_methods():
+        pytest.skip("fork start method is unavailable")
+
+    script = tmp_path / "forced_fork_blup.py"
+    script.write_text(
+        "import multiprocessing as mp\n"
+        "import runpy\n"
+        "if __name__ == '__main__':\n"
+        "    mp.set_start_method('fork')\n"
+        "    namespace = runpy.run_path('tests/test_blup.py')\n"
+        "    namespace['test_blup']()\n"
+    )
+    repo_root = Path(__file__).parent.parent
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        filter(None, [str(repo_root / "src"), env.get("PYTHONPATH")])
+    )
+    process = subprocess.Popen(
+        [sys.executable, str(script)],
+        cwd=repo_root,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=30)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        stdout, stderr = process.communicate()
+        pytest.fail(
+            "forced-fork subprocess timed out\n"
+            f"stdout:\n{stdout}\nstderr:\n{stderr}"
+        )
+
+    assert process.returncode == 0, stderr
+
+
+def test_worker_manager_reports_abrupt_exit():
+    """A dead child must raise instead of leaving the parent spinning forever."""
+    manager = WorkerManager(1)
+    manager.add_process(abrupt_exit_worker, (manager.flags[0],))
+    manager.start_workers()
+    try:
+        with pytest.raises(RuntimeError, match=r"worker 0 .* code 17"):
+            manager.await_workers()
+    finally:
+        manager.shutdown()
+
+
+def test_worker_manager_reports_flagged_exception_exit_code():
+    """Caught worker failures should retain their eventual process exit code."""
+    manager = WorkerManager(1)
+    manager.add_process(flagged_exception_worker, (manager.flags[0],))
+    manager.start_workers()
+    try:
+        with pytest.raises(RuntimeError, match=r"worker 0 .* exit code 1"):
+            manager.await_workers()
+    finally:
+        manager.shutdown()
+
+
+def test_worker_manager_shutdown_terminates_unresponsive_worker():
+    """Shutdown has a bounded fallback for children that ignore their flag."""
+    manager = WorkerManager(1)
+    manager.add_process(unresponsive_worker, (manager.flags[0],))
+    manager.start_workers()
+
+    start = time.monotonic()
+    manager.shutdown()
+
+    assert time.monotonic() - start < 3.0
+    assert not manager.processes[0].is_alive()
+
+
+def test_parallel_processor_cleans_up_after_supervisor_error(monkeypatch):
+    """Supervisor failures must not leave spawned workers behind."""
+    shutdown_managers = []
+    original_shutdown = WorkerManager.shutdown
+
+    def tracking_shutdown(manager):
+        original_shutdown(manager)
+        shutdown_managers.append(manager)
+
+    def raising_supervisor(*args, **kwargs):
+        raise RuntimeError("supervisor failed")
+
+    monkeypatch.setattr(WorkerManager, "shutdown", tracking_shutdown)
+    monkeypatch.setattr(SolveProcessor, "supervise", staticmethod(raising_supervisor))
+
+    with pytest.raises(RuntimeError, match="supervisor failed"):
+        SolveProcessor.run(
+            ldgm_metadata_path="data/test/metadata.csv",
+            num_processes=NUM_PROCESSES,
+            seed=42,
+        )
+
+    assert len(shutdown_managers) == 1
+    assert all(
+        not process.is_alive()
+        for process in shutdown_managers[0].processes
+    )
 
 
 def test_worker_loads_population_specific_allele_frequencies():

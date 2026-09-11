@@ -2,13 +2,13 @@
   "files": [
     {
       "file": "graphreml_methods.tex",
-      "sha256": "66da6a6ebef22eeaa1b90200302f189bce8031e6ca1e504b4e79e600b68d3f9a",
-      "source_sha256": "66da6a6ebef22eeaa1b90200302f189bce8031e6ca1e504b4e79e600b68d3f9a"
+      "sha256": "1c8b44eee65c08f0ef4ea2c2a6e338b8ea5dcf1e9db9e5e1cbde68a0272ceede",
+      "source_sha256": "1c8b44eee65c08f0ef4ea2c2a6e338b8ea5dcf1e9db9e5e1cbde68a0272ceede"
     },
     {
       "file": "graphreml_methods.pdf",
-      "sha256": "4bcef50a4c647387a1bf295cc093425989eae644a4bd0a0bb229d5c51cea6414",
-      "source_sha256": "4bcef50a4c647387a1bf295cc093425989eae644a4bd0a0bb229d5c51cea6414"
+      "sha256": "daf6f20be15ca325cdceeabd1b0e367d7e1548b789ffad67494045aa93222c30",
+      "source_sha256": "daf6f20be15ca325cdceeabd1b0e367d7e1548b789ffad67494045aa93222c30"
     },
     {
       "file": "published_annotation_manifest.json",

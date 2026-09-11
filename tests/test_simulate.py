@@ -364,7 +364,8 @@ def test_serial_and_parallel_simulation_match_fixed_seed(
 def test_custom_link_function_pickling_error(metadata_path, create_annotations):
     """Test that lambda functions cause informative error when using multiprocessing."""
     # Lambda function that can't be pickled
-    custom_link = lambda x: x[:, 0] + 9 * x[:, 1] if x.shape[1] > 1 else x[:, 0]
+    def custom_link(x):
+        return x[:, 0] + 9 * x[:, 1] if x.shape[1] > 1 else x[:, 0]
     
     sim = Simulate(
         sample_size=100_000,
@@ -381,7 +382,7 @@ def test_custom_link_function_pickling_error(metadata_path, create_annotations):
     
     # This should raise an informative ValueError when trying to use multiprocessing
     with pytest.raises(ValueError) as exc_info:
-        result = sim.simulate(
+        sim.simulate(
             ldgm_metadata_path=metadata_path,
             populations="EUR",
             annotations=annotations,
@@ -394,11 +395,44 @@ def test_custom_link_function_pickling_error(metadata_path, create_annotations):
     assert "module level" in error_msg.lower() or "run_in_serial" in error_msg.lower()
 
 
+@pytest.mark.parametrize(
+    "main_file",
+    ["<stdin>", "/usr/local/lib/python/ipykernel_launcher.py"],
+    ids=["stdin", "jupyter"],
+)
+def test_interactive_main_link_function_rejected(
+    metadata_path, create_annotations, monkeypatch, main_file
+):
+    """Interactive functions cannot be imported by spawned workers."""
+    import __main__
+
+    monkeypatch.setattr(module_level_link_fn, "__module__", "__main__")
+    monkeypatch.setattr(__main__, "__file__", main_file, raising=False)
+    sim = Simulate(
+        sample_size=100_000,
+        heritability=0.5,
+        component_variance=[1.0],
+        component_weight=[0.3],
+        random_seed=42,
+        link_fn=module_level_link_fn,
+        annotation_columns=['af'],
+    )
+
+    with pytest.raises(ValueError, match="interactive __main__"):
+        sim.simulate(
+            ldgm_metadata_path=metadata_path,
+            populations="EUR",
+            annotations=create_annotations(metadata_path, populations="EUR"),
+            run_in_serial=False,
+        )
+
+
 def test_custom_link_function_workaround_serial(metadata_path, create_annotations):
     """Test workaround 1: Use run_in_serial=True with lambda functions."""
     # Lambda works fine when run_in_serial=True
     # Simple link function that just uses allele frequency
-    custom_link = lambda x: x[:, 0]
+    def custom_link(x):
+        return x[:, 0]
     
     sim = Simulate(
         sample_size=100_000,

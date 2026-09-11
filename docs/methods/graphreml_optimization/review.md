@@ -15,3 +15,7 @@ The repaired pseudo-jackknife uses likelihood information at the returned endpoi
 ## Final endpoint and source checks
 
 The historical BMI endpoint was reproduced exactly and failed the precise criteria (Q=0.8057; tested likelihood gain=0.7132), with zero parameter updates. All 22 production source files matched the frozen numerical runtime. The final changes after numerical evaluation were documentation corrections and links. The two saved test reports were independently hash-checked and parsed; their overlapping counts are kept separate in [the validation manifest](validation_manifest.json). The packaged fourteen-page LaTeX document compiled cleanly, and the rendered figures and affected pages were visually inspected.
+
+## Integration with current main
+
+The final branch incorporates upstream main `6d7a2e9524e9fc59f4fef997f515c5178105d95e`, preserving its score-file append checks and multiprocessing lifecycle fixes. The optimizer, trace correction, information penalty, precision and likelihood modules remain byte-identical to the benchmark source. Heritability changes from the merge are confined to score-file validation and its optional output calls. A fresh combined regression run passed 231 tests with one existing skip for unimplemented annotation-dependent polygenicity. The frozen benchmark and final integration hashes are recorded separately in the validation manifest.
