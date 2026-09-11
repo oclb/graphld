@@ -24,24 +24,19 @@ You must provide one annotation source:
 
 ## Optimizer and optional Firth approximation
 
-Safeguarded BFGS is the default optimizer. Use `--optimizer ai` to use average-information
-proposals in the same line search, trace-correction, and precise-stopping framework.
-Both choices evaluate actual objective values before accepting a step. A predictor
-change cap limits extreme proposals. The primary proposal is retained when its
-predicted gain is numerically resolvable and reaches at least 10% of the best
-capped reference proposal's gain. BFGS uses AI and scaled-gradient references;
-AI uses a scaled-gradient reference. Otherwise the most productive reference
-supplies the direction for the same line search. Precise inverse-diagonal audits refresh the
-fixed-probe correction and are required before ordinary convergence is reported.
-Boundary-profile acceptance is not part of either optimizer.
-
-The current development benchmarks do not support releasing BFGS as the default:
-it remained nonstationary on Weight and was slower than AI on BMI. See the
+graphREML uses average-information (AI) proposals with backtracking line search,
+fixed-probe score correction, and precise stopping audits. Steps are accepted using
+actual objective values. A predictor-change cap limits extreme proposals. The AI
+proposal is retained when its predicted gain is numerically resolvable and reaches
+at least 10% of the capped scaled-gradient reference's gain. Otherwise the gradient
+reference supplies the direction for the same line search. Precise inverse-diagonal
+audits refresh the fixed-probe correction and are required before ordinary
+convergence is reported. See the
 [methods and evaluation write-up](../methods/graphreml_optimization/README.md)
 for convergence, runtime, and enrichment results.
 
 ```bash
-graphld reml summary.sumstats output --annot-dir annotations --optimizer bfgs
+graphld reml summary.sumstats output --annot-dir annotations
 graphld reml summary.sumstats output_firth --annot-dir annotations --firth
 ```
 
@@ -77,7 +72,7 @@ recent likelihood changes. Small accepted changes trigger an audit and do not
 by themselves establish convergence. Explicit iteration budgets and tolerances
 remain respected. The compatibility arguments `--convergence-window` and
 `--reset-trust-region`, and the Python damping settings, no longer control the
-new line search. `--optimizer ai` selects the new AI framework.
+new line search. `--optimizer ai` can explicitly declare the supported method.
 
 A converged status certifies the reported score and tested-direction criteria;
 it does not certify global optimality. Iteration limits, stalled searches, and
@@ -87,7 +82,7 @@ comparing runtime or enrichment estimates.
 The default `--link-function softplus` includes its first and second
 derivatives. `--link-function exponential` is also available. In Python, set
 `ModelOptions(link_function="softplus")` and
-`MethodOptions(optimizer="bfgs", information_penalty=1.0, penalty_trial_strategy="exact")`.
+`MethodOptions(information_penalty=1.0, penalty_trial_strategy="exact")`.
 A custom link factory may be passed as `ModelOptions(link_function=factory)`;
 it takes the denominator and returns `(value, gradient, second_derivative)`.
 Each function accepts `(annotations, parameters)`. For scalar annotation `1`,
@@ -96,21 +91,19 @@ for a matrix, they return the corresponding parameter derivatives (the
 second-derivative function returns the diagonal second derivatives). Use a module-level factory
 so it can be passed to spawned workers.
 
-Optimization uses the penalized score with the selected BFGS or AI proposal
-metric. Average information supplies the stopping scale; the penalty Hessian is
+Optimization uses the penalized score with the AI proposal metric. Average information supplies the stopping scale; the penalty Hessian is
 omitted. Reported uncertainties retain the
 existing unpenalized-information pseudo-jackknife approximation; their calibration
 for penalized estimates has not been evaluated. The result log records the
 penalty weight, trial strategy, final likelihood and penalized objective,
 evaluation counts/times, optimizer status, selected proposal and cap multiplier,
-metric resets, and uncertainty method/status.
+score refreshes, and uncertainty method/status.
 Finite well-conditioned endpoints retain that approximation; unresolved endpoints
 are marked provisional, and singular or invalid delete calculations are unavailable.
 Pseudo-jackknife updates use diagonally normalized Cholesky solves of unregularized
 information, so changing coefficient units preserves the updates.
 Optimization time includes final precise refreshes; total time also includes input
-preparation and post-fit calculations. Convergence CSV files from both integrated
-optimizers include optimizer status, likelihood, penalty, and objective histories,
+preparation and post-fit calculations. Convergence CSV files include optimizer status, likelihood, penalty, and objective histories,
 and evaluation counts and times. Detailed proposal diagnostics are in the result log.
 The gradient pass retains per-block information intermediates and sparse factors
 until the global information inverse is available, increasing peak worker memory.

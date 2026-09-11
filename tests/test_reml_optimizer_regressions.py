@@ -76,7 +76,7 @@ def test_pseudojackknife_reaches_quadratic_delete_optima():
     np.testing.assert_allclose(deleted[:, 0], [4., 2.])
 
 
-@pytest.mark.parametrize("optimizer", ["ai", "bfgs"])
+@pytest.mark.parametrize("optimizer", ["ai"])
 def test_final_uncertainty_uses_accepted_parameter_derivatives(monkeypatch, optimizer):
     result, manager, shared, captured = run_analytic(monkeypatch, optimizer=optimizer)
     theta = result["parameters"][0]

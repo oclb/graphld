@@ -330,8 +330,8 @@ def _add_reml_parser(
     )
     parser.add_argument('--link-function', choices=['softplus', 'exponential'],
                         default='softplus', help='Variance link (derivatives supplied automatically)')
-    parser.add_argument('--optimizer', choices=['bfgs', 'ai'], default='bfgs',
-                        help='Proposal metric; both choices use line search and precise stopping audits')
+    parser.add_argument('--optimizer', choices=['ai'], default='ai',
+                        help='Average-information optimization with line search and precise stopping audits')
     parser.add_argument('--information-penalty', '--firth', dest='information_penalty', type=float, nargs='?', const=1.0,
                         default=0.0, metavar='WEIGHT',
                         help='Opt in to WEIGHT/2 times logdet average information (default weight: 1 when enabled)')

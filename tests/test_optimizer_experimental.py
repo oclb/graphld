@@ -4,7 +4,7 @@ import pytest
 from graphld._optimizer import maximize, finite_difference_block_score, limit_linear_predictor_step
 
 
-@pytest.mark.parametrize('strategy',['trust','ai_line','bfgs'])
+@pytest.mark.parametrize('strategy',['trust','ai_line'])
 def test_large_damping_cannot_certify_a_distant_point(strategy):
     def objective(x):return -.5*(x[0]-10)**2
     def derivatives(x):return objective(x),10-x,np.eye(1)
@@ -63,7 +63,7 @@ def test_predictor_cap_handles_steps_beyond_single_precision_range():
         assert np.max(np.abs(a@step))>1.99
 
 
-@pytest.mark.parametrize('strategy',['ai_line','bfgs','trust'])
+@pytest.mark.parametrize('strategy',['ai_line','trust'])
 def test_initial_scale_and_numerical_ridge_cannot_manufacture_stationarity(strategy):
     def objective(x):return -.5*float(x@x)
     def derivative(x):
@@ -128,7 +128,7 @@ def test_matching_rounded_differences_cannot_certify_a_weak_coordinate():
     np.testing.assert_array_equal(state['parameters'],center)
 
 
-@pytest.mark.parametrize('strategy',['ai_line','bfgs','trust'])
+@pytest.mark.parametrize('strategy',['ai_line','trust'])
 def test_audit_control_variate_requires_precise_final_score(strategy):
     audited=[]
     def objective(x):return -.5*float(x@x)-.1*float(np.sum(x**4))

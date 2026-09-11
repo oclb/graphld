@@ -7,7 +7,7 @@ from graphld._cli_parser import build_parser
 
 def test_new_defaults_and_explicit_options():
     method=MethodOptions()
-    assert method.optimizer=='bfgs' and method.information_penalty==0
+    assert method.optimizer=='ai' and method.information_penalty==0
     assert method.num_iterations==100 and method.convergence_tol==.001
     explicit=MethodOptions(optimizer='ai',num_iterations=7,convergence_tol=.02,information_penalty=.5)
     assert (explicit.optimizer,explicit.num_iterations,explicit.convergence_tol,explicit.information_penalty)==('ai',7,.02,.5)
@@ -25,14 +25,19 @@ def test_invalid_tolerance(tolerance):
     with pytest.raises(ValueError,match='convergence_tol'):MethodOptions(convergence_tol=tolerance)
 
 
-def test_optimizer_validation():
-    with pytest.raises(ValueError,match='optimizer'):MethodOptions(optimizer='trust')
+@pytest.mark.parametrize('optimizer', ['trust', 'bfgs'])
+def test_optimizer_validation(optimizer):
+    with pytest.raises(ValueError,match='optimizer'):MethodOptions(optimizer=optimizer)
+
+def test_cli_rejects_removed_bfgs():
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(['reml', 'trait.sumstats', 'out', '--annot-dir', 'annotations', '--optimizer', 'bfgs'])
 
 
 def test_cli_defaults_firth_alias_and_overrides():
     parser=build_parser();base=['reml','trait.sumstats','out','--annot-dir','annotations']
     args=parser.parse_args(base)
-    assert (args.optimizer,args.information_penalty,args.num_iterations,args.convergence_tol)==('bfgs',0.,100,.001)
+    assert (args.optimizer,args.information_penalty,args.num_iterations,args.convergence_tol)==('ai',0.,100,.001)
     assert parser.parse_args(base+['--firth']).information_penalty==1.
     assert parser.parse_args(base+['--information-penalty','.25']).information_penalty==.25
     args=parser.parse_args(base+['--optimizer','ai','--num-iterations','7','--convergence-tol','.02'])

@@ -95,7 +95,7 @@ class Manager:
         pass
 
 
-def fit(strategy, weight=1., optimizer='bfgs'):
+def fit(strategy, weight=1., optimizer='ai'):
     model = ModelOptions(annotation_columns=['a0', 'a1'], params=np.array([[-.6], [.3]]),
                          sample_size=1, link_fn_denominator=2.3)
     penalty_options = {} if weight is None else dict(information_penalty=weight)
@@ -116,7 +116,7 @@ def fit(strategy, weight=1., optimizer='bfgs'):
     return result, manager
 
 
-@pytest.mark.parametrize('optimizer', ['ai','bfgs'])
+@pytest.mark.parametrize('optimizer', ['ai'])
 @pytest.mark.parametrize('strategy', ['exact', 'linear_screen', 'likelihood_screen'])
 def test_worker_and_supervisor_penalty_objective(strategy, optimizer):
     result, manager = fit(strategy, optimizer=optimizer)

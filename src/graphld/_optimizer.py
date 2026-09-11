@@ -102,7 +102,7 @@ class OptimizationResult:
     exact_derivative_evaluations: int = 0
     iterations: int = 0
     stationarity: dict = field(default_factory=dict)
-    metric_resets: list = field(default_factory=list)
+    score_refreshes: list = field(default_factory=list)
     proposal_selection_seconds: float = 0.0
     initial_parameter_scale: np.ndarray | None = None
 
@@ -164,7 +164,7 @@ def maximize(
     *,
     exact_derivatives: Callable | None = None,
     limit_step: Callable | None = None,
-    strategy: str = "bfgs",
+    strategy: str = "ai_line",
     max_iterations: int = 60,
     objective_tolerance: float = 1e-3,
     initial_damping: float = 0.1,
@@ -173,7 +173,7 @@ def maximize(
     screen_proposal: Callable | None = None,
     trial_observer: Callable | None = None,
 ):
-    """Maximize an objective using AI or BFGS proposals and exact trial values.
+    """Maximize an objective using average-information proposals and exact trial values.
 
     ``derivatives(theta)`` returns likelihood, score, positive information.
     ``limit_step(theta, step)`` can shorten a proposal in model coordinates.
@@ -190,7 +190,7 @@ def maximize(
     ``score_oracle_updates_on_audit`` with ``audit_correction``. The optimizer
     then relies on that correction and adds no second parameter-score offset.
     """
-    if strategy not in {"bfgs", "ai_line", "gradient_line", "trust"}:
+    if strategy not in {"ai_line", "gradient_line", "trust"}:
         raise ValueError("Unknown optimization strategy")
     if score_oracle_updates_on_audit and not audit_correction:
         raise ValueError("An updating score oracle requires audit_correction")
@@ -203,7 +203,6 @@ def maximize(
         np.maximum(np.diag(information), max(np.max(np.diag(information)), 1.0) * 1e-12)
     )
     result.initial_parameter_scale = scale.copy()
-    B = information / scale[:, None] / scale[None, :]
     damping = initial_damping
     exact = False
     score_is_exact = False
@@ -212,10 +211,8 @@ def maximize(
     raw_score = g.copy()
     small_changes = 0
 
-    def reset_metric(reason):
-        nonlocal B
-        B = information / scale[:, None] / scale[None, :]
-        result.metric_resets.append(dict(iteration=iteration, reason=reason))
+    def record_refresh(reason):
+        result.score_refreshes.append(dict(iteration=iteration, reason=reason))
 
     def value(t):
         result.objective_evaluations += 1
@@ -289,7 +286,7 @@ def maximize(
         ):
             exact = True
             f, g, information = refresh(x, force_audit=True)
-            reset_metric('precise_refresh')
+            record_refresh('precise_refresh')
             small_changes = 1
             continue
         if (
@@ -299,7 +296,7 @@ def maximize(
             and (predicted_gain <= objective_tolerance or small_changes >= 2)
         ):
             f, g, information = refresh(x, force_audit=True)
-            reset_metric('precise_refresh')
+            record_refresh('precise_refresh')
             small_changes = 0
             continue
         # Audit undamped directions; tiny damped steps are never stationarity.
@@ -335,17 +332,14 @@ def maximize(
             best_f, best_x = max(candidates, key=lambda t: t[0])
             x = best_x
             f, g, information = refresh(x)
-            reset_metric('signed_check_recovery')
+            record_refresh('signed_check_recovery')
             small_changes = 0
             continue
 
-        metric = B if strategy == "bfgs" else I
         proposal = {}
-        if strategy in {'bfgs', 'ai_line'}:
+        if strategy == 'ai_line':
             proposal_started = time.perf_counter()
-            candidates = [('bfgs' if strategy == 'bfgs' else 'ai', direction(metric, gs)/scale)]
-            if strategy == 'bfgs':
-                candidates.append(('ai', direction(I, gs)/scale))
+            candidates = [('ai', direction(I, gs)/scale)]
             gradient_step = gs / scale
             curvature = float(gradient_step @ information @ gradient_step)
             if curvature > 0:
@@ -455,13 +449,13 @@ def maximize(
             if not exact and exact_derivatives is not None:
                 exact = True
                 f, g, information = refresh(x, force_audit=True)
-                reset_metric('precise_refresh')
+                record_refresh('precise_refresh')
                 damping = initial_damping
                 small_changes = 1
                 continue
             if exact and audit_correction and not score_is_exact:
                 f, g, information = refresh(x, force_audit=True)
-                reset_metric('precise_refresh')
+                record_refresh('precise_refresh')
                 damping = initial_damping
                 small_changes = 0
                 continue
@@ -470,29 +464,12 @@ def maximize(
                     "stalled_exact_score" if exact else "stalled_stochastic_score"
                 )
                 break
-        old_x = x.copy()
-        old_g = g.copy()
         old_f = f
         x = trial
         f, g, information = refresh(x)
         if abs(float(f) - trial_f) > max(1e-6, 32 * np.spacing(abs(trial_f))):
             raise RuntimeError("Objective changed during derivative refresh")
         small_changes = small_changes + 1 if f - old_f < objective_tolerance else 0
-        if strategy == "bfgs":
-            s = (x - old_x) * scale
-            y = (old_g - g) / scale
-            Bs = B @ s
-            sy = float(s @ y)
-            sBs = float(s @ Bs)
-            if (
-                sy > 1e-10 * max(np.linalg.norm(s) * np.linalg.norm(y), 1e-30)
-                and sBs > 0
-            ):
-                B = B + np.outer(y, y) / sy - np.outer(Bs, Bs) / sBs
-                result.history[-1]['bfgs_update'] = 'accepted'
-            else:
-                reset_metric('curvature_condition')
-                result.history[-1]['bfgs_update'] = 'reset_curvature_condition'
     result.parameters = x.copy()
     result.likelihood = float(f)
     value(x)

@@ -1,4 +1,4 @@
-"""Sufficient-progress safeguards preserve useful BFGS proposals."""
+"""Sufficient-progress safeguards preserve productive AI proposals."""
 
 import numpy as np
 import pytest
@@ -7,22 +7,22 @@ from graphld._optimizer import maximize, limit_linear_predictor_step, select_cap
 
 
 @pytest.mark.parametrize('fraction', [.01, .1, .5])
-def test_adequate_uncapped_bfgs_is_retained(fraction):
-    bfgs = np.array([.5])
+def test_adequate_uncapped_primary_is_retained(fraction):
+    primary = np.array([.5])
     step, log = select_capped_proposal(
-        np.ones(1), np.eye(1), [('bfgs', bfgs), ('ai', np.ones(1))],
+        np.ones(1), np.eye(1), [('primary', primary), ('reference', np.ones(1))],
         lambda x: x, minimum_relative_gain=fraction,
     )
-    assert log['candidates']['ai']['predicted_gain'] > log['candidates']['bfgs']['predicted_gain']
-    assert log['direction'] == 'bfgs'
+    assert log['candidates']['reference']['predicted_gain'] > log['candidates']['primary']['predicted_gain']
+    assert log['direction'] == 'primary'
     assert log['primary_relative_gain'] == pytest.approx(.75)
-    np.testing.assert_array_equal(step, bfgs)
+    np.testing.assert_array_equal(step, primary)
 
 
-@pytest.mark.parametrize('fraction,expected', [(.01, 'bfgs'), (.1, 'ai'), (.5, 'ai')])
+@pytest.mark.parametrize('fraction,expected', [(.01, 'primary'), (.1, 'reference'), (.5, 'reference')])
 def test_fixed_fraction_sensitivity_is_explicit(fraction, expected):
     _, log = select_capped_proposal(
-        np.ones(1), np.eye(1), [('bfgs', np.array([.01])), ('ai', np.ones(1))],
+        np.ones(1), np.eye(1), [('primary', np.array([.01])), ('reference', np.ones(1))],
         lambda x: x, minimum_relative_gain=fraction,
     )
     assert log['direction'] == expected
@@ -30,8 +30,7 @@ def test_fixed_fraction_sensitivity_is_explicit(fraction, expected):
     assert log['primary_relative_gain'] == pytest.approx(.0199)
 
 
-@pytest.mark.parametrize('strategy', ['bfgs', 'ai_line'])
-def test_saturated_direction_cap_uses_productive_gradient(strategy):
+def test_saturated_direction_cap_uses_productive_gradient():
     # Average information can vanish quadratically while its score vanishes
     # linearly, making the raw AI direction huge in a saturated coefficient.
     def objective(x):
@@ -40,12 +39,12 @@ def test_saturated_direction_cap_uses_productive_gradient(strategy):
         return objective(x), np.array([1-x[0], -np.exp(x[1])]), np.diag([1., np.exp(2*x[1])])
     x = np.array([0., -45.])
     result = maximize(x, objective, derivatives, exact_derivatives=derivatives,
-                      strategy=strategy, max_iterations=1,
+                      strategy="ai_line", max_iterations=1,
                       limit_step=lambda x, d: limit_linear_predictor_step([np.eye(2)], d, 2.))
     log = result.history[0]['proposal']
     assert log['direction'] == 'scaled_gradient'
     assert log['reason'] == 'primary_below_objective_resolution'
-    primary = 'bfgs' if strategy == 'bfgs' else 'ai'
+    primary = 'ai'
     assert log['candidates'][primary]['cap_multiplier'] < 1e-18
     assert result.likelihood - objective(x) > .49
     assert result.status == 'max_iterations'
@@ -61,11 +60,11 @@ def test_no_resolvable_candidate_audits_then_stalls():
         audits.append(x.copy())
         return derivatives(x)
     result = maximize(np.zeros(1), lambda x: derivatives(x)[0], derivatives,
-                      exact_derivatives=exact, strategy='bfgs', max_iterations=5,
+                      exact_derivatives=exact, strategy='ai_line', max_iterations=5,
                       audit_correction=True,
                       limit_step=lambda x, d: d*1e-30)
     assert audits
     assert result.status == 'stalled_exact_score'
     assert not result.stationarity
-    assert result.metric_resets == [dict(iteration=0, reason='precise_refresh')]
+    assert result.score_refreshes == [dict(iteration=0, reason='precise_refresh')]
     np.testing.assert_array_equal(result.parameters, [0.])

@@ -638,7 +638,7 @@ def _run_reml_single_trait(
         score_test_hdf5_file_name=args.score_test_filename,
         score_test_hdf5_trait_name=trait_name,
         surrogate_markers_path=args.surrogates,
-        optimizer=getattr(args, 'optimizer', 'bfgs'),
+        optimizer=getattr(args, 'optimizer', 'ai'),
         information_penalty=getattr(args, 'information_penalty', 0.0),
         penalty_trial_strategy=getattr(args, 'penalty_trial_strategy', 'exact'),
     )

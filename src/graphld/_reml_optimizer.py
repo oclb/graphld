@@ -1,4 +1,4 @@
-"""REML worker callbacks for the shared AI/BFGS optimization framework."""
+"""REML worker callbacks for the average-information optimization framework."""
 
 import time
 import numpy as np
@@ -198,7 +198,7 @@ def optimize_reml(processor, manager, shared, block_data, model, method, flags):
         derivatives,
         exact_derivatives=lambda theta: derivatives(theta, precise=True),
         limit_step=lambda theta, step: limit_linear_predictor_step(designs, step, 2.0),
-        strategy="ai_line" if method.optimizer == "ai" else "bfgs",
+        strategy="ai_line",
         max_iterations=method.num_iterations,
         objective_tolerance=method.convergence_tol,
         audit_correction=True,

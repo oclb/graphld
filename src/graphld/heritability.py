@@ -118,7 +118,7 @@ class MethodOptions:
             derivatives for the score test.
         score_test_hdf5_trait_name: Name of the trait's subdirectory within the score test HDF5 file.
         surrogate_markers_path: Optional path to an HDF5 file with per-block surrogate mappings.
-        optimizer: "bfgs" (default) or "ai"; both use precise audits and line search.
+        optimizer: "ai"; uses precise audits and line search.
         information_penalty: Nonnegative weight on half the log determinant of global
             average information. Zero disables the penalty and its extra computation.
         penalty_trial_strategy: Exact evaluation at every trial, or linear_screen /
@@ -147,15 +147,15 @@ class MethodOptions:
     score_test_hdf5_file_name: Optional[str] = None
     score_test_hdf5_trait_name: Optional[str] = None
     surrogate_markers_path: Optional[str] = None
-    optimizer: str = "bfgs"
+    optimizer: str = "ai"
     information_penalty: float = 0.0
     penalty_trial_strategy: str = "exact"
 
     def __post_init__(self):
         if not np.isfinite(self.convergence_tol) or self.convergence_tol <= 0:
             raise ValueError("convergence_tol must be finite and positive")
-        if self.optimizer not in {"bfgs", "ai"}:
-            raise ValueError("optimizer must be bfgs or ai")
+        if self.optimizer != "ai":
+            raise ValueError("optimizer must be ai")
         if self.gradient_seed is None:
             # Random between fits, fixed across derivative calls within a fit.
             self.gradient_seed = int(np.random.SeedSequence().generate_state(1)[0] % (2**31))
@@ -1780,7 +1780,7 @@ class GraphREML(ParallelProcessor):
                 "accepted_steps": sum(h['accepted'] for h in optimized.history),
                 "stationarity": optimized.stationarity,
                 "optimizer_history": optimized.history,
-                "metric_resets": optimized.metric_resets,
+                "score_refreshes": optimized.score_refreshes,
                 "proposal_selection_seconds": optimized.proposal_selection_seconds,
                 "initial_parameter_scaling_diagonal": (optimized.initial_parameter_scale**2).tolist(),
                 "optimization_seconds": optimization['optimization_seconds'],

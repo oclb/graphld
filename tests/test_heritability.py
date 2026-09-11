@@ -713,5 +713,5 @@ def test_line_search_rejects_bad_step_before_accepting(monkeypatch):
     assert manager.likelihood_only_calls == 3
     np.testing.assert_allclose(result["parameters"], np.array([.5]))
     np.testing.assert_allclose(shared_data["params"], result["parameters"])
-    assert result["log"]["optimizer"] == "bfgs"
+    assert result["log"]["optimizer"] == "ai"
     assert result["log"]["accepted_steps"] == 1
