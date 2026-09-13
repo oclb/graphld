@@ -10,6 +10,12 @@ correction and precise endpoint audits. The information penalty is off by defaul
 and exact trial evaluation is the default penalty strategy. Penalized uncertainty
 calibration is deferred. A short appendix reports the exploratory BFGS comparison.
 
+The draft includes a dated interim analysis of the fixed 33-trait cohort.
+[Aggregate results](cohort_interim/cohort_status_and_estimates.tsv) retain all
+traits, with explicit validated, unresolved and pending status. Ten estimates
+are validated in this snapshot; nine fits remain unfinished. Experimental
+curvature corrections did not improve efficiency on the fixed synthetic controls.
+
 To compile the document, run `pdflatex graphreml_methods.tex` twice from this directory.
 The supplied tables and PDF figures are sufficient for compilation. To regenerate
 the figures with Python, NumPy and Matplotlib:
