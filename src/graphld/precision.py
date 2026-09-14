@@ -11,6 +11,7 @@ from typing import Callable, Optional, Tuple, Union
 
 import numpy as np
 import polars as pl
+from scipy.linalg.lapack import dtrtri
 from scipy.sparse import csc_matrix
 from scipy.sparse.linalg import LinearOperator, cg
 from sksparse.cholmod import cholesky
@@ -168,6 +169,41 @@ class PrecisionOperator(LinearOperator):
             raise ValueError("Update would make a diagonal element non-positive")
 
         self._matrix.data[diagonal_indices] = updated_diagonal
+        self._bump_matrix_version()
+        self._cholesky_is_up_to_date = False
+        self._factor_version = -1
+
+    def get_diagonal(self) -> np.ndarray:
+        """Return a copy of diagonal values in the current selection's order."""
+        return self._matrix.data[self.diagonal_indices].copy()
+
+    def set_diagonal(self, values: np.ndarray) -> None:
+        """Assign diagonal values in the current selection's order.
+
+        This restores a known diagonal directly, avoiding cancellation from
+        reversing a large additive update. Only selected entries change when
+        this operator is a view. An unchanged diagonal retains cached factors.
+
+        Args:
+            values: One finite, positive value per active matrix row.
+
+        Raises:
+            ValueError: If the length is incorrect or any stored value would
+                be nonfinite or nonpositive. Validation precedes mutation.
+        """
+        with np.errstate(over="ignore", invalid="ignore"):
+            values = np.asarray(values, dtype=self.dtype).reshape(-1)
+        if len(values) != self.shape[0]:
+            raise ValueError(
+                f"Diagonal length {len(values)} does not match matrix shape {self.shape}"
+            )
+        if not np.all(np.isfinite(values)) or np.any(values <= 0):
+            raise ValueError("Diagonal values must be finite and positive")
+
+        diagonal_indices = self.diagonal_indices
+        if np.array_equal(self._matrix.data[diagonal_indices], values):
+            return
+        self._matrix.data[diagonal_indices] = values
         self._bump_matrix_version()
         self._cholesky_is_up_to_date = False
         self._factor_version = -1
@@ -568,16 +604,21 @@ class PrecisionOperator(LinearOperator):
         if method not in ["exact", "hutchinson", "xdiag"]:
             raise ValueError(f"Unknown method: {method}")
 
-        # Slow, exact inversion
-        if method.lower() == "exact":
+        if method == "exact":
             if initialization is not None:
                 raise ValueError("Initialization not supported for exact method")
-
-            dense_matrix = self._matrix.toarray()
-            inv_matrix = np.linalg.inv(dense_matrix)
-            diag = np.diag(inv_matrix)
-
-            return diag if self._which_indices is None else diag[self._which_indices]
+            if not self._factor_is_current():
+                self.factor()
+            factor = self._solver
+            lower = factor.L().toarray(order="F")
+            inverse, info = dtrtri(lower, lower=1, overwrite_c=1)
+            if info:
+                raise np.linalg.LinAlgError(f"Triangular inversion failed: {info}")
+            diagonal = np.einsum("ij,ij->j", inverse, inverse)
+            unpermuted = np.empty_like(diagonal)
+            unpermuted[factor.P()] = diagonal
+            # The selected principal inverse is the inverse of the Schur complement.
+            return unpermuted if self._which_indices is None else unpermuted[self._which_indices]
 
         # Use a stochastic estimator
         if initialization is not None:
@@ -591,7 +632,7 @@ class PrecisionOperator(LinearOperator):
 
         if method.lower() == "hutchinson":
             # Solve M * y = v for each probe vector
-            y = self.solve(v, method="pcg", initialization=pv)
+            y = self.solve(v, method="direct" if self._factor_is_current() else "pcg", initialization=pv)
 
             # Estimate diagonal elements as average element-wise product of v_i * y_i
             diag_estimate = np.mean(v * y, axis=1)
@@ -623,13 +664,13 @@ class PrecisionOperator(LinearOperator):
         n, m = v.shape
 
         # Y = A @ v, A = inv(self)
-        Y = self.solve(v, method="pcg", initialization=initialization)
+        Y = self.solve(v, method="direct" if self._factor_is_current() else "pcg", initialization=initialization)
 
         # QR decomposition of Y
         Q, R = np.linalg.qr(Y, mode='reduced')
 
         # Z = A @ Q
-        Z = self.solve(Q, method="pcg")
+        Z = self.solve(Q, method="direct" if self._factor_is_current() else "pcg")
 
         with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
             T = Z.T @ v

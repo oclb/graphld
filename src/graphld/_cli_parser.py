@@ -290,17 +290,17 @@ def _add_reml_parser(
         '--num-iterations',
         help='Maximum number of iterations',
         type=int,
-        default=50,
+        default=100,
     )
     parser.add_argument(
         '--convergence-tol',
-        help='Convergence tolerance',
+        help='Precise score and signed objective convergence tolerance',
         type=float,
-        default=1e-2,
+        default=1e-3,
     )
     parser.add_argument(
         '--convergence-window',
-        help='Number of iterations to consider for convergence',
+        help='Retained for compatibility; precise score audits determine convergence',
         type=int,
         default=3,
     )
@@ -318,7 +318,7 @@ def _add_reml_parser(
     )
     parser.add_argument(
         '--reset-trust-region',
-        help='Reset trust region size to initial value at every iteration',
+        help='Retained for compatibility; the optimizer now uses line search',
         action='store_true',
         default=False,
     )
@@ -328,6 +328,16 @@ def _add_reml_parser(
         type=int,
         default=100,
     )
+    parser.add_argument('--link-function', choices=['softplus', 'exponential'],
+                        default='softplus', help='Variance link (derivatives supplied automatically)')
+    parser.add_argument('--optimizer', choices=['ai'], default='ai',
+                        help='Average-information optimization with line search and precise stopping audits')
+    parser.add_argument('--information-penalty', '--firth', dest='information_penalty', type=float, nargs='?', const=1.0,
+                        default=0.0, metavar='WEIGHT',
+                        help='Opt in to WEIGHT/2 times logdet average information (default weight: 1 when enabled)')
+    parser.add_argument('--penalty-trial-strategy',
+                        choices=['exact', 'linear_screen', 'likelihood_screen'], default='exact',
+                        help='Exact trial evaluation (default); screening choices are experimental')
     parser.add_argument(
         '--max-chisq-threshold',
         help='Maximum allowed chi^2 value in a block. Blocks with chi^2 > threshold are excluded.',

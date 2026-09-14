@@ -603,8 +603,8 @@ def test_score_test(metadata_path, create_annotations, create_sumstats):
             os.unlink(variant_stats_path)
 
 
-def test_trust_region_rejects_bad_step_before_accepting(monkeypatch):
-    """Rejected trust-region steps should restore params before retrying."""
+def test_line_search_rejects_bad_step_before_accepting(monkeypatch):
+    """Rejected line-search steps retry from the accepted parameters."""
     class FakeTrustRegionManager:
         def __init__(self, shared_data):
             self.shared_data = shared_data
@@ -706,11 +706,12 @@ def test_trust_region_rejects_bad_step_before_accepting(monkeypatch):
     )
 
     assert manager.flags == [
-        FLAGS["INITIALIZE"],
-        FLAGS["COMPUTE_LIKELIHOOD_ONLY"],
-        FLAGS["COMPUTE_LIKELIHOOD_ONLY"],
+        FLAGS["INITIALIZE"], FLAGS["COMPUTE_LIKELIHOOD_ONLY"],
+        FLAGS["COMPUTE_LIKELIHOOD_ONLY"], FLAGS["COMPUTE_ALL"],
+        FLAGS["COMPUTE_LIKELIHOOD_ONLY"], FLAGS["COMPUTE_PRECISE"],
     ]
-    assert manager.likelihood_only_calls == 2
-    np.testing.assert_allclose(result["parameters"], np.array([1.0 / 6.0]))
-    np.testing.assert_allclose(shared_data["params"], np.array([1.0 / 6.0]))
-    assert result["log"]["trust_region_lambdas"] == [5.0]
+    assert manager.likelihood_only_calls == 3
+    np.testing.assert_allclose(result["parameters"], np.array([.5]))
+    np.testing.assert_allclose(shared_data["params"], result["parameters"])
+    assert result["log"]["optimizer"] == "ai"
+    assert result["log"]["accepted_steps"] == 1

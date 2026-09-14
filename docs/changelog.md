@@ -2,6 +2,25 @@
 
 This changelog starts from `v1.2.0`.
 
+## v1.3.0 - 2026-09-14
+
+### Added
+
+- Added an optional average-information penalty (`--firth`, off by default) and exponential variance link for graphREML.
+
+### Changed
+
+- Updated graphREML to use AI optimization with backtracking line search, fixed-probe score correction, and precise convergence checks. Defaults are 100 iterations and a convergence tolerance of 0.001; likelihood-window and trust-region settings remain compatibility arguments.
+- Labeled convergence CSV histories by accepted step, starting at zero for initialization, separately from optimizer iteration counts.
+- Updated CLI and Python guidance for configuration, convergence, and uncertainty status.
+
+### Fixed
+
+- Corrected covariance restoration, exact inverse-diagonal calculations, and pseudo-jackknife information solves.
+- Withheld unavailable uncertainty when information is singular or delete calculations produce invalid standard errors or enrichment.
+
+Convergence remains trait-dependent. Inspect convergence and uncertainty status before interpreting estimates; uncertainty calibration for the optional penalty has not been established.
+
 ## v1.2.3 - 2026-07-18
 
 ### Fixed

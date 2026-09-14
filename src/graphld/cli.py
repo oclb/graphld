@@ -546,6 +546,27 @@ def write_convergence_results(filename: str, results: dict):
     """
     log = results['log']
 
+    if log.get('optimizer') or log.get('information_penalty', 0):
+        import csv
+        with open(filename, 'w', newline='') as f:
+            writer = csv.writer(f)
+            keys = ['converged', 'termination_reason', 'num_iterations', 'final_likelihood',
+                    'information_penalty', 'penalty_trial_strategy', 'final_penalty',
+                    'final_objective', 'uncertainty_method', 'optimizer', 'uncertainty_status',
+                    'optimization_seconds', 'total_seconds']
+            writer.writerow(keys)
+            writer.writerow([log.get(key, '') for key in keys])
+            writer.writerow([])
+            writer.writerow(['accepted_step', 'likelihood', 'penalty', 'objective', 'trust_region_lambda'])
+            for i, row in enumerate(zip(results['likelihood_history'], results['penalty_history'],
+                                         results['objective_history'], log['trust_region_lambdas'], strict=True)):
+                writer.writerow([i, *row])
+            writer.writerow([])
+            writer.writerow(['evaluation', 'count', 'seconds'])
+            for key, count in log['evaluation_counts'].items():
+                writer.writerow([key, count, log['evaluation_seconds'].get(key, '')])
+        return
+
     # Write to CSV
     with open(filename, 'w') as f:
         # Write header
@@ -598,7 +619,8 @@ def _run_reml_single_trait(
         annotation_columns=annotation_columns,
         link_fn_denominator=num_snps_annot,
         binary_annotations_only=args.binary_annotations_only,
-        params=initial_params
+        params=initial_params,
+        link_function=getattr(args, 'link_function', 'softplus'),
     )
 
     method_options = MethodOptions(
@@ -616,6 +638,9 @@ def _run_reml_single_trait(
         score_test_hdf5_file_name=args.score_test_filename,
         score_test_hdf5_trait_name=trait_name,
         surrogate_markers_path=args.surrogates,
+        optimizer=getattr(args, 'optimizer', 'ai'),
+        information_penalty=getattr(args, 'information_penalty', 0.0),
+        penalty_trial_strategy=getattr(args, 'penalty_trial_strategy', 'exact'),
     )
 
     results = run_graphREML(

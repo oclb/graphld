@@ -29,6 +29,10 @@ Default output:
 - `output_prefix.tall.csv`: heritability, enrichment, and coefficient estimates
 - `output_prefix.convergence.csv`: optimization diagnostics
 
+In the convergence CSV, `num_iterations` counts optimizer iterations. The
+`accepted_step` history starts at zero for initialization and advances only when
+a step is accepted.
+
 With `--alt-output`:
 
 - `output_prefix.heritability.csv`
@@ -57,13 +61,42 @@ downloaded European score file.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--num-iterations` | `50` | Maximum optimization iterations |
-| `--convergence-tol` | `0.01` | Convergence tolerance |
-| `--convergence-window` | `3` | Iterations used for convergence checks |
+| `--optimizer` | `ai` | Average-information optimization with line search |
+| `--num-iterations` | `100` | Maximum optimization iterations |
+| `--convergence-tol` | `0.001` | Precise score and signed objective tolerance |
+| `--convergence-window` | `3` | Compatibility argument |
 | `--num-jackknife-blocks` | `100` | Jackknife blocks for standard errors |
 | `--xtrace-num-samples` | `100` | Samples for stochastic gradient estimation |
-| `--reset-trust-region` | `False` | Reset trust-region size each iteration |
+| `--reset-trust-region` | `False` | Compatibility argument |
 | `--initial-params` | `None` | Comma-separated initial coefficient values |
+| `--link-function` | `softplus` | Variance link: `softplus` or `exponential` |
+| `--information-penalty`, `--firth` | `0.0` | Optional information-penalty weight; `1.0` when enabled without a value |
+| `--penalty-trial-strategy` | `exact` | Trial evaluation: `exact`, or experimental `linear_screen` / `likelihood_screen` |
+
+graphREML uses average-information optimization with precise convergence checks.
+The default tolerance of `0.001` bounds an information-scaled score criterion and
+actual objective improvements in four signed direction checks. Earlier releases
+used recent likelihood changes; `--convergence-window` and `--reset-trust-region`
+are retained for compatibility and have no effect.
+
+Inspect `converged`, `termination_reason`, and `uncertainty_status` in the
+convergence CSV before interpreting estimates. Convergence establishes the local
+checks, without guaranteeing a global optimum. Uncertainty at unresolved endpoints
+is provisional; singular information or invalid delete calculations make it
+unavailable.
+
+To enable the optional information penalty:
+
+```bash
+uv run graphld reml summary.sumstats output --annot-dir annotations --firth
+```
+
+This adds one half the log determinant of global average information to the
+likelihood. It requires positive-definite information at initialization. Use
+`--information-penalty 0.5` for a different nonnegative weight. Formal bias
+reduction and uncertainty calibration for penalized estimates have not been
+established. See the [methods and evaluation write-up](../methods/graphreml_optimization/README.md)
+for algorithm details, screening strategies, and numerical comparisons.
 
 ## Variant Matching And Filtering
 

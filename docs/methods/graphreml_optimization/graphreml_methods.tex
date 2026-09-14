@@ -1,0 +1,326 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,bm,booktabs,microtype,float,graphicx}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\AI}{\mathrm{AI}}
+\newcommand{\R}{\mathbb R}
+\title{Information regularization and convergence diagnostics for graphREML}
+\author{}
+\date{Methodological working draft --- September 14, 2026}
+\begin{document}
+\maketitle
+\begin{abstract}
+We describe average-information (AI) optimization with backtracking line search, correction of stochastic scores, and accurate endpoint audits for graphREML, together with an optional average-information log-determinant penalty and an efficient analytic penalty gradient. AI is the supported optimizer and the Firth approximation is off by default. Genome-wide AI fits passed the local stationarity checks for Weight, BMI, and Hemoglobin. Relative to the historical implementation, fit time decreased from 65.79 to 44.97 minutes for Weight and increased from 20.61 to 39.18 minutes for BMI; neither historical endpoint passed the precise checks. With the penalty enabled, the six main enrichment estimates changed by at most 2.93\% in Weight and Hemoglobin, with larger effects for selected depleted annotations. We quantify runtime and marginal enrichment for annotations displayed in the published graphREML study. All 33 baseline-LD cohort fits finished: thirteen passed validation, nineteen reached the iteration limit, and one passed the local stopping checks but had singular information. Evaluation of uncertainty under penalization is deferred.
+\end{abstract}
+
+\section{Likelihood, link function, and information}
+For LDGM block $b$, let $y_b$ denote the transformed summary statistics and write their covariance as
+\begin{equation}
+ M_b(\theta)=C_b+\diag\{d_b(\theta)\},\qquad
+ d_{bj}(\theta)=\sum_{i:\,\pi_b(i)=j}h_{bi}(\theta).
+ \label{eq:cov}
+\end{equation}
+Here $C_b$ is the fixed residual covariance in transformed coordinates, $\pi_b$ maps variants to covariance nodes, and $h_{bi}$ is a variant's genetic variance. With inverse LD matrix $Q_b$, sample size $n$, and fixed intercept $\kappa$, the implementation uses $C_b=\kappa Q_b/n$. All derivatives below condition on this residual term and on the matched variants and annotations. The block Gaussian objective is
+\begin{equation}
+ \ell(\theta)=-\frac12\sum_b\left\{\log\det M_b+y_b^\mathsf{T}M_b^{-1}y_b\right\}+\mathrm{constant}.
+\end{equation}
+For annotation row $a_{bi}^\mathsf{T}$, set $\eta_{bi}=a_{bi}^\mathsf{T}\theta$ and $h_{bi}=f(\eta_{bi})$. The default link and its scalar derivatives are
+\begin{equation}
+ f(\eta)=\frac{\log(1+e^\eta)}{c},\quad
+ f'(\eta)=\frac{\sigma(\eta)}{c},\quad
+ f''(\eta)=\frac{\sigma(\eta)\{1-\sigma(\eta)\}}{c},
+ \qquad \sigma(\eta)=\frac1{1+e^{-\eta}},
+\end{equation}
+with fixed normalization $c>0$ and numerically stable evaluation. An exponential link and a factory supplying a value, first derivative, and second derivative are also supported.
+
+Define the node Jacobian $J_b=\partial d_b/\partial\theta^\mathsf{T}$, with
+\begin{equation}
+ (J_b)_{jk}=\sum_{i:\,\pi_b(i)=j}f'(\eta_{bi})a_{bi,k},\quad
+ v_b=M_b^{-1}y_b,\quad U_b=\diag(v_b)J_b,\quad V_b=M_b^{-1}U_b.
+\end{equation}
+The score and positive average-information metric are
+\begin{align}
+ g(\theta)&=\frac12\sum_b J_b^\mathsf{T}\left\{v_b\odot v_b-\diag(M_b^{-1})\right\},\label{eq:score}\\
+ I(\theta)&=\sum_b I_b(\theta),\qquad I_b(\theta)=\frac12U_b^\mathsf{T}V_b.\label{eq:info}
+\end{align}
+Average-information methods provide efficient curvature approximations for variance-parameter optimization \cite{gilmour}. In this nonlinear link parameterization, $I$ is a proposal metric; it is generally different from the negative observed Hessian. The likelihood score requires inverse-diagonal estimates, whereas equation~\eqref{eq:info} uses covariance solves without a stochastic trace estimate.
+
+\section{Optional information penalty}
+For a fixed weight $w\geq0$, the penalized objective is
+\begin{equation}
+ F_w(\theta)=\ell(\theta)+P_w(\theta),\qquad
+ P_w(\theta)=\frac{w}{2}\log\det I(\theta).
+ \label{eq:penalty}
+\end{equation}
+The default is $w=0$. The log determinant is taken \emph{after} summing information across blocks. Summing block log determinants would define a different penalty and could fail when individual blocks do not identify every parameter.
+
+For $w>0$, the objective is evaluated on the domain $I(\theta)\succ0$, using a Cholesky factorization. A singular or indefinite trial information matrix is inadmissible; an inadmissible accepted starting point produces an explicit error. No ridge or eigenvalue truncation is added to this penalty. A finite, nonsaturated starting point and an identifiable annotation design are therefore needed. Numerical regularization used solely to construct an optimizer proposal is separate from equation~\eqref{eq:penalty}.
+
+The penalty discourages loss of information: along a path where $\det I\to0$, $P_w\to-\infty$. This includes saturated link directions whose Jacobian vanishes while the other information eigenvalues remain bounded. It does not exclude every small variance, guarantee a finite maximizer, or establish global convergence. The log determinant depends on parameter coordinates: a fixed invertible linear reparameterization changes it by an additive constant, whereas a nonlinear reparameterization can change the penalized maximizer. The model's link and coefficient coordinates consequently form part of the specification.
+
+The construction is motivated by information-based penalization associated with Firth's bias-reduction work \cite{firth}. Here the matrix is the data-dependent average-information metric. First-order bias reduction and the finiteness properties of particular Firth estimators have not been established for this objective.
+
+\subsection{Penalty gradient without a third-order tensor}
+The exact derivative of the implemented penalty is
+\begin{equation}
+ \partial_k P_w=\frac{w}{2}\tr\left\{W\partial_k I\right\},\qquad W=I^{-1}.
+ \label{eq:trace}
+\end{equation}
+Although this differentiates an approximate Hessian, it can be computed using link second derivatives and matrix contractions, without forming a $p\times p\times p$ array. Suppress block subscripts for the next derivation. For an arbitrary perturbation $\delta\theta$, define $\delta d=J\delta\theta$. Then
+\begin{align}
+ \delta v&=-M^{-1}\diag(\delta d)v,\\
+ \delta U&=\diag(\delta v)J+\diag(v)\delta J,\\
+ \delta I_b&=\frac12\left\{(\delta U)^\mathsf{T}V+V^\mathsf{T}\delta U
+       -V^\mathsf{T}\diag(\delta d)V\right\}.
+\end{align}
+Let $T=VW$ and define the node vectors
+\begin{equation}
+ r_j=\sum_k J_{jk}T_{jk},\qquad t_j=\sum_k V_{jk}T_{jk},
+\end{equation}
+and the variant vector
+\begin{equation}
+ z_i=v_{\pi(i)} f''(\eta_i)\sum_k a_{ik}T_{\pi(i),k}.
+\end{equation}
+Contracting the differential with $W$ gives the block contribution
+\begin{equation}
+ \nabla P_w\big|_b=
+ w\left[\frac12 A^\mathsf{T}z
+ -\frac12J^\mathsf{T}\{v\odot(M^{-1}r)\}
+ -\frac14J^\mathsf{T}t\right].
+ \label{eq:efficient}
+\end{equation}
+Sum equation~\eqref{eq:efficient} across blocks using the \emph{same global} $W$. The first term differentiates the link Jacobian, the second differentiates $v=M^{-1}y$, and the third differentiates the inverse covariance between the two columns of $U$.
+
+Computing $I_b$ already supplies $v$ and $V$. After aggregating $I$ and broadcasting $W$, the gradient requires one additional vector solve per block, plus contractions of the existing node-by-parameter arrays. The multiplication $VW$ costs $O(m_b p^2)$ for $m_b$ nodes; link contractions cost $O(n_b p)$ for $n_b$ variants. Covariance factors and intermediates are retained across these two passes. Finite-difference tests cover the full penalty, global aggregation, and multiple variants mapping to one node.
+
+The penalized score is $g_w=g+\nabla P_w$. Average-information optimization uses $I$ as its proposal metric and omits $\nabla^2P_w$ from that metric. Step acceptance is evaluated on $F_w$.
+
+\section{Trial evaluation and linear screening}
+Given a current accepted point $\theta$ and proposed step $s$, the optimizer requires sufficient increase in the actual objective:
+\begin{equation}
+ \Delta F_w=\ell(\theta+s)-\ell(\theta)+P_w(\theta+s)-P_w(\theta)
+ >\max\{10^{-4}g_w^\mathsf{T}s,\,\epsilon_F\},
+\end{equation}
+where $\epsilon_F$ is four floating-point spacings at $|F_w(\theta)|$. Backtracking halves the limited initial step, allowing up to eight trial sizes. The default exact strategy computes information and the penalty at each trial. The penalty gradient is needed only when derivatives are evaluated at accepted points.
+
+The experimental linear screen first computes the trial likelihood and approximates only the penalty increment:
+\begin{equation}
+ \widehat{\Delta F_w}=
+ \ell(\theta+s)-\ell(\theta)+\nabla P_w(\theta)^\mathsf{T}s.
+ \label{eq:screen}
+\end{equation}
+The same sufficient-increase threshold is applied to this estimate. A failing screen initially skips the trial information calculation; a passing screen triggers that calculation and the actual penalized acceptance test. Every accepted trial therefore has an actual penalty evaluation.
+
+Equation~\eqref{eq:screen} is a Taylor approximation, not an upper or lower bound. A false positive incurs an unnecessary information evaluation; a false negative can discard a useful step. After two consecutive screen rejections, or exhaustion of a search that skipped any trials, the implementation retries the complete original search with exact penalty evaluation. This includes previously screened trial sizes. The fallback prevents screening alone from exhausting that search, although screening can still change which acceptable step is found first. Counters record rescued false rejections and whether an exact trial would have failed the linear screen. These checks add no information evaluations to the exact reference strategy. The fallback passed software tests; its matched genome-wide cost and behavior are reported in Table~\ref{tab:screenmatched}.
+
+\subsection{Initial real-data comparison}
+An initial trust-region implementation was used for nine runs comparing exact evaluation, linear screening, and likelihood-only screening on chromosome 22, with 94,316 matched SNPs, 97 coefficients, weight $w=1$, and a 20-iteration cap. Table~\ref{tab:screen} summarizes exact and linear screening. All three pairs had identical final parameters and recorded accepted-objective histories. Intermediate parameter snapshots were not recorded, so identity of every intermediate parameter vector is not claimed.
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lrrrr}
+\toprule
+&\multicolumn{2}{c}{Trial information passes}&\multicolumn{2}{c}{Fit time (seconds)}\\
+Trait&Exact&Linear&Exact&Linear\\
+\midrule
+Hemoglobin&130&111&163.9&144.6\\
+Neutrophil percentage&61&27&96.4&75.4\\
+Mean platelet volume&114&85&189.0&189.6\\
+\bottomrule
+\end{tabular}
+\caption{Trial-evaluation comparison. Counts exclude full accepted-point derivative passes, which were equal between the paired strategies. Mean platelet volume timings may overlap an independent genome-wide fit and do not establish a wall-time benefit.}
+\label{tab:screen}
+\end{table}
+The exact and linear runs reached the iteration cap while still improving. These results establish preliminary path agreement and evaluation savings, not penalized convergence. Likelihood-only screening, which drops the last term of equation~\eqref{eq:screen}, stopped prematurely in all three examples, with final penalized objectives below the exact runs by 327.84, 32.84, and 204.46, respectively. This comparison motivates retaining the penalty's first-order contribution in any screen.
+
+\section{Stochastic score correction and AI optimization}
+\subsection{Correction at covariance nodes}
+The stochastic part of equation~\eqref{eq:score} is $q_b=\diag(M_b^{-1})$. Let $\widehat q_b(\theta;\omega_b)$ be its estimate with fixed probe configuration $\omega_b$. At an audit point $\theta_a$, obtain an accurate inverse diagonal and store
+\begin{equation}
+ e_{ba}=\widehat q_b(\theta_a;\omega_b)-q_b(\theta_a).
+\end{equation}
+Until the next audit, use
+\begin{equation}
+ \widetilde q_b(\theta)=\widehat q_b(\theta;\omega_b)-e_{ba},\qquad
+ \widetilde g(\theta)=\frac12\sum_bJ_b(\theta)^\mathsf{T}
+ \{v_b(\theta)^{\odot2}-\widetilde q_b(\theta)\}.
+ \label{eq:anchor}
+\end{equation}
+The correction is exact at the audit point up to numerical solve error, and is reused heuristically nearby. Applying the current $J_b(\theta)$ allows the correction to scale as link derivatives change. A constant correction to the final parameter score can instead remain substantial when the corresponding link derivatives have nearly vanished. Equation~\eqref{eq:anchor} still requires fresh audits because covariance changes can change the inverse-diagonal estimation error. Probe settings and node selections must match before reuse; accurate audits always recompute the actual inverse diagonal. The likelihood objective is unchanged.
+
+\subsection{AI proposals and line search}
+The optimizer scales coefficients using a fixed diagonal scale $S$ from the initial information matrix. In scaled coordinates $x=S\theta$, the information metric is $S^{-1}IS^{-1}$. The primary ascent direction is the current information-scoring direction $I^{-1}g$, evaluated using diagonal normalization and numerical regularization solely for the proposal solve. Information used for the penalty and uncertainty is unregularized.
+
+Steps are limited by their maximum linear-predictor movement, then tested by backtracking. The line search permits up to eight trials, successively halving the step, and requires actual objective gain greater than both $10^{-4}g^\mathsf{T}s$ and a floating-point resolution floor. Failure triggers an accurate score audit when available. The maximum linear-predictor change is two before backtracking. Penalized optimization uses $F_w$ and $g_w$ throughout.
+
+\subsection{Sufficient-progress safeguard}
+In saturated link directions, information can vanish quadratically while the score vanishes linearly. The resulting large scoring step can cause the shared predictor cap to suppress useful movement in other coordinates. A gradient reference supplies an alternative direction when the capped AI proposal predicts insufficient progress. For a capped candidate displacement $d$, define
+\begin{equation}
+ m(d)=g^\mathsf{T}d-\tfrac12d^\mathsf{T}Id.
+\end{equation}
+Before applying the predictor cap, the gradient reference is
+\begin{equation}
+ d_G=\alpha S^{-2}g,\qquad
+ \alpha=\frac{g^\mathsf{T}S^{-2}g}{(S^{-2}g)^\mathsf{T}I(S^{-2}g)},
+\end{equation}
+when the denominator is positive. Both candidates are subject to the same cap. AI is retained if its predicted gain exceeds numerical objective resolution and is at least $\eta=0.1$ times the largest positive candidate gain; otherwise the most productive reference is used. The actual objective is checked by the same line search.
+
+The fraction $\eta$ is a fixed, dimensionless algorithm constant. Proposal choices, predicted-gain ratios, cap multipliers, and score refreshes are recorded. Candidate selection adds small dense parameter-space calculations and predictor-cap contractions, with no additional likelihood or derivative evaluations. All accepted proposals in the Weight, BMI, and Hemoglobin AI comparisons below used AI; these fits therefore do not measure the gradient fallback's effect on convergence. Candidate selection took 5.42 seconds for the unpenalized Weight fit and 4.12 seconds for BMI.
+
+\section{Effects on marginal heritability enrichment}
+\subsection{Published annotation selection and estimand}
+The primary annotations are the six categories displayed in Figure 3 of Li et al.\ \cite{li}: Coding, Conserved, DHS, Enhancer, Promoter, and Repressed. Their underlying unflanked columns are respectively \texttt{Coding\_UCSC}, \texttt{Conserved\_LindbladToh}, \texttt{DHS\_Trynka}, \texttt{Enhancer\_Hoffman}, \texttt{Promoter\_UCSC}, and \texttt{Repressed\_Hoffman}. The published figure and Supplementary Tables S1 and S8 establish this selection. For binary annotation $A$ and the matched SNP universe $\mathcal S$, the estimand is
+\begin{equation}
+ E_A=\frac{\sum_{i\in A\cap\mathcal S}\widehat h_i/\sum_{i\in\mathcal S}\widehat h_i}
+ {|A\cap\mathcal S|/|\mathcal S|}.
+\end{equation}
+All other annotations remain in the fitted model. Overlapping annotations mean that a coefficient approaching a saturated value does not by itself imply zero marginal enrichment for that annotation.
+
+\subsection{Matched-start Weight comparison}
+We evaluated two unpenalized configurations from identical finite neutral starting parameters and matched inputs: the historical Python optimizer with the validated solve override used by the analysis runner, and the AI implementation with line search and precise audits. Each fit used 97 annotation coefficients and approximately 7.22 million SNPs. Figure~\ref{fig:matched} reports fit runtime and relative changes in marginal enrichment; Table~\ref{tab:matched} gives the point estimates.
+
+The historical method reached its 50-iteration cap in 65.79 minutes of subprocess time; its independent audit gave $Q=2.239$ and found a signed likelihood improvement of 0.871. The integrated AI method passed the stationarity checks after 34 iterations in 44.97 minutes, with $Q=0.000691$ and all four signed objective changes negative.
+
+Supervisor optimization times were 62.53 and 42.52 minutes for historical and AI, respectively; these include remaining worker initialization and native final derivative refreshes. The historical independent audit took a further 7.16 minutes, excluded from its fit time. Historical timing includes supervisor tracing. Both fits used 12 workers and the recorded local power policy with Low Power Mode enabled. These are individual sequential runs. The revised AI path exactly reproduced its earlier integrated path, which took 48.32 minutes rather than 44.97 minutes; this variation should not be attributed to changed optimization behavior. For context, earlier local 2--4-parameter alpha fits took 7--17 minutes over 5--6 iterations; a 97-annotation BMI fit using the same historical runner took 20.61 minutes over 16 iterations. Those different models and traits are not matched timing controls.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{safeguarded_comparison/matched_optimizer_comparison.pdf}
+\caption{Matched-start comparison for Weight with the penalty off; AI includes the sufficient-progress safeguard. (a) Whole-process fitting time, excluding the separate historical endpoint audit. Asterisks identify fits that did not converge. (b) Relative changes in six marginal enrichment estimates compared with the historical endpoint; the vertical line denotes no change. AI passed the accurate local stationarity checks; historical estimates remain provisional. Points are estimates without uncertainty intervals, and this comparison does not evaluate uncertainty calibration.}
+\label{fig:matched}
+\end{figure}
+
+\begin{table}[H]
+\centering\small
+\input{safeguarded_comparison/matched_optimizer_enrichment_table.tex}
+\caption{Marginal enrichment for the six main published categories in the matched-start Weight comparison. The historical fit did not converge; AI passed the accurate local endpoint checks.}
+\label{tab:matched}
+\end{table}
+
+\subsection{BMI working-trait control}
+BMI was selected because the earlier 97-annotation fit reported native convergence. From the same neutral start, AI passed the precise endpoint checks after 26 iterations and 22 accepted steps, with $Q=0.0003844$ and all four signed objective gains negative. Process time was 39.18 minutes and optimizer time was 36.79 minutes. AI used 27 full derivative passes, including four precise passes, and one exhausted line search was followed by a precise refresh. Total heritability was 0.266167; Table~\ref{tab:bmicontrol} compares the primary enrichments with the historical fit.
+
+\begin{table}[H]
+\centering\small
+\input{working_control_comparison/working_control_ai_enrichment_table.tex}
+\caption{BMI marginal enrichment under the historical fit and AI with line search and precise audits. AI passed the stationarity checks. The prior fit reported convergence using likelihood-window stopping but failed the independent precise endpoint audit.}
+\label{tab:bmicontrol}
+\end{table}
+
+The earlier BMI fit took 20.61 minutes and 16 iterations. Its likelihood was 0.7822 below the new AI fit; the largest main enrichment change was a 1.89\% decrease for enhancer regions. The earlier and integrated fits have different stopping rules and slightly different timer boundaries. These observed times document added cost on a previously successful trait but do not isolate a controlled implementation speed ratio. An independent audit reproduced the earlier endpoint likelihood exactly while retaining its saved parameters. It failed the stronger criteria: $Q=0.8057$ and a tested direction improved the likelihood by 0.7132, both above the 0.001 tolerance. Information remained full rank after diagonal normalization. The separate audit took 6.53 minutes and made no optimization updates. This confirms a convergence gap in the earlier result, without quantitatively attributing all added runtime to that gap.
+
+\subsection{Optional penalty: matched Weight and Hemoglobin comparisons}
+Using the validated AI optimizer, we compared penalty weights zero and one from the same neutral start, with exact trial-penalty evaluation. The penalized fit passed the stationarity checks after 24 iterations and 21 accepted steps, with $Q=5.92\times10^{-5}$ and maximum signed objective gain $5.38\times10^{-6}$, below the $0.001$ tolerance. Its raw likelihood decreased by 0.876 relative to the unpenalized fit, as expected when maximizing a different objective. The final weighted global half-log-determinant was 149.2664. Total heritability increased from 0.287685 to 0.288064.
+
+\begin{table}[H]
+\centering\small
+\input{penalty_comparison/weight_main_enrichment_table.tex}
+\caption{Effect of the optional information penalty on the six main marginal enrichment estimates for Weight, using the same safeguarded AI implementation. Both fits passed the accurate penalized or unpenalized stationarity checks. Changes are relative to the penalty-off estimate. Uncertainty calibration is not evaluated.}
+\label{tab:penaltyweight}
+\end{table}
+
+The largest change among the six primary enrichments was a 1.14\% decrease for conserved regions. All 97 fitted annotation summaries were retained for transparent assessment of secondary examples. Some model columns are signed continuous annotations, whose weighted summaries do not represent heritability fractions for sets of SNPs. The three secondary annotations displayed below were verified to contain only zero and one across all 22 source chromosome files, with no missing or nonfinite values; their source hashes match both fitted subsets.
+
+The penalized fit took 38.09 minutes of subprocess time and 35.67 minutes in the optimizer, compared with 44.97 and 42.52 minutes without the penalty. The penalty changed the objective and optimization path, reducing iterations from 34 to 24, so these timings do not establish a general speed benefit. It used 25 full derivative passes, including three precise passes, 33 additional exact information evaluations taking 625.82 seconds, and 25 penalty-gradient contractions taking 31.48 seconds. All 21 proposal rows selected AI without fallback. Penalty uncertainty is evaluated using the retained approximation and its calibration remains untested.
+
+For Hemoglobin, unpenalized AI passed the stationarity checks after 71 iterations and 67 accepted steps ($Q=0.0007232$). Penalized AI passed after 54 iterations and 51 accepted steps ($Q=0.0007072$), with maximum signed objective gain 0.0002811, below the 0.001 tolerance. All accepted proposals in both fits used AI. Total heritability increased from 0.193722 to 0.194172; raw likelihood decreased by 1.591, and the final penalty was 128.6598. The largest primary enrichment change was a 2.93\% increase for repressed regions (Table~\ref{tab:penaltyhemoglobin}).
+
+\begin{table}[H]
+\centering\small
+\input{penalty_comparison/hemoglobin_main_enrichment_table.tex}
+\caption{Effect of the optional information penalty on Hemoglobin's six primary marginal enrichments. Both AI fits passed the accurate endpoint checks. Changes are relative to the unpenalized estimate.}
+\label{tab:penaltyhemoglobin}
+\end{table}
+
+Hemoglobin process times were 73.30 minutes without the penalty and 70.08 minutes with it; optimizer times were 70.92 and 67.68 minutes. Penalized optimization required 55 full derivative passes, including three precise passes, and 75 additional exact information evaluations taking 1,431.57 seconds. Its 55 penalty-gradient contractions took 69.00 seconds. These costs were offset by fewer iterations in this comparison; the findings do not establish that the penalty generally reduces runtime.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{penalty_comparison/penalty_enrichment_comparison.pdf}
+\caption{Information-penalty effects on marginal enrichment using AI. A--B, relative changes for the six annotations displayed in the published manuscript. C--D, unpenalized and penalized estimates for three binary flank annotations, on a logarithmic axis; the dashed line marks enrichment one. These secondary annotations were selected for large changes in Weight before the Hemoglobin penalty endpoint was obtained; all three are shown for both traits. All four fits passed the precise endpoint checks. The display concerns point estimates; uncertainty calibration is deferred.}
+\label{fig:penalty}
+\end{figure}
+
+\begingroup\clubpenalty=10000
+For Weight, ExAC promoter-flank enrichment increased from 0.1745 to 0.5994, superenhancer-flank enrichment from 0.7757 to 1.0117, and human-enhancer-flank enrichment from 0.7926 to 0.9378 (Figure~\ref{fig:penalty}). For Hemoglobin, superenhancer-flank enrichment increased from 0.01247 to 0.08976: a large relative increase of 620\%, but an absolute increase of 0.0773, with substantial depletion remaining. The other two secondary categories changed by +5.22\% and $-0.62$\%, respectively. The analyzed sets contain 4,417 ExAC promoter-flank SNPs and 22,510 superenhancer-flank SNPs in each trait; human-enhancer flanks contain 70,070 SNPs for Weight and 70,074 for Hemoglobin. These marginal summaries account for overlapping annotations. Changes in an individual coefficient do not directly measure changes in a category's marginal heritability.\par\endgroup
+
+Counterfactual screening diagnostics identified eight trials in the exact Weight fit that a linear penalty screen would reject, including two accepted by the exact procedure. In Hemoglobin, the corresponding counts were 37 and 19. These observations demonstrate a false-rejection risk; they do not measure the behavior or speed of the implemented screening-and-fallback procedure, which can change the subsequent path. The completed matched Weight comparison found no runtime benefit from screening (Table~\ref{tab:screenmatched}). Both strategies passed the precise stationarity checks in 24 native iterations. The screened fit accepted 20 steps versus 21 for exact evaluation, ending with $Q=9.93\times10^{-5}$ and a penalized objective lower by $6.29\times10^{-5}$. Screening saved five trial-information evaluations but added 25 likelihood-only evaluations and one precise audit. Optimizer time increased by 6.46\%. This comparison supports retaining exact trial evaluation as the default.
+
+\begin{table}[H]
+\centering\small
+\input{screen_comparison/screen_cost_table.tex}
+\caption{Exact versus linear-screen trial evaluation for the matched penalized Weight fit. Both strategies use the same AI implementation and starting point. Precise passes are included in the full-pass count. Timings include the final precise calculation.}
+\label{tab:screenmatched}
+\end{table}
+
+Six proposals were screened out, and one line search invoked the exact fallback. The within-run counter recorded no rescued previously screened accepted steps. This does not imply that screening caused no false rejections: the paired runs have identical recorded accepted trials, proposals and objectives through iteration 18. At iteration 19 the screen skipped a full step that the exact run accepted with objective gain 0.002519, then accepted a half step with gain 0.036403. Thus screening changed the trajectory even though the exact-fallback counter did not identify this event.
+
+The largest relative difference among the six primary enrichments was 0.00677\%. Across all 97 annotation summaries, ExAC promoter-flank enrichment changed most, from 0.599381 under exact evaluation to 0.608331 under screening (+1.49\%, absolute +0.00895). Total heritability differed by $-1.67\times10^{-6}$. These differences illustrate that close objective values and passed local stopping checks can coexist with larger relative changes in a depleted category. They do not establish equivalence of parameter estimates or uncertainty calibration.
+
+\section{Stopping criteria and interpretation}
+For an interior point with positive-definite information, define the undamped information-scaled score criterion
+\begin{equation}
+ Q(\theta)=\frac12g(\theta)^\mathsf{T}I(\theta)^{-1}g(\theta).
+ \label{eq:stop}
+\end{equation}
+It is the predicted improvement of the information-based quadratic model, not a bound on the actual remaining likelihood gain. Small damped updates, small successive objective increments, or small fixed-probe scores trigger further checking rather than establish stationarity.
+
+The integrated procedure requires a fresh accurate score at the returned parameters and $Q\leq10^{-3}$. It also evaluates actual objective changes in both signs of the limited information-scoring direction and a scaled gradient direction, requiring none to improve the objective by more than $10^{-3}$. Positive definiteness is checked separately on diagonally normalized information. These finite directional checks provide additional local evidence; neither they nor equation~\eqref{eq:stop} establish global optimality. Distinct starting points remain necessary to assess alternative stationary endpoints. With the penalty enabled, these checks use $g_w$ and $F_w$; their operating characteristics remain to be evaluated. The default iteration cap is 100, and the default criterion is $10^{-3}$. This tolerance measures local stationarity; the historical implementation instead applied its tolerance to successive likelihood increments.
+
+For low-dimensional models, an experimental audit estimates blockwise central finite-difference scores at two perturbation sizes. It checks both their disagreement and a floating-point resolution diagnostic, falling back to analytic accurate scores if the diagnostic fails. This is an empirical accuracy check rather than a rigorous error bound. The integrated implementation uses accurate inverse diagonals for all model sizes. Their cost motivates selective audits.
+
+When an unpenalized variance approaches zero, the link Jacobian can vanish and ordinary coefficient-space criteria can behave poorly. Analysis-specific profiles and one-sided variance perturbations help explain such endpoints. They are \emph{diagnostics only}: they do not form a boundary-acceptance feature of the proposed optimizer and do not count as validation of the general procedure. Penalized fits are evaluated directly on equation~\eqref{eq:penalty}. Whether regularization resolves the observed saturated fits is an empirical question.
+
+\section{Baseline-LD analysis of the previous trait cohort}
+We analyze the fixed set of 33 traits used in the previous burden-study presentation (27 continuous and six binary traits), preserving the phenotype mappings and variant targets. The unpenalized AI fits use 97 baseline-LD annotations, trait-specific sample sizes and fixed S-LDSC intercepts, and the same neutral initialization. Variants have reference minor-allele frequency above 1\%, with the MHC excluded. The frequency exponent $\alpha$ is obtained from the fitted heritability in ten frequency bins above 5\% reference frequency, using the exact frequency distribution within each bin: a variant's predicted heritability is proportional to $[2p(1-p)]^{1+\alpha}$. This is a downstream covariance-aware fit to partitioned heritability. Nonsynonymous enrichment is the fraction of heritability assigned to the binary \texttt{non\_synonymous} annotation divided by its fraction of analyzed variants; it differs from the broader Coding category in the six-annotation comparison.
+
+All 33 fits finished. Thirteen passed the precise original-information stopping checks and the uncertainty and extraction checks (Table~\ref{tab:cohort}); nineteen reached the 100-iteration limit. Systolic blood pressure passed the score and signed-gain checks but had information rank 96/97. Acute sinusitis both reached the iteration limit and had information rank 96/97. Alpha and uncertainty were withheld for these two singular-information outcomes. All thirteen validated fits were continuous traits; all six binary traits reached the iteration limit. For the six binary traits, the new endpoint log likelihoods were 55.8--113.1 below the historical endpoints after verifying identical full variant targets, sample sizes, intercepts and annotation models. This shows a remaining optimization limitation; the historical stopping flags and boundary-affected outputs do not establish usable inference. The accompanying aggregate table retains all 33 outcomes, provisional point estimates where available, uncertainty qualifications and timing definitions. These local checks do not establish a global likelihood maximum.
+
+\begin{table}[H]
+\centering
+\small
+\input{cohort_final/validated_estimates_table.tex}
+\caption{Validated baseline-LD results for thirteen traits. Enrichment refers to nonsynonymous variants. Parentheses give standard errors from 100 ordered one-step delete groups. Alpha fits use the fixed full-fit covariance and exact frequency quadrature; numerical checks do not assess uncertainty calibration. All fits shown passed the unpenalized local stationarity and information checks. The twenty unresolved outcomes are retained in the aggregate source table.}
+\label{tab:cohort}
+\end{table}
+
+For these summaries, the covariance of a vector of estimates is $(B-1)/B$ times the centered cross-product of the $B=100$ delete estimates. Alpha is fitted again in each delete using the full-fit bin covariance. This canonical covariance normalization gives standard errors smaller than the native normalization by $\sqrt{B/(B-1)}$. Variant ordering, alleles, coordinates, annotations, frequency quadrature and delete-group membership were checked before accepting results. Independent alpha optimization repeated the full fit and all 100 delete fits for ten of the thirteen validated traits at tolerance $10^{-6}$. BMI, Weight and Hemoglobin instead have benchmark-parity and saved covariance/arithmetic checks; those records do not independently certify their alpha optima. Historical endpoints that failed stationarity remain descriptive comparators; their runtimes do not establish performance at matched accuracy.
+
+The preserved binary phenotype mappings vary in power and specificity. Acute sinusitis uses the J01 main-ICD10 phenotype with 112 cases; obesity has 448 cases. Hypertension and hyperlipidemia use self-reported phenotypes, while breast cancer uses the female sample. Thus membership in the previous presentation does not imply that each current summary-statistic mapping is well powered. Binary analyses retain the original association $Z$ statistics, total sample sizes and fixed intercepts; effective sample size is descriptive metadata, and no liability-scale conversion is applied.
+
+Unresolved fits can yield misleadingly small or large uncertainty estimates. For cellulitis, all 100 delete alpha estimates equal the lower bound $-4$, giving a mechanical standard error of zero despite an unresolved full estimate of $-2.801$. For obesity, 50 delete alpha estimates hit a bound; the full estimate is $-0.660$, its standard error is 26.899, and its profile interval is unavailable. Its nonsynonymous enrichment is 0.243 with standard error 72.197. These outputs remain explicitly provisional. Mean corpuscular volume also failed a delete-alpha check using independently reconstructed covariance at the unchanged numerical tolerance, although its saved-output reconstruction was reproducible.
+
+Recorded optimizer times across the 33 cohort runs ranged from 35.9 to 170.0 minutes (median 84.1); among the thirteen validated fits the median was 64.9 minutes. Each fit used twelve workers on the local M4 Max machine, with one numerical-library thread per worker. Early runs experienced concurrent workloads, and later primary fits ran serially. These measurements describe this execution history, rather than a controlled comparison of optimizers. The aggregate table distinguishes optimizer time, the complete native API call, input preparation and runner time through preparation of native outputs, before downstream extraction; independent post-fit audits are excluded. The matched comparisons above remain the evidence for relative runtime.
+
+\subsection{Limits identified by convergence experiments}
+Across the final ten iterations of each of the thirteen capped continuous-trait fits, all 130 trials were accepted. Ten traits used a scaled-gradient proposal throughout this interval, red-cell count used it in nine iterations, and mean platelet volume and triglycerides used AI throughout. Repeated backtracking is therefore not the observed late-stage bottleneck in this subset. Saturated weak-information coordinates were shown to force restrictive global clipping in six separately audited traits; the proposal logs alone do not establish that mechanism for every capped trait.
+
+An experimental constrained-AI method maximized the original quadratic under bounds on each variant's predictor displacement. It exposed substantial feasible ascent at difficult endpoints, but its local stopping checks did not ensure comparable final likelihood. In a matched-worker BMI check, a candidate endpoint admitted a feasible displacement with likelihood gain 0.06087 while its quadratic predicted a decrease of 0.38859. Candidate endpoint likelihood remained approximately 0.239 below the implemented AI comparator, exceeding the 0.001 comparison tolerance. Agreement of precise directional scores with finite differences at tested points did not eliminate this finite-step discrepancy. A bounded local quadratic criterion and a few signed probes therefore remain local diagnostics.
+
+We also compared AI with half and full subtraction of the nonlinear link-curvature term from its proposal information, applying the same constrained quadratic solver to positive-definite proposal matrices and falling back to AI otherwise. In five fixed synthetic examples with known maximum-likelihood targets, all three methods reached comparable acceptable endpoints. Across the four nonlinear examples, AI required 79 likelihood or derivative calls, the half correction 87, and the full correction 80. The full correction saved three calls in a negative-link-curvature example but added four in a nearly collinear example. Both failed the prespecified efficiency criterion. Small synthetic timings do not establish biological runtime; derivative and likelihood calls also have different costs. These experimental results provide no basis for changing the implemented optimizer or claiming reliable convergence across the full trait cohort.
+
+\section{Numerical consistency and uncertainty}
+Every trial evaluation must correspond to its stated parameters. To avoid cancellation after extreme proposals, the worker reconstructs covariance diagonals from the fixed residual diagonal and the current aggregated genetic variance in equation~\eqref{eq:cov}. Rejected trials restore the accepted state; invalid trial values cannot be accepted. Final scores and information are refreshed at returned parameters. These safeguards prevent changes in the numerical state from masquerading as changes in the statistical objective.
+
+At a fixed covariance, inverse-diagonal probe solves can reuse the current sparse Cholesky factor. The historical analysis runner already provided a validated guarded override for this reuse; the historical comparator retains that execution optimization, while the integrated package supplies it directly. Both implementations therefore reuse current factors for these solves. Accurate inverse diagonals in the integrated methods are calculated by triangular inversion of the Cholesky factor: in factorization order, the diagonal entries are the squared column norms of $L^{-1}$, with the permutation subsequently undone. These exact audits still require dense triangular workspace and are used selectively.
+
+For unpenalized one-step delete-group reconstruction, if $g_{-r}$ and $I_{-r}$ are the retained-data score and positive information evaluated at the full-data fit, the Newton approximation has sign
+\begin{equation}
+ \widehat\theta_{-r}\simeq\widehat\theta+I_{-r}^{-1}g_{-r}.
+\end{equation}
+The implementation corrects the update sign and evaluates derivatives at the returned fit. The inferential solve now uses symmetric diagonal scaling and Cholesky factorization without an absolute ridge. Writing $D_{jj}=\sqrt{(I_{-r})_{jj}}$ and $C=D^{-1}I_{-r}D^{-1}$, the update is $D^{-1}C^{-1}D^{-1}g_{-r}$. Positive definiteness and numerical rank are checked on $C$; invalid solves produce unavailable uncertainty. This preserves the calculation under changes of coefficient units. A fixed positive ridge previously added to the negative Hessian overwhelmed curvature in saturated directions and could produce artificially small standard errors. The figures here compare point estimates only. Focused regression tests cover the tiny-curvature sign error and coordinate rescaling. This numerical repair does not evaluate the statistical validity of a local approximation far from a stationary endpoint. Agreement of a reconstructed update with this formula verifies implementation, not uncertainty calibration. For penalized fits, delete-group reconstruction uses likelihood scores and information at the penalized endpoint, with explicit metadata identifying this approximation. Penalized objective gradients are reported separately. Singular information produces unavailable uncertainty, and unresolved endpoints are labelled provisional. Calibration, penalty curvature in uncertainty calculations, and penalized delete-group inference remain deferred.
+
+\appendix
+\section{Exploratory comparison with BFGS}
+A BFGS implementation using the same objective acceptance and endpoint audits was evaluated from the same neutral starting parameters. For Weight, it reached the 100-iteration cap in 90.66 minutes, with $Q=3.997$ and likelihood 13.42 below the converged AI endpoint; AI converged in 44.97 minutes. For BMI, both methods passed the precise checks, but BFGS required 45.39 minutes versus 39.18 for AI. Their six main enrichments differed by at most 0.061\%. These comparisons support selecting AI for the implemented procedure. They do not establish that other BFGS implementations or initialization strategies would behave similarly.
+
+\begin{thebibliography}{9}
+\bibitem{gilmour} Gilmour, A. R. (2019). Average information residual maximum likelihood in practice. \emph{Journal of Animal Breeding and Genetics}, 136, 262--272. \href{https://doi.org/10.1111/jbg.12398}{doi:10.1111/jbg.12398}.
+\bibitem{firth} Firth, D. (1993). Bias reduction of maximum likelihood estimates. \emph{Biometrika}, 80, 27--38. \href{https://doi.org/10.1093/biomet/80.1.27}{doi:10.1093/biomet/80.1.27}.
+\bibitem{li} Li, H., Kamath, T., Mazumder, R., Lin, X., and O'Connor, L. J. (2026). Improved heritability partitioning and enrichment analyses using summary statistics with graphREML. \emph{Nature Genetics}, 58, 1573--1582. \href{https://doi.org/10.1038/s41588-026-02649-0}{doi:10.1038/s41588-026-02649-0}.
+\end{thebibliography}
+\end{document}
