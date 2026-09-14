@@ -42,3 +42,29 @@ def test_cli_defaults_firth_alias_and_overrides():
     assert parser.parse_args(base+['--information-penalty','.25']).information_penalty==.25
     args=parser.parse_args(base+['--optimizer','ai','--num-iterations','7','--convergence-tol','.02'])
     assert (args.optimizer,args.num_iterations,args.convergence_tol)==('ai',7,.02)
+
+
+def test_convergence_csv_distinguishes_accepted_steps_from_iterations(tmp_path):
+    import csv
+    from graphld.cli import write_convergence_results
+
+    # A refresh-only iteration does not add an accepted parameter point.
+    results = {
+        'likelihood_history': [1., 2.],
+        'penalty_history': [0., 0.],
+        'objective_history': [1., 2.],
+        'log': {
+            'optimizer': 'ai', 'num_iterations': 3,
+            'trust_region_lambdas': [0., 0.],
+            'evaluation_counts': {'full': 4, 'precise': 2},
+            'evaluation_seconds': {'full': 1., 'precise': .5},
+        },
+    }
+    output = tmp_path / 'convergence.csv'
+    write_convergence_results(str(output), results)
+    with output.open() as stream:
+        rows = list(csv.reader(stream))
+    assert rows[1][rows[0].index('num_iterations')] == '3'
+    assert rows[3][0] == 'accepted_step'
+    assert rows[4][:2] == ['0', '1.0']  # Initial point.
+    assert rows[5][:2] == ['1', '2.0']

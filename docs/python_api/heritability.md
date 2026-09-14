@@ -28,6 +28,36 @@ reml_results: dict = gld.run_graphREML(
 
 The returned dictionary contains heritability, enrichment, and coefficient estimates for each annotation, together with standard errors and two-tailed log10 p-values.
 
+## Options and convergence
+
+Pass `ModelOptions` and `MethodOptions` to configure the model and fit. For example:
+
+```python
+model_options = gld.ModelOptions(link_function="softplus")
+method_options = gld.MethodOptions(
+    num_iterations=100,
+    num_processes=4,
+    num_jackknife_blocks=100,
+)
+```
+
+Inspect the returned status before interpreting estimates:
+
+```python
+log = reml_results["log"]
+print(log["converged"], log["optimizer_status"], log["uncertainty_status"])
+```
+
+Convergence establishes local checks. Uncertainty at unresolved endpoints is
+provisional; singular information or invalid delete calculations make it unavailable.
+The default tolerance, `0.001`, controls precise score and objective checks.
+The retained `trust_region_*`, `max_trust_iterations`, `reset_trust_region`,
+`minimum_likelihood_increase`, and `convergence_window` settings have no effect.
+
+The optional `MethodOptions(information_penalty=1.0)` adds an information penalty;
+its bias reduction and uncertainty calibration have not been established.
+See the [methods write-up](../methods/graphreml_optimization/README.md) for details.
+
 See also:
 
 - [Command Line Interface](../cli.md)

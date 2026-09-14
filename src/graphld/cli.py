@@ -557,10 +557,10 @@ def write_convergence_results(filename: str, results: dict):
             writer.writerow(keys)
             writer.writerow([log.get(key, '') for key in keys])
             writer.writerow([])
-            writer.writerow(['iteration', 'likelihood', 'penalty', 'objective', 'trust_region_lambda'])
+            writer.writerow(['accepted_step', 'likelihood', 'penalty', 'objective', 'trust_region_lambda'])
             for i, row in enumerate(zip(results['likelihood_history'], results['penalty_history'],
                                          results['objective_history'], log['trust_region_lambdas'], strict=True)):
-                writer.writerow([i + 1, *row])
+                writer.writerow([i, *row])
             writer.writerow([])
             writer.writerow(['evaluation', 'count', 'seconds'])
             for key, count in log['evaluation_counts'].items():

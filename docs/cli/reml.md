@@ -22,98 +22,16 @@ You must provide one annotation source:
 - Variant annotations: per-chromosome `.annot` files, optionally alongside `.bed` files; see [Annotations](../file_formats.md#annotations).
 - Gene annotations: `.gmt` files converted to variant-level annotations with nearest-gene weighting; see [GMT Format](../file_formats.md#gmt-format-gmt).
 
-## Optimizer and optional Firth approximation
-
-graphREML uses average-information (AI) proposals with backtracking line search,
-fixed-probe score correction, and precise stopping audits. Steps are accepted using
-actual objective values. A predictor-change cap limits extreme proposals. The AI
-proposal is retained when its predicted gain is numerically resolvable and reaches
-at least 10% of the capped scaled-gradient reference's gain. Otherwise the gradient
-reference supplies the direction for the same line search. Precise inverse-diagonal
-audits refresh the fixed-probe correction and are required before ordinary
-convergence is reported. See the
-[methods and evaluation write-up](../methods/graphreml_optimization/README.md)
-for convergence, runtime, and enrichment results.
-
-```bash
-graphld reml summary.sumstats output --annot-dir annotations
-graphld reml summary.sumstats output_firth --annot-dir annotations --firth
-```
-
-`--firth` enables the average-information-based approximation: one half the log
-determinant of the globally summed average-information matrix is added to the
-likelihood. It is off by default. The equivalent `--information-penalty` option
-also accepts a nonnegative weight, for example `--information-penalty 0.5`.
-This is an information penalty; formal finite-sample bias reduction has not been
-established for this approximation. Its ability to retain information in depleted
-variance directions requires empirical validation.
-
-The default `--penalty-trial-strategy exact` evaluates the penalty at every trial.
-The experimental `linear_screen` strategy first checks the likelihood plus a
-linear penalty prediction; `likelihood_screen` checks likelihood alone. Accepted
-steps always pass the exact penalized objective test. After two consecutive
-screen rejections, or an exhausted screened search, the original proposals are
-retried exactly. Final signed stopping checks bypass screening. Logs count
-screen rejections, exact fallbacks, detected false rejections, and counterfactual
-linear-screen rejections among exactly evaluated proposals. These diagnostics
-cover evaluated proposals, not every proposal on an alternative trajectory.
-
-The penalty uses the global information inverse in every block gradient and
-requires positive-definite global information at initialization. Use finite,
-nonsaturated starting coefficients. Its determinant is computed without a ridge
-or eigenvalue truncation; numerical regularization applies only to proposals.
-
-### Migration from likelihood-window stopping
-
-The defaults are now 100 iterations and `--convergence-tol 0.001`. The tolerance
-bounds the precise information-scaled score criterion and actual improvements
-in four signed direction checks, in objective units. Previously it controlled
-recent likelihood changes. Small accepted changes trigger an audit and do not
-by themselves establish convergence. Explicit iteration budgets and tolerances
-remain respected. The compatibility arguments `--convergence-window` and
-`--reset-trust-region`, and the Python damping settings, no longer control the
-new line search. `--optimizer ai` can explicitly declare the supported method.
-
-A converged status certifies the reported score and tested-direction criteria;
-it does not certify global optimality. Iteration limits, stalled searches, and
-singular information have distinct statuses. Inspect these statuses when
-comparing runtime or enrichment estimates.
-
-The default `--link-function softplus` includes its first and second
-derivatives. `--link-function exponential` is also available. In Python, set
-`ModelOptions(link_function="softplus")` and
-`MethodOptions(information_penalty=1.0, penalty_trial_strategy="exact")`.
-A custom link factory may be passed as `ModelOptions(link_function=factory)`;
-it takes the denominator and returns `(value, gradient, second_derivative)`.
-Each function accepts `(annotations, parameters)`. For scalar annotation `1`,
-the derivative functions return derivatives with respect to the linear predictor;
-for a matrix, they return the corresponding parameter derivatives (the
-second-derivative function returns the diagonal second derivatives). Use a module-level factory
-so it can be passed to spawned workers.
-
-Optimization uses the penalized score with the AI proposal metric. Average information supplies the stopping scale; the penalty Hessian is
-omitted. Reported uncertainties retain the
-existing unpenalized-information pseudo-jackknife approximation; their calibration
-for penalized estimates has not been evaluated. The result log records the
-penalty weight, trial strategy, final likelihood and penalized objective,
-evaluation counts/times, optimizer status, selected proposal and cap multiplier,
-score refreshes, and uncertainty method/status.
-Finite well-conditioned endpoints retain that approximation; unresolved endpoints
-are marked provisional, and singular or invalid delete calculations are unavailable.
-Pseudo-jackknife updates use diagonally normalized Cholesky solves of unregularized
-information, so changing coefficient units preserves the updates.
-Optimization time includes final precise refreshes; total time also includes input
-preparation and post-fit calculations. Convergence CSV files include optimizer status, likelihood, penalty, and objective histories,
-and evaluation counts and times. Detailed proposal diagnostics are in the result log.
-The gradient pass retains per-block information intermediates and sparse factors
-until the global information inverse is available, increasing peak worker memory.
-
 ## Output Files
 
 Default output:
 
 - `output_prefix.tall.csv`: heritability, enrichment, and coefficient estimates
 - `output_prefix.convergence.csv`: optimization diagnostics
+
+In the convergence CSV, `num_iterations` counts optimizer iterations. The
+`accepted_step` history starts at zero for initialization and advances only when
+a step is accepted.
 
 With `--alt-output`:
 
@@ -143,6 +61,7 @@ downloaded European score file.
 
 | Option | Default | Description |
 |--------|---------|-------------|
+| `--optimizer` | `ai` | Average-information optimization with line search |
 | `--num-iterations` | `100` | Maximum optimization iterations |
 | `--convergence-tol` | `0.001` | Precise score and signed objective tolerance |
 | `--convergence-window` | `3` | Compatibility argument |
@@ -150,6 +69,34 @@ downloaded European score file.
 | `--xtrace-num-samples` | `100` | Samples for stochastic gradient estimation |
 | `--reset-trust-region` | `False` | Compatibility argument |
 | `--initial-params` | `None` | Comma-separated initial coefficient values |
+| `--link-function` | `softplus` | Variance link: `softplus` or `exponential` |
+| `--information-penalty`, `--firth` | `0.0` | Optional information-penalty weight; `1.0` when enabled without a value |
+| `--penalty-trial-strategy` | `exact` | Trial evaluation: `exact`, or experimental `linear_screen` / `likelihood_screen` |
+
+graphREML uses average-information optimization with precise convergence checks.
+The default tolerance of `0.001` bounds an information-scaled score criterion and
+actual objective improvements in four signed direction checks. Earlier releases
+used recent likelihood changes; `--convergence-window` and `--reset-trust-region`
+are retained for compatibility and have no effect.
+
+Inspect `converged`, `termination_reason`, and `uncertainty_status` in the
+convergence CSV before interpreting estimates. Convergence establishes the local
+checks, without guaranteeing a global optimum. Uncertainty at unresolved endpoints
+is provisional; singular information or invalid delete calculations make it
+unavailable.
+
+To enable the optional information penalty:
+
+```bash
+uv run graphld reml summary.sumstats output --annot-dir annotations --firth
+```
+
+This adds one half the log determinant of global average information to the
+likelihood. It requires positive-definite information at initialization. Use
+`--information-penalty 0.5` for a different nonnegative weight. Formal bias
+reduction and uncertainty calibration for penalized estimates have not been
+established. See the [methods and evaluation write-up](../methods/graphreml_optimization/README.md)
+for algorithm details, screening strategies, and numerical comparisons.
 
 ## Variant Matching And Filtering
 

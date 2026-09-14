@@ -69,8 +69,12 @@ class ModelOptions:
         link_fn_denominator: Scalar denominator for link function.
         link_function: 'softplus' (default), 'exponential', or a factory taking
             the denominator and returning value, gradient, and second-derivative
-            functions. Functions also accept scalar annotation 1 to evaluate
-            derivatives with respect to the linear predictor.
+            functions accepting (annotations, parameters). With an annotation
+            matrix, derivatives are with respect to parameters and the second
+            derivative contains only diagonal entries. Functions also accept
+            scalar annotation 1 to evaluate derivatives with respect to the
+            linear predictor. Custom factories must be module-level functions
+            so they can be passed to spawned workers.
     """
 
     annotation_columns: Optional[List[str]] = None
@@ -106,12 +110,14 @@ class MethodOptions:
         num_processes: If None, autodetect
         verbose: Flag for verbose output
         use_surrogate_markers: Whether to use surrogate markers for missing variants
-        trust_region_size: Initial trust region size parameter
-        trust_region_rho_lb: Lower bound for trust region ratio
-        trust_region_rho_ub: Upper bound for trust region ratio
-        trust_region_scalar: Scaling factor for trust region updates
-        max_trust_iterations: Maximum number of trust region iterations
-        reset_trust_region: Whether to reset trust region size at each iteration
+        trust_region_size: Compatibility setting; unused by the AI line search.
+        trust_region_rho_lb: Compatibility setting; unused by the AI line search.
+        trust_region_rho_ub: Compatibility setting; unused by the AI line search.
+        trust_region_scalar: Compatibility setting; unused by the AI line search.
+        max_trust_iterations: Compatibility setting; unused by the AI line search.
+        reset_trust_region: Compatibility setting; unused by the AI line search.
+        minimum_likelihood_increase: Compatibility setting; use convergence_tol.
+        convergence_window: Compatibility setting; use convergence_tol.
         num_jackknife_blocks: Number of blocks to use for jackknife estimation
         max_chisq_threshold: Maximum allowed chi^2 value in a block. Blocks with chi^2 > threshold are excluded.
         score_test_hdf5_file_name: Optional file name to create or append to an hdf5 file with pre-computed
@@ -1683,21 +1689,28 @@ class GraphREML(ParallelProcessor):
 
             cls._write_trait_stats(method, variant_score)
 
-        # Compute standard errors using jackknife formula: SE = sqrt((n-1) * var(estimates))
+        # Finite delete predictions can still overflow in variance calculations
+        # or have undefined enrichment when a reference delete is zero.
         n_blocks = jackknife_params.shape[0]
-        params_se = np.sqrt((n_blocks - 1) * np.var(jackknife_params, axis=0, ddof=1))
-        h2_se = np.sqrt((n_blocks - 1) * np.var(jackknife_h2, axis=0, ddof=1))
-
-        # Compute normalized heritability for each jackknife estimate
-        jackknife_h2_normalized = jackknife_h2 / jackknife_annot_sums
-
-        # Compute quotient for point estimates and SE
-        jackknife_enrichment_quotient = (
-            jackknife_h2_normalized / jackknife_h2_normalized[:, [0]]
-        )
-        enrichment_se = np.sqrt(
-            (n_blocks - 1) * np.var(jackknife_enrichment_quotient, axis=0, ddof=1)
-        )
+        with np.errstate(over="ignore", divide="ignore", invalid="ignore"):
+            params_se = np.sqrt((n_blocks - 1) * np.var(jackknife_params, axis=0, ddof=1))
+            h2_se = np.sqrt((n_blocks - 1) * np.var(jackknife_h2, axis=0, ddof=1))
+            jackknife_h2_normalized = jackknife_h2 / jackknife_annot_sums
+            jackknife_enrichment_quotient = (
+                jackknife_h2_normalized / jackknife_h2_normalized[:, [0]]
+            )
+            enrichment_se = np.sqrt(
+                (n_blocks - 1) * np.var(jackknife_enrichment_quotient, axis=0, ddof=1)
+            )
+        if uncertainty_valid and not all(np.isfinite(value).all() for value in (
+            params_se, h2_se, enrichment_se, jackknife_h2_normalized,
+            jackknife_enrichment_quotient,
+        )):
+            uncertainty_valid = False
+            uncertainty_status = "nonfinite_delete_uncertainty"
+            for value in (jackknife_params, jackknife_h2, jackknife_h2_normalized,
+                          jackknife_enrichment_quotient, params_se, h2_se, enrichment_se):
+                value.fill(np.nan)
 
         # Compute difference for p-values
         jackknife_enrichment_diff = (

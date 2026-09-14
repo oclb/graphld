@@ -179,7 +179,9 @@ def test_cli_penalty_options_and_diagnostics(tmp_path):
     summary = dict(zip(rows[0], rows[1]))
     assert float(summary['final_objective']) == pytest.approx(result['log']['final_objective'])
     assert summary['uncertainty_method'] == 'unpenalized_information_pseudojackknife'
-    assert ['iteration', 'likelihood', 'penalty', 'objective', 'trust_region_lambda'] in rows
+    header = ['accepted_step', 'likelihood', 'penalty', 'objective', 'trust_region_lambda']
+    history_start = rows.index(header) + 1
+    assert rows[history_start][0] == '0'
 
 
 def test_extreme_penalty_trial_restores_identical_covariance_and_objective():
